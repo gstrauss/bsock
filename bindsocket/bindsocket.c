@@ -393,10 +393,12 @@ unix_domain_send_fd (const int cfd, const int fd)
       .msg_flags      = 0
     };
     struct cmsghdr *cmsg   = CMSG_FIRSTHDR(&msg);
+    /* avoid gcc warning: dereferencing type-punned pointer ... */
+    /*  *(int *)CMSG_DATA(cmsg) = fd; */
+    int * const fds = (int *)CMSG_DATA(cmsg); fds[0] = fd;
     cmsg->cmsg_level       = SOL_SOCKET;
     cmsg->cmsg_type        = SCM_RIGHTS;
     cmsg->cmsg_len         = msg.msg_controllen = CMSG_LEN(sizeof(int));/*data*/
-    *(int *)CMSG_DATA(cmsg)= fd;
     do { w = sendmsg(cfd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
     } while (-1 == w && errno == EINTR);
     if (-1 == w && errno != EPIPE && errno != ECONNRESET)
