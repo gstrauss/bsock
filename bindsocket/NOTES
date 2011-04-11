@@ -1,0 +1,104 @@
+/* bindsocket - bind() sockets to restricted ports for lower-privilege daemons
+ *
+ * Historically, ports 1-1023 are restricted and only root can bind to them.
+ * Traditionally, there have been two ways to run non-root daemons on low ports:
+ * a) inetd  (root daemon listens on low port and for each connection accept(),
+ *    fork()s, drop privileges, exec()s non-root daemon for single connection)
+ * b) daemon starts up as root, bind()s to low port, and drops root privileges
+ *
+ * For performance, many daemons use the method in b), but that means that
+ * potentially complex programs are starting up as root, following instructions
+ * in configuration files, and potentially creating exposures.
+ *
+ * bindsocket aims to provide a third method to bind to low ports, with all
+ * the benefits of b), but without having to start up the daemon as root.
+ *
+ * bindsocket is a simple root daemon that listens for requests on a local unix
+ * domain socket.  Connections to the socket are authenticated using credentials
+ * supplied by the operating system (and can be trusted).  The configuration
+ * file for bindsocket specifies which users can request sockets on which 
+ * addresses and ports.  bindsocket authorizes the socket request, binds to
+ * the address and port, and then passes the bound socket back to the client
+ * over the unix domain socket.  The daemon can then listen() to the socket as
+ * if it had called bind() itself.
+ *
+ * Another option for using bindsocket is to install it as setuid root program.
+ * This is not required if running bindsocket as daemon.  However, if installed
+ * setuid root, then a lower-privilege daemon can create a socketpair() of unix
+ * domain sockets and can start up bindsocket with one of the sockets on the
+ * STDIN_FILENO of bindsocket.  bindsocket will then operate as described above,
+ * but only for a single address and port socket request.
+ *
+ *
+ * bindsocket config file line format:
+ *     username address_family socket_type protocol service_or_port address
+ * - specify separate lines for each difference, since exact match is performed
+ * - use port 0 if service_or_port does not apply to addr family (e.g. AF_UNIX)
+ * - blank lines and comments (lines beginning with #) are skipped
+ * - address must be an address string not a constant, e.g.
+ *    0.0.0.0            (for INADDR_ANY)
+ *    127.0.0.1          (for INADDR_LOOPBACK)
+ *    255.255.255.255    (for INADDR_BROADCAST)
+ *    ::                 (for IN6ADDR_ANY_INIT)
+ *    ::1                (for IN6ADDR_LOOPBACK_INIT)
+ * (FUTURE: could add parsing for INADDR_ANY and other constants)
+ *
+ *
+ * bindsocket setup
+ * - create directory for bindsocket unix domain socket (/var/run/bindsocket)
+ *   (ownership root:root, permissions 0755)
+ * - create bindsocket config file (/var/run/bindsocket/config)
+ *   (ownership root:root, permissions 0644 or even as restrictive as 0400)
+ *   populate config file, e.g.
+ *     apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
+ *
+ *
+ * bindsocket is by no means the end-all-be-all of security.  Defense-in-depth
+ * is encouraged.  On Linux, iptables can additionally be used to augment
+ * security, as can firewalls external to the host.  SELinux policies or
+ * grsecurity might also be used, but bindsocket subverts some of the targetted
+ * policies that restrict the ports to which a specific executable can bind.
+ *
+ *
+ * References:
+ *   Secure interprocess communication
+ *     http://cr.yp.to/docs/secureipc.html
+ *   Unix socket magic
+ *     http://www.lst.de/~okir/blackhats/node121.html
+ *   Linux Socket Programming by Example - Warren Gay
+ *     "17. Passing Credentials and File Descriptors"
+ *
+ *
+ * Alternative ideas:
+ * Another approach (code not written here) might be to have a small setuid root
+ * program that bind()s to socket, dup2() to STDIN_FILENO, and then fork()s and
+ * exec()s a daemon, which inherits the socket and can listen().  This method
+ * would provides only for a single listen() socket, which can meet the needs
+ * of some daemons.  Additional descriptors could be opened fds > STDERR_FILENO
+ * and would be inherited by the child daemon and child daemon could determine
+ * which addresses to which each fd was bound by calling getsockname().  In any
+ * case, the root program would need to maintain configuration information about
+ * which addresses and ports to bind to and how to exec each program.  It would
+ * have an advantage over bindsocket in that a particular program could be
+ * associated with a particular address and port.  bindsocket is limited to uid
+ * privileging (although it could be extended to get process info on the pid
+ * connecting to the unix domain socket).  However, bindsocket is simpler in
+ * that it allows the client to request specific addresses as the client desires
+ * the socket, rather than possibly opening too many.  Also, bindsocket does not
+ * get in the way of programs which supervise daemons, as the program described
+ * here might.
+ *
+ *
+ * FUTURE:
+ * - provide example client code that interfaces with bindsocket for popular
+ *   programs such as Apache.
+ * - port and test bindsocket on additional platforms (FreeBSD, OpenBSD, ...)
+ * - sysctl can prevent accidental usage of specific non-privileged ports
+ *   http://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
+ *     /proc/sys/net/ipv4/ip_local_port_range
+ *     /proc/sys/net/ipv4/ip_local_reserved_ports
+ *   Patch Linux kernel to adjust root-reserved ports (1-1023) to larger number
+ *   and use bindsocket to dole out standard ports for non-privileged daemons
+ *   like Postgres (5432), MySQL (3306), and others, while other non-privileged
+ *   accounts (not postgres, mysql, etc) will not be able to bind to those ports
+ */
