@@ -107,7 +107,7 @@ syslog_perror (const char * const restrict str, const int errnum)
 }
 
 static int
-str_to_ai_family (const char * const family)
+bindsocket_addrinfo_family_from_str (const char * const family)
 {
     /* list of protocol families below is not complete */
     if (        0 == strcmp(family, "AF_INET")
@@ -128,7 +128,7 @@ str_to_ai_family (const char * const family)
 }
 
 static int
-str_to_ai_socktype (const char * const restrict socktype)
+bindsocket_addrinfo_socktype_from_str (const char * const restrict socktype)
 {
     if (     0 == strcmp(socktype, "SOCK_STREAM"))
         return SOCK_STREAM;
@@ -149,19 +149,19 @@ str_to_ai_socktype (const char * const restrict socktype)
 }
 
 static int
-str_to_ai_protocol (const char * const restrict protocol)
+bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
     struct protoent * const restrict pe = getprotobyname(protocol);
     return (pe != NULL ? pe->p_proto : -1);
 }
 
 static bool
-strs_to_addrinfo (struct addrinfo * const restrict ai,
-                  const char * const restrict family,
-                  const char * const restrict socktype,
-                  const char * const restrict protocol,
-                  const char * const restrict service,
-                  const char * const restrict addr)
+bindsocket_addrinfo_from_strings(struct addrinfo * const restrict ai,
+                                 const char * const restrict family,
+                                 const char * const restrict socktype,
+                                 const char * const restrict protocol,
+                                 const char * const restrict service,
+                                 const char * const restrict addr)
 {
     struct addrinfo hints = {
       .ai_flags     = AI_V4MAPPED | AI_ADDRCONFIG,
@@ -170,9 +170,12 @@ strs_to_addrinfo (struct addrinfo * const restrict ai,
       .ai_canonname = NULL,
       .ai_next      = NULL
     };
-    if (   -1 == (hints.ai_family   = str_to_ai_family(family))
-        || -1 == (hints.ai_socktype = str_to_ai_socktype(socktype))
-        || -1 == (hints.ai_protocol = str_to_ai_protocol(protocol)))
+    hints.ai_family   = bindsocket_addrinfo_family_from_str(family);
+    hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(socktype);
+    hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(protocol);
+    if (   -1 == hints.ai_family
+        || -1 == hints.ai_socktype
+        || -1 == hints.ai_protocol)
         return false;  /* invalid strings */
 
     if (hints.ai_family == AF_INET || hints.ai_family == AF_INET6) {
@@ -473,7 +476,7 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
 }
 
 static bool
-bindsocket_recv_addrinfo (const int fd, const int msec,
+bindsocket_addrinfo_recv (const int fd, const int msec,
                           struct addrinfo * const restrict ai)
 {
     /* receive addrinfo request */
@@ -531,7 +534,8 @@ bindsocket_recv_addrinfo (const int fd, const int msec,
             && NULL != (service  = strtok(NULL, " "))
             && NULL != (addr     = strtok(NULL, " "))
             && NULL == (           strtok(NULL, " ")))
-            return strs_to_addrinfo(ai,family,socktype,protocol,service,addr);
+            return bindsocket_addrinfo_from_strings(ai, family, socktype,
+                                                    protocol, service, addr);
 
         return false;  /* invalid client request; truncated msg */
     }
@@ -539,9 +543,9 @@ bindsocket_recv_addrinfo (const int fd, const int msec,
     return false;
 }
 
-#if 0  /* sample client code corresponding to bindsocket_recv_addrinfo() */
+#if 0  /* sample client code corresponding to bindsocket_addrinfo_recv() */
 static bool
-bindsocket_send_addrinfo (const int fd, const int msec,
+bindsocket_addrinfo_send (const int fd, const int msec,
                           struct addrinfo * const restrict ai)
 {
     /* msg sent atomically, or else not transmitted: error w/ errno==EMSGSIZE */
@@ -648,10 +652,13 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
             syslog_perror("bindsocket config file error", 0);
             continue;
         }
+        hints.ai_family   = bindsocket_addrinfo_family_from_str(family);
+        hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(socktype);
+        hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(protocol);
         if ( NULL == (pw = getpwnam(username))
-            || -1 == (hints.ai_family   = str_to_ai_family(family))
-            || -1 == (hints.ai_socktype = str_to_ai_socktype(socktype))
-            || -1 == (hints.ai_protocol = str_to_ai_protocol(protocol))) {
+            || -1 == hints.ai_family
+            || -1 == hints.ai_socktype
+            || -1 == hints.ai_protocol) {
             syslog_perror("bindsocket config file error", 0);
             continue;
         }
@@ -723,8 +730,9 @@ bindsocket_client_session (const int cfd,
 
     /* receive addrinfo from client */
     if (!(5 != argc
-          ? bindsocket_recv_addrinfo(cfd, -1, &ai) /*(-1 for infinite poll)*/
-          : strs_to_addrinfo(&ai,argv[0],argv[1],argv[2],argv[3],argv[4]))) {
+          ? bindsocket_addrinfo_recv(cfd, -1, &ai) /*(-1 for infinite poll)*/
+          : bindsocket_addrinfo_from_strings(&ai, argv[0], argv[1],
+                                             argv[2], argv[3], argv[4]))) {
         alarm(0); /* not strictly needed since callers exit upon return */
         syslog_perror("invalid client request", 0);
         return EXIT_FAILURE;
@@ -1124,7 +1132,7 @@ main (int argc, char *argv[])
             iaddr.sin_family = AF_INET;
             iaddr.sin_port   = htons(8080);
             iaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-            if (!bindsocket_send_addrinfo(sfd, -1, &ai))
+            if (!bindsocket_addrinfo_send(sfd, -1, &ai))
                 return EXIT_FAILURE;
           #else
             const char * const msg = "AF_INET SOCK_STREAM tcp 8080 0.0.0.0";
