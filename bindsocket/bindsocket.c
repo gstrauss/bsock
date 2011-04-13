@@ -476,8 +476,8 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
 }
 
 static bool
-bindsocket_addrinfo_recv (const int fd, const int msec,
-                          struct addrinfo * const restrict ai)
+bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
+                                     struct addrinfo * const restrict ai)
 {
     /* receive addrinfo request */
     /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
@@ -543,10 +543,11 @@ bindsocket_addrinfo_recv (const int fd, const int msec,
     return false;
 }
 
-#if 0  /* sample client code corresponding to bindsocket_addrinfo_recv() */
+/* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
+#if 0
 static bool
-bindsocket_addrinfo_send (const int fd, const int msec,
-                          struct addrinfo * const restrict ai)
+bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
+                                     struct addrinfo * const restrict ai)
 {
     /* msg sent atomically, or else not transmitted: error w/ errno==EMSGSIZE */
     /* Note: struct addrinfo contains pointers.  These are not valid on other
@@ -729,8 +730,8 @@ bindsocket_client_session (const int cfd,
     alarm(2);
 
     /* receive addrinfo from client */
-    if (!(5 != argc
-          ? bindsocket_addrinfo_recv(cfd, -1, &ai) /*(-1 for infinite poll)*/
+    if (!(5 != argc                               /*(-1 for infinite poll)*/
+          ? bindsocket_unixdomain_recv_addrinfo(cfd, -1, &ai)
           : bindsocket_addrinfo_from_strings(&ai, argv[0], argv[1],
                                              argv[2], argv[3], argv[4]))) {
         alarm(0); /* not strictly needed since callers exit upon return */
@@ -1132,7 +1133,7 @@ main (int argc, char *argv[])
             iaddr.sin_family = AF_INET;
             iaddr.sin_port   = htons(8080);
             iaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-            if (!bindsocket_addrinfo_send(sfd, -1, &ai))
+            if (!bindsocket_unixdomain_send_addrinfo(sfd, -1, &ai))
                 return EXIT_FAILURE;
           #else
             const char * const msg = "AF_INET SOCK_STREAM tcp 8080 0.0.0.0";
