@@ -232,7 +232,7 @@ retry_close (const int fd)
     return r;
 }
 
-static ssize_t
+static int
 retry_poll_fd (const int fd, const short events, const int timeout)
 {
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
@@ -243,9 +243,9 @@ retry_poll_fd (const int fd, const short events, const int timeout)
 }
 
 static ssize_t
-unix_domain_recvmsg (const int fd,
-                     struct iovec * const restrict iov,
-                     const size_t iovlen)
+bindsocket_unixdomain_recvmsg (const int fd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen)
 {
     /* (nonblocking recvmsg(); caller might poll() before call to here)*/
     ssize_t r;
@@ -295,10 +295,11 @@ unix_domain_recvmsg (const int fd,
     return r;
 }
 
+#if 0  /* sample client code */
 static ssize_t
-unix_domain_sendmsg (const int fd,
-                     struct iovec * const restrict iov,
-                     const size_t iovlen)
+bindsocket_unixdomain_sendmsg (const int fd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen)
 {
     /* (nonblocking sendmsg(); caller might poll() before call to here)*/
     /* (caller should handle EAGAIN and EWOULDBLOCK) */
@@ -318,14 +319,16 @@ unix_domain_sendmsg (const int fd,
         syslog_perror("sendmsg", errno);
     return w;
 }
+#endif
 
+#if 0  /* sample client code corresponding to bindsocket_unixdomain_send_fd() */
 static int
-unix_domain_recv_fd (const int fd)
+bindsocket_unixdomain_recv_fd (const int fd)
 {
     /* receive and return file descriptor sent over unix domain socket */
     /* 'man cmsg' provides example code */
     ssize_t r;
-    char iovbuf[4]; /* match data size of iovbuf in unix_domain_send_fd() */
+    char iovbuf[4];/*match iovbuf data size in bindsocket_unixdomain_send_fd()*/
     struct iovec iov = { .iov_base = iovbuf, .iov_len = sizeof(iovbuf) };
     /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
     char ctrlbuf[108]; /* BSD mbuf is 108 */
@@ -340,7 +343,6 @@ unix_domain_recv_fd (const int fd)
     };
     struct cmsghdr *cmsg;
     int rfd = -1;
-    if (1 != retry_poll_fd(fd, POLLIN|POLLRDHUP, -1)) return -1;
     do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
     if (r < 1) { /* EOF (r=0) or error (r=-1) */
         if (-1 == r) syslog_perror("recvmsg", errno);
@@ -372,9 +374,10 @@ unix_domain_recv_fd (const int fd)
     }
     return rfd;
 }
+#endif
 
 static bool
-unix_domain_send_fd (const int cfd, const int fd)
+bindsocket_unixdomain_send_fd (const int cfd, const int fd)
 {
     /* pass any non-zero-length data so client can distinguish msg from EOF */
     /* 'man cmsg' provides sample code */
@@ -406,8 +409,9 @@ unix_domain_send_fd (const int cfd, const int fd)
     return (-1 != w);
 }
 
+#if 0  /* sample client code */
 static int
-unix_domain_socket_connect (const char * const restrict sockpath)
+bindsocket_unixdomain_socket_connect (const char * const restrict sockpath)
 {
     /* connect to unix domain socket */
     /* (not bothering to retry socket() and connect(); lazy) */
@@ -428,9 +432,10 @@ unix_domain_socket_connect (const char * const restrict sockpath)
     retry_close(fd);
     return -1;
 }
+#endif
 
 static int
-unix_domain_socket_bind_listen (const char * const restrict sockpath)
+bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
 {
     /* bind and listen to unix domain socket */
     /* (not bothering to retry bind() and listen(); lazy) */
@@ -485,7 +490,8 @@ bindsocket_recv_addrinfo (const int fd, const int msec,
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
     if (1 != retry_poll_fd(fd, POLLIN|POLLRDHUP, msec)) return false;
-    ssize_t r = unix_domain_recvmsg(fd, iov, sizeof(iov)/sizeof(struct iovec));
+    ssize_t r =
+      bindsocket_unixdomain_recvmsg(fd, iov, sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
     if (r < sizeof(protover))
@@ -533,6 +539,7 @@ bindsocket_recv_addrinfo (const int fd, const int msec,
     return false;
 }
 
+#if 0  /* sample client code corresponding to bindsocket_recv_addrinfo() */
 static bool
 bindsocket_send_addrinfo (const int fd, const int msec,
                           struct addrinfo * const restrict ai)
@@ -548,9 +555,11 @@ bindsocket_send_addrinfo (const int fd, const int msec,
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
     if (1 != retry_poll_fd(fd, POLLOUT, msec)) return false;
-    ssize_t w = unix_domain_sendmsg(fd, iov, sizeof(iov)/sizeof(struct iovec));
+    ssize_t w =
+      bindsocket_unixdomain_sendmsg(fd, iov, sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
 }
+#endif
 
 #ifdef __linux__
 /* obtain peer credentials
@@ -587,7 +596,7 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 
 static bool
 bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
-                                 const uid_t uid, const gid_t gid)
+                                   const uid_t uid, const gid_t gid)
 {
     /* Note: no process optimization implemented
      *       (numerous options for caching, improving performance if needed) */
@@ -727,7 +736,9 @@ bindsocket_client_session (const int cfd,
         if (   0 <= (fd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol))
             && 0 == setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
             && 0 == bind(fd, (struct sockaddr *)ai.ai_addr, ai.ai_addrlen))
-            rc = unix_domain_send_fd(cfd, fd) ? EXIT_SUCCESS : EXIT_FAILURE;
+            rc = bindsocket_unixdomain_send_fd(cfd, fd)
+               ? EXIT_SUCCESS
+               : EXIT_FAILURE;
         else
             syslog_perror("socket,setsockopt,bind", errno);
 
@@ -944,7 +955,7 @@ bindsocket_daemon_init_socket (void)
     }
 
     mask = umask(0177); /* create socket with very restricted permissions */
-    sfd = unix_domain_socket_bind_listen(BINDSOCKET_SOCKET);
+    sfd = bindsocket_unixdomain_socket_bind_listen(BINDSOCKET_SOCKET);
     umask(mask);        /* restore prior umask */
     if (-1 == sfd)
         return -1;
@@ -962,7 +973,7 @@ bindsocket_daemon_init_socket (void)
 }
 
 int
-bindsocket_daemon_main (int argc, char *argv[])
+main (int argc, char *argv[])
 {
     int sfd, cfd, daemon = false, supervised = false;
 
@@ -1054,6 +1065,7 @@ bindsocket_daemon_main (int argc, char *argv[])
 
 
 
+#if 0
 
 /* define _BSD_SOURCE prior to #include <grp.h> for prototype of setgroups() */
 int setgroups(size_t size, const gid_t *list);
@@ -1089,7 +1101,7 @@ main (int argc, char *argv[])
         }
         else {
             poll(NULL, 0, 100); /* give daemon a chance to start up */
-            sfd = unix_domain_socket_connect(BINDSOCKET_SOCKET);
+            sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
         }
         if (-1 == sfd)
             return EXIT_FAILURE;
@@ -1124,7 +1136,9 @@ main (int argc, char *argv[])
           #endif
         }
 
-        int fd = unix_domain_recv_fd(sfd);
+        int fd = (1 == retry_poll_fd(fd, POLLIN|POLLRDHUP, -1))
+          ? bindsocket_unixdomain_recv_fd(fd)
+          : -1;
         retry_close(sfd);
         fprintf(stderr, "received fd: %d\n", fd);
         /* document: caller should check sanity: fd >= 0 */
@@ -1148,3 +1162,5 @@ main (int argc, char *argv[])
         return EXIT_SUCCESS;
     }
 }
+
+#endif
