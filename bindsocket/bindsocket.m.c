@@ -87,8 +87,7 @@ bindsocket_openlog (void)
     openlog(BINDSOCKET_SYSLOG_IDENT, LOG_NOWAIT, BINDSOCKET_SYSLOG_FACILITY);
 }
 
-/* GPS: remove 'static' for now */
-void __attribute__((noinline)) __attribute__((cold))
+static void __attribute__((noinline)) __attribute__((cold))
 syslog_perror (const char * const restrict str, const int errnum)
 {
     /* (not written to use vsyslog(); lazy
@@ -127,12 +126,16 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                                    const uid_t uid, const gid_t gid)
 {
     /* Note: no process optimization implemented
-     *       (numerous options for caching, improving performance if needed) */
+     *       (numerous options for caching, improving performance if needed)
+     *       (e.g. reading and caching config file by uid in parent daemon
+     *        and re-reading configuration file upon receiving HUP signal) */
+    /* <<<FUTURE: separate program to detect non-canonical str representations*/
     /* <<<FUTURE: better error messages for config file errors */
 
-    char *username, *family, *socktype, *protocol, *service, *addr;
+    char *family, *socktype, *protocol, *service, *addr;
     FILE *cfg;
     struct passwd *pw;
+    size_t pw_namelen;
     struct addrinfo *gai;
     struct addrinfo hints = {
       .ai_flags     = AI_V4MAPPED | AI_ADDRCONFIG,
@@ -150,6 +153,9 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
 
     if (uid == 0 || gid == 0)  /* permit root or wheel */
         return true;
+    if (NULL == (pw = getpwuid(uid)))
+        return false;
+    pw_namelen = strlen(pw->pw_name);
 
     if (NULL == (cfg = fopen(BINDSOCKET_CONFIG, "r"))) {
         syslog_perror(BINDSOCKET_CONFIG, errno);
@@ -162,35 +168,30 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     }
 
     while (!feof(cfg) && !ferror(cfg)) {
-        if (NULL == fgets(line, sizeof(line), cfg))
-            continue;  /* EOF or error reading file */
-        if (*line == '#' || *line == '\n')
-            continue;  /* comment or blank line */
-        if (   NULL == (username = strtok(line, " "))
-            || NULL == (family   = strtok(NULL, " "))
-            || NULL == (socktype = strtok(NULL, " "))
-            || NULL == (protocol = strtok(NULL, " "))
-            || NULL == (service  = strtok(NULL, " "))
-            || NULL == (addr     = strtok(NULL, " "))
-            || NULL != (           strtok(NULL, " "))) {
-            syslog_perror("bindsocket config file error", 0);
+        if (NULL == fgets(line, sizeof(line), cfg) /* EOF or err reading file */
+            || *line == '#' || *line == '\n'       /* comment or blank line */
+            || 0 != memcmp(line, pw->pw_name, pw_namelen)
+            || line[pw_namelen] != ' ')            /* username not a match */
+            continue;
+
+        if (!bindsocket_addrinfo_split_str(line+pw_namelen+1, &family,
+                                           &socktype,&protocol,&service,&addr)){
+            syslog_perror("bindsocket config file error", errno);
             continue;
         }
         hints.ai_family   = bindsocket_addrinfo_family_from_str(family);
         hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(socktype);
         hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(protocol);
-        if ( NULL == (pw = getpwnam(username))
-            || -1 == hints.ai_family
+        if (   -1 == hints.ai_family
             || -1 == hints.ai_socktype
             || -1 == hints.ai_protocol) {
-            syslog_perror("bindsocket config file error", 0);
+            syslog_perror("bindsocket config file error", errno);
             continue;
         }
-
-        if (   pw->pw_uid != uid                 /* not unspecified by client */
-            || (hints.ai_family  != ai->ai_family && AF_UNSPEC != ai->ai_family)
+                                                 /* not unspecified by client */
+        if (  (hints.ai_family   != ai->ai_family && AF_UNSPEC != ai->ai_family)
             || hints.ai_socktype != ai->ai_socktype
-            || (hints.ai_protocol != ai->ai_protocol && 0 != ai->ai_protocol))
+            ||(hints.ai_protocol != ai->ai_protocol && 0 != ai->ai_protocol))
             continue;  /* not a match */
 
         if (hints.ai_family == AF_INET || hints.ai_family == AF_INET6) {
@@ -257,8 +258,8 @@ bindsocket_client_session (const int cfd,
     /* receive addrinfo from client */
     if (!(5 != argc                               /*(-1 for infinite poll)*/
           ? bindsocket_unixdomain_recv_addrinfo(cfd, -1, &ai)
-          : bindsocket_addrinfo_from_strings(&ai, argv[0], argv[1],
-                                             argv[2], argv[3], argv[4]))) {
+          : bindsocket_addrinfo_from_strs(&ai, argv[0], argv[1],
+                                          argv[2], argv[3], argv[4]))) {
         alarm(0); /* not strictly needed since callers exit upon return */
         syslog_perror("recv addrinfo error or invalid addrinfo", errno);
         return EXIT_FAILURE;
@@ -539,6 +540,8 @@ main (int argc, char *argv[])
                     return (sfd == 'h' ? EXIT_SUCCESS : EXIT_FAILURE);
         }
     }
+    argc -= optind;
+    argv += optind;
 
     /*
      * one-shot mode; handle single request and exit
@@ -546,15 +549,26 @@ main (int argc, char *argv[])
 
     if (!daemon) {
         struct stat st;
+        char *args[5];
         if (0 != fstat(STDIN_FILENO, &st)) {
             syslog_perror("fstat stdin", errno);
             return EXIT_FAILURE;
         }
-        if (S_ISSOCK(st.st_mode))
-            return bindsocket_client_session(STDIN_FILENO,
-                                             argc-optind, argv+optind);
-        syslog_perror("invalid socket on bindsocket stdin", 0);
-        return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot mode */
+        if (!S_ISSOCK(st.st_mode)) {
+            syslog_perror("invalid socket on bindsocket stdin", 0);
+            return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
+        }
+        if (1 == argc) {
+            if (!bindsocket_addrinfo_split_str(argv[0], &args[0], &args[1],
+                                               &args[2], &args[3], &args[4])) {
+                syslog_perror("invalid address info arguments", 0);
+                return EXIT_FAILURE;
+            }
+            argc = 5;
+            argv = args;
+        }
+
+        return bindsocket_client_session(STDIN_FILENO, argc, argv);
     }
 
     /*

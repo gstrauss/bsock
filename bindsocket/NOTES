@@ -19,7 +19,8 @@
  * file for bindsocket specifies which users can request sockets on which 
  * addresses and ports.  bindsocket authorizes the socket request, binds to
  * the address and port, and then passes the bound socket back to the client
- * over the unix domain socket.  The daemon can then listen() to the socket as
+ * over the unix domain socket.  The daemon can set socket options such as
+ * SO_KEEPALIVE, SO_SNDBUF, SO_RCVBUF, etc and then listen() to the socket as
  * if it had called bind() itself.
  *
  * Another option for using bindsocket is to install it as setuid root program.
@@ -90,8 +91,19 @@
  *
  *
  * FUTURE:
+ * - is there a process which cleans out /var/run/ regularly and
+ *     deleted /var/run/bindsocket/config?
  * - provide example client code that interfaces with bindsocket for popular
- *   programs such as Apache.
+ *   programs such as Apache.  (Also: graceful Apache restart via transferring
+ *   the listening socket(s))
+ * - create install target that installs bindsocket setuid root
+ *   and created /var/run/bindsocket/ with proper permissions
+ * - create test target that compiles with overrides and config file
+ *   so that test can occur without root privilege
+ *   (create directory with config file 700 for test)
+ * - might create struct to contain string pointers for
+ *     family, socktype, protocol, service, addr strings
+ * - run programs with memory leak generators and stuff
  * - port and test bindsocket on additional platforms (FreeBSD, OpenBSD, ...)
  * - sysctl can prevent accidental usage of specific non-privileged ports
  *   http://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt

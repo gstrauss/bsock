@@ -102,10 +102,10 @@ main (int argc, char *argv[])
     else {
         poll(NULL, 0, 100); /* give daemon a chance to start up */
         sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
-    }
-    if (-1 == sfd) {
-        perror("bindsocket_unixdomain_socket_connect");
-        return EXIT_FAILURE;
+        if (-1 == sfd) {
+            perror("bindsocket_unixdomain_socket_connect "BINDSOCKET_SOCKET);
+            return EXIT_FAILURE;
+        }
     }
 
     if (6 != argc) {

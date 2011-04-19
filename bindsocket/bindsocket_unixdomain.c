@@ -235,8 +235,10 @@ bindsocket_unixdomain_recv_fd (const int fd)
     struct cmsghdr *cmsg;
     int rfd = -1;
     do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
-    if (r < 1)  /* EOF (r=0) or error (r=-1) */
+    if (r < 1) {  /* EOF (r=0) or error (r=-1) */
+        if (0 == r && 0 == errno) errno = EPIPE;
         return -1;
+    }
 
     /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
     /*(MSG_CTRUNC is unexpected from bindsocket daemon; notable error/attack)*/
@@ -352,14 +354,10 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
         ai->ai_addrlen = iov[2].iov_len;
         ai->ai_addr    = (struct sockaddr *)iov[2].iov_base;
 
-        if (   NULL != (family   = strtok(line, " "))
-            && NULL != (socktype = strtok(NULL, " "))
-            && NULL != (protocol = strtok(NULL, " "))
-            && NULL != (service  = strtok(NULL, " "))
-            && NULL != (addr     = strtok(NULL, " "))
-            && NULL == (           strtok(NULL, " ")))
-            return bindsocket_addrinfo_from_strings(ai, family, socktype,
-                                                    protocol, service, addr);
+        if (bindsocket_addrinfo_split_str(line, &family, &socktype, &protocol,
+                                          &service, &addr))
+            return bindsocket_addrinfo_from_strs(ai, family, socktype,
+                                                 protocol, service, addr);
 
         return false;  /* invalid client request; truncated msg */
     }
