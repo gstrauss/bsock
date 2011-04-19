@@ -125,103 +125,57 @@ static bool
 bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                                    const uid_t uid, const gid_t gid)
 {
-    /* Note: no process optimization implemented
+    /* Note: client must specify address family; AF_UNSPEC not supported
+     * Note: no process optimization implemented
      *       (numerous options for caching, improving performance if needed)
      *       (e.g. reading and caching config file by uid in parent daemon
      *        and re-reading configuration file upon receiving HUP signal) */
-    /* <<<FUTURE: separate program to detect non-canonical str representations*/
-    /* <<<FUTURE: better error messages for config file errors */
 
     char *family, *socktype, *protocol, *service, *addr;
     FILE *cfg;
     struct passwd *pw;
-    size_t pw_namelen;
-    struct addrinfo *gai;
-    struct addrinfo hints = {
-      .ai_flags     = AI_V4MAPPED | AI_ADDRCONFIG,
-      /* ai_family, ai_socktype, ai_protocol are filled in from config file */
-      .ai_addrlen   = 0,
-      .ai_addr      = NULL,
-      .ai_canonname = NULL,
-      .ai_next      = NULL
-    };
-    int r;
-    const uid_t euid = geteuid();
+    size_t cmplen;
     struct stat st;
-    char line[256];
+    char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
+    char cmpstr[256]; /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
+    char bufstr[160]; /* AF_UNIX, AF_INET, AF_INET6 bindsocket string */
     bool rc = false;
 
     if (uid == 0 || gid == 0)  /* permit root or wheel */
         return true;
     if (NULL == (pw = getpwuid(uid)))
         return false;
-    pw_namelen = strlen(pw->pw_name);
+
+    /* convert username and addrinfo to string for comparison with config file
+     * (validate and canonicalize user input)
+     * (user input converted to addrinfo and back to str to canonicalize str) */
+    if (!bindsocket_addrinfo_to_strs(ai, bufstr, sizeof(bufstr), &family,
+                                     &socktype, &protocol, &service, &addr)) {
+            syslog_perror("addrinfo string expansion is too long", ENOSPC);
+            return false;
+    }
+    cmplen = snprintf(cmpstr, sizeof(cmpstr), "%s %s %s %s %s %s\n",
+                      pw->pw_name, family, socktype, protocol, service, addr);
+    if (cmplen >= sizeof(cmpstr)) {
+            syslog_perror("addrinfo string expansion is too long", ENOSPC);
+            return false;
+    }
 
     if (NULL == (cfg = fopen(BINDSOCKET_CONFIG, "r"))) {
         syslog_perror(BINDSOCKET_CONFIG, errno);
         return false;
     }
-    if (0 != fstat(fileno(cfg), &st)
-        || st.st_uid != euid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
+    if (0 == fstat(fileno(cfg), &st)
+        && st.st_uid == geteuid() && !(st.st_mode & (S_IWGRP|S_IWOTH))) {
+        /* compare username and addrinfo string; skip # comments, blank lines */
+        while (!rc && NULL != fgets(line, sizeof(line), cfg))
+            rc = (0 == memcmp(line, cmpstr, cmplen));
+        if (!rc)
+            syslog_perror("permission denied", 0);
+    }
+    else
         syslog_perror("ownership/permissions incorrect on "BINDSOCKET_CONFIG,0);
-        return false;
-    }
 
-    while (!feof(cfg) && !ferror(cfg)) {
-        if (NULL == fgets(line, sizeof(line), cfg) /* EOF or err reading file */
-            || *line == '#' || *line == '\n'       /* comment or blank line */
-            || 0 != memcmp(line, pw->pw_name, pw_namelen)
-            || line[pw_namelen] != ' ')            /* username not a match */
-            continue;
-
-        if (!bindsocket_addrinfo_split_str(line+pw_namelen+1, &family,
-                                           &socktype,&protocol,&service,&addr)){
-            syslog_perror("bindsocket config file error", errno);
-            continue;
-        }
-        hints.ai_family   = bindsocket_addrinfo_family_from_str(family);
-        hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(socktype);
-        hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(protocol);
-        if (   -1 == hints.ai_family
-            || -1 == hints.ai_socktype
-            || -1 == hints.ai_protocol) {
-            syslog_perror("bindsocket config file error", errno);
-            continue;
-        }
-                                                 /* not unspecified by client */
-        if (  (hints.ai_family   != ai->ai_family && AF_UNSPEC != ai->ai_family)
-            || hints.ai_socktype != ai->ai_socktype
-            ||(hints.ai_protocol != ai->ai_protocol && 0 != ai->ai_protocol))
-            continue;  /* not a match */
-
-        if (hints.ai_family == AF_INET || hints.ai_family == AF_INET6) {
-            if (0 == (r = getaddrinfo(addr, service, &hints, &gai))) {
-                /* gai->ai_next *not* checked; not using hints.ai_flags = AI_ALL
-                 * config file should have specific addrs that each match one */
-                if (   gai->ai_addrlen == ai->ai_addrlen
-                    || 0 == memcmp(gai->ai_addr, ai->ai_addr, ai->ai_addrlen)) {
-                    freeaddrinfo(gai);
-                    rc = true;
-                    break;  /* match; success */
-                } /* else not a match */
-                freeaddrinfo(gai);
-            }
-            else
-                syslog_perror("getaddrinfo", 0); /* gai_strerror(r) */
-        }
-        else if (hints.ai_family == AF_UNIX) {
-            if (0 == strncmp(((struct sockaddr_un *)ai->ai_addr)->sun_path,
-                             addr, ai->ai_addrlen)) {
-                rc = true;
-                break;  /* match; success */
-            } /* else not a match */
-        }
-        /* (else not supported by bindsocket, or config file error) */
-    }
-
-    if (!rc) {
-        syslog_perror("permission denied", 0);
-    }
     fclose(cfg);  /* not required; bindsocket_client_session() exits soon */
     return rc;
 }

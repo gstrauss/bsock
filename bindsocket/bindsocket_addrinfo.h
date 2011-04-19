@@ -38,15 +38,6 @@
 extern "C" {
 #endif
 
-int
-bindsocket_addrinfo_family_from_str (const char * const family);
-
-int
-bindsocket_addrinfo_socktype_from_str (const char * const restrict socktype);
-
-int
-bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol);
-
 bool
 bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
                               const char * const restrict family,
@@ -54,6 +45,15 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
                               const char * const restrict protocol,
                               const char * const restrict service,
                               const char * const restrict addr);
+
+bool
+bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
+                            char * const restrict buf, const size_t bufsz,
+                            char ** const family,
+                            char ** const socktype,
+                            char ** const protocol,
+                            char ** const service,
+                            char ** const addr);
 
 bool
 bindsocket_addrinfo_split_str(char * const restrict buf,

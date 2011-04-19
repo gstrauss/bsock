@@ -44,7 +44,7 @@
  * Similarly, simple string parsing routines like strtok() are used, even though
  * less string traversals could be achieved through additional coding */
 
-int
+static int
 bindsocket_addrinfo_family_from_str (const char * const family)
 {
     /* list of protocol families below is not complete */
@@ -70,7 +70,7 @@ bindsocket_addrinfo_family_from_str (const char * const family)
     }
 }
 
-const char *
+static const char *
 bindsocket_addrinfo_family_to_str (const int family)
 {
     /* list of protocol families below is not complete */
@@ -84,7 +84,7 @@ bindsocket_addrinfo_family_to_str (const int family)
     }
 }
 
-int
+static int
 bindsocket_addrinfo_socktype_from_str (const char * const restrict socktype)
 {
     if (     0 == strcmp(socktype, "SOCK_STREAM"))
@@ -107,7 +107,7 @@ bindsocket_addrinfo_socktype_from_str (const char * const restrict socktype)
     }
 }
 
-const char *
+static const char *
 bindsocket_addrinfo_socktype_to_str (const int socktype)
 {
     switch (socktype) {
@@ -123,14 +123,14 @@ bindsocket_addrinfo_socktype_to_str (const int socktype)
     }
 }
 
-int
+static int
 bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
     struct protoent * const restrict pe = getprotobyname(protocol);
     return (pe != NULL ? pe->p_proto : (errno = EPROTONOSUPPORT, -1));
 }
 
-const char *
+static const char *
 bindsocket_addrinfo_protocol_to_str (const int proto)
 {
     struct protoent * const restrict pe = getprotobynumber(proto);
@@ -211,7 +211,7 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
 }
 
 bool
-bindsocket_addrinfo_to_strs(struct addrinfo * const restrict ai,
+bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
                             char * const restrict buf, const size_t bufsz,
                             char ** const family,
                             char ** const socktype,
