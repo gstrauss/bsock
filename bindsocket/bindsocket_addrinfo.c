@@ -35,7 +35,6 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 
@@ -45,7 +44,7 @@
  * less string traversals could be achieved through additional coding */
 
 static int
-bindsocket_addrinfo_family_from_str (const char * const family)
+bindsocket_addrinfo_family_from_str (const char * const restrict family)
 {
     /* list of protocol families below is not complete */
     if (        0 == strcmp(family, "AF_INET")
@@ -139,11 +138,8 @@ bindsocket_addrinfo_protocol_to_str (const int proto)
 
 bool
 bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
-                              const char * const restrict family,
-                              const char * const restrict socktype,
-                              const char * const restrict protocol,
-                              const char * const restrict service,
-                              const char * const restrict addr)
+                              const struct bindsocket_addrinfo_strs *
+                                const restrict aistr)
 {
     struct addrinfo hints = {
       .ai_flags     = AI_V4MAPPED | AI_ADDRCONFIG,
@@ -152,19 +148,17 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
       .ai_canonname = NULL,
       .ai_next      = NULL
     };
-    hints.ai_family   = bindsocket_addrinfo_family_from_str(family);
-    hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(socktype);
-    hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(protocol);
-    if (   -1 == hints.ai_family
-        || -1 == hints.ai_socktype
-        || -1 == hints.ai_protocol)
+    hints.ai_family   = bindsocket_addrinfo_family_from_str(aistr->family);
+    hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(aistr->socktype);
+    hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(aistr->protocol);
+    if (-1==hints.ai_family || -1==hints.ai_socktype || -1==hints.ai_protocol)
         return false;  /* invalid strings */
 
     if (hints.ai_family == AF_INET || hints.ai_family == AF_INET6) {
         struct addrinfo *gai;
         int r;
-        if (0 == (r = getaddrinfo(addr, service, &hints, &gai))) {
-            /* gai->ai_next *not* used; not using gai.ai_flags = AI_ALL */
+        if (0 == (r = getaddrinfo(aistr->addr, aistr->service, &hints, &gai))) {
+            /* gai->ai_next *not* used; not using gai->ai_flags = AI_ALL */
             if (ai->ai_addrlen >= gai->ai_addrlen) {
                 ai->ai_flags     = 0;
                 ai->ai_family    = gai->ai_family;
@@ -187,7 +181,7 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
         return false;
     }
     else if (hints.ai_family == AF_UNIX) {
-        const size_t len = strlen(addr);
+        const size_t len = strlen(aistr->addr);
         if (len < sizeof(((struct sockaddr_un *)0)->sun_path)
             && sizeof(struct sockaddr_un) <= ai->ai_addrlen) {
             ai->ai_flags    = 0;
@@ -198,7 +192,8 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
             ai->ai_canonname= NULL;
             ai->ai_next     = NULL;
             ((struct sockaddr_un *)ai->ai_addr)->sun_family = AF_UNIX;
-            memcpy(((struct sockaddr_un *)ai->ai_addr)->sun_path, addr, len+1);
+            memcpy(((struct sockaddr_un *)ai->ai_addr)->sun_path,
+                   aistr->addr, len+1);
             return true;
         }
         errno = ENOSPC;
@@ -212,73 +207,61 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
 
 bool
 bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
-                            char * const restrict buf, const size_t bufsz,
-                            char ** const family,
-                            char ** const socktype,
-                            char ** const protocol,
-                            char ** const service,
-                            char ** const addr)
+                            struct bindsocket_addrinfo_strs * const aistr,
+                            char * const restrict buf, const size_t bufsz)
 {
-    size_t sz = 0;
-    const char * const restrict ai_family =
-      bindsocket_addrinfo_family_to_str(ai->ai_family);
-    const char * const restrict ai_socktype =
-      bindsocket_addrinfo_socktype_to_str(ai->ai_socktype);
-    const char * const restrict ai_protocol =
-      bindsocket_addrinfo_protocol_to_str(ai->ai_protocol);
-    if (NULL == family || NULL == socktype || NULL == protocol)
+    /* (Note: buf should be at least 56 bytes for IPv6 tcp + port + address)
+     * (Recommended bufsz is >= 68 for 15 char protocol, and 80 for safety)
+     * (Recommended bufsz is 128 if code changed to copy AF_UNIX sun_path) */
+    size_t protolen;
+    aistr->family   = bindsocket_addrinfo_family_to_str(ai->ai_family);
+    aistr->socktype = bindsocket_addrinfo_socktype_to_str(ai->ai_socktype);
+    aistr->protocol = bindsocket_addrinfo_protocol_to_str(ai->ai_protocol);
+    if (NULL==aistr->family || NULL==aistr->socktype || NULL==aistr->protocol)
         return false;
-
-    /* getservbyport() could be called on port for service name of port
-     * However, number string of port is printed since addresses and ports are
-     * sometimes used for purposes other than standard service of that port
-     * and the numeric string is more readable for the purposes of bindsocket */
-
-    /* Walking through strings would be more efficient, but snprintf
-     * and line split is simpler.  (Revisit if bottleneck (not likely)) */
-
-    if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
-        char addrstr[INET6_ADDRSTRLEN];
-        /* (sin_port is at same offset in struct sockaddr_in, sockaddr_in6) */
-        const uint16_t port =
-          ntohs(((struct sockaddr_in *)ai->ai_addr)->sin_port);
-        if (NULL == inet_ntop(ai->ai_family, ai->ai_addr,
-                              addrstr, sizeof(addrstr)))
-            return false;
-        sz = snprintf(buf, bufsz, "%s %s %s %hu %s",
-                      ai_family, ai_socktype, ai_protocol, port, addrstr);
+    protolen = strlen(aistr->protocol) + 1; /* +1 for '\0' */
+    if (protolen <= bufsz) { /*copy str into buf for more predictable lifetime*/
+        memcpy(buf+bufsz-protolen, aistr->protocol, protolen);
+        aistr->protocol = buf+bufsz-protolen;
     }
-    else if (ai->ai_family == AF_UNIX) {
-        sz = snprintf(buf, bufsz, "%s %s %s 0 %s",
-                      ai_family, ai_socktype, ai_protocol,
-                      ((struct sockaddr_un *)ai->ai_addr)->sun_path);
-    }
-    else { /* (addr family not supported here (parsing code not written)) */
-        errno = EAFNOSUPPORT;
-        return false;
-    }
-
-    if (sz >= bufsz) {
+    else {
         errno = ENOSPC;
         return false;
     }
 
-    return bindsocket_addrinfo_split_str(buf, family, socktype,
-                                         protocol, service, addr);
+    if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
+        if (INET6_ADDRSTRLEN + 6 + protolen > bufsz) {
+            errno = ENOSPC;
+            return false;
+        }
+        aistr->service = aistr->protocol - 6; /* 6 for short port num str */
+        aistr->addr = buf;
+        if (0 == getnameinfo(ai->ai_addr, ai->ai_addrlen,
+                             buf, bufsz-protolen-6, /*max addr sz*/
+                             buf+bufsz-protolen-6, 6,
+                             NI_NUMERICHOST|NI_NUMERICSERV))
+            return true;
+    }
+    else if (ai->ai_family == AF_UNIX) {
+        aistr->service = "0";
+        aistr->addr    = ((struct sockaddr_un *)ai->ai_addr)->sun_path;
+        return true;
+    }
+    else  /* (addr family not supported here (parsing code not written)) */
+        errno = EAFNOSUPPORT;
+
+    return false;
 }
 
 bool
-bindsocket_addrinfo_split_str(char * const restrict buf,
-                              char ** const family,
-                              char ** const socktype,
-                              char ** const protocol,
-                              char ** const service,
-                              char ** const addr)
+bindsocket_addrinfo_split_str(struct bindsocket_addrinfo_strs * const aistr,
+                              char * const restrict str)
 {
-    return (   NULL != (*family   = strtok(buf,  " "))
-            && NULL != (*socktype = strtok(NULL, " "))
-            && NULL != (*protocol = strtok(NULL, " "))
-            && NULL != (*service  = strtok(NULL, " "))
-            && NULL != (*addr     = strtok(NULL, " "))
-            && NULL == (            strtok(NULL, " "))) || (errno=EINVAL,false);
+    return (   NULL != (aistr->family   = strtok(str,  " "))
+            && NULL != (aistr->socktype = strtok(NULL, " "))
+            && NULL != (aistr->protocol = strtok(NULL, " "))
+            && NULL != (aistr->service  = strtok(NULL, " "))
+            && NULL != (aistr->addr     = strtok(NULL, " "))
+            && NULL == (                  strtok(NULL, " "))
+           ) || (errno = EINVAL, false);
 }

@@ -339,7 +339,7 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
     else if (0 == memcmp(((char *)&protover)+1, "F_", 2)) {
         /* protover taken as char string beginning "AF_" or "PF_" */
         /* collapse iovec array into string, parse into tokens, fill addrinfo */
-        char *family, *socktype, *protocol, *service, *addr;
+        struct bindsocket_addrinfo_strs aistr;
         char line[256];
         if (r >= sizeof(line)) return false; /* should not happen */
         /*(sizeof(protover)+sizeof(struct addrinfo) == 40; fits in line[256])*/
@@ -354,15 +354,12 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
         ai->ai_addrlen = iov[2].iov_len;
         ai->ai_addr    = (struct sockaddr *)iov[2].iov_base;
 
-        if (bindsocket_addrinfo_split_str(line, &family, &socktype, &protocol,
-                                          &service, &addr))
-            return bindsocket_addrinfo_from_strs(ai, family, socktype,
-                                                 protocol, service, addr);
-
-        return false;  /* invalid client request; truncated msg */
+        return bindsocket_addrinfo_split_str(&aistr, line)
+          ? bindsocket_addrinfo_from_strs(ai, &aistr)
+          : false;  /* invalid client request; truncated msg */
     }
 
-    return false;
+    return false;   /* invalid client request; undecipherable format */
 }
 
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */

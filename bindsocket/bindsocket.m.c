@@ -126,19 +126,21 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                                    const uid_t uid, const gid_t gid)
 {
     /* Note: client must specify address family; AF_UNSPEC not supported
-     * Note: no process optimization implemented
+     * Note: minimal process optimization implemented (room for improvement)
      *       (numerous options for caching, improving performance if needed)
      *       (e.g. reading and caching config file by uid in parent daemon
-     *        and re-reading configuration file upon receiving HUP signal) */
+     *        and re-reading configuration file upon receiving HUP signal,
+     *        or, better, storing strings in mcdb, and re-open mcdb upon HUP) */
 
-    char *family, *socktype, *protocol, *service, *addr;
+    char *p;
+    struct bindsocket_addrinfo_strs aistr;
     FILE *cfg;
     struct passwd *pw;
     size_t cmplen;
     struct stat st;
     char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
     char cmpstr[256]; /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
-    char bufstr[160]; /* AF_UNIX, AF_INET, AF_INET6 bindsocket string */
+    char bufstr[80];  /* buffer for use by bindsocket_addrinfo_to_strs() */
     bool rc = false;
 
     if (uid == 0 || gid == 0)  /* permit root or wheel */
@@ -149,17 +151,38 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     /* convert username and addrinfo to string for comparison with config file
      * (validate and canonicalize user input)
      * (user input converted to addrinfo and back to str to canonicalize str) */
-    if (!bindsocket_addrinfo_to_strs(ai, bufstr, sizeof(bufstr), &family,
-                                     &socktype, &protocol, &service, &addr)) {
-            syslog_perror("addrinfo string expansion is too long", ENOSPC);
-            return false;
+    if (!bindsocket_addrinfo_to_strs(ai, &aistr, bufstr, sizeof(bufstr))) {
+        syslog_perror("addrinfo string expansion is too long", ENOSPC);
+        return false;
     }
+  #if 0
     cmplen = snprintf(cmpstr, sizeof(cmpstr), "%s %s %s %s %s %s\n",
-                      pw->pw_name, family, socktype, protocol, service, addr);
+                      pw->pw_name, aistr.family, aistr.socktype, aistr.protocol,
+                      aistr.service, aistr.addr);
     if (cmplen >= sizeof(cmpstr)) {
             syslog_perror("addrinfo string expansion is too long", ENOSPC);
             return false;
     }
+  #else
+    if (    NULL==(p=memccpy(cmpstr,pw->pw_name,'\0',sizeof(cmpstr)))
+        || (*(p-1) = ' ',
+            NULL==(p=memccpy(p,aistr.family,  '\0',sizeof(cmpstr)-(p-cmpstr))))
+        || (*(p-1) = ' ',
+            NULL==(p=memccpy(p,aistr.socktype,'\0',sizeof(cmpstr)-(p-cmpstr))))
+        || (*(p-1) = ' ',
+            NULL==(p=memccpy(p,aistr.protocol,'\0',sizeof(cmpstr)-(p-cmpstr))))
+        || (*(p-1) = ' ',
+            NULL==(p=memccpy(p,aistr.service, '\0',sizeof(cmpstr)-(p-cmpstr))))
+        || (*(p-1) = ' ',
+            NULL==(p=memccpy(p,aistr.addr,    '\0',sizeof(cmpstr)-(p-cmpstr))))
+        || sizeof(cmpstr) == p-cmpstr   ) {
+        syslog_perror("addrinfo string expansion is too long", ENOSPC);
+        return false;
+    }
+    *(p-1) = '\n';
+    *p = '\0';
+    cmplen = p - cmpstr;
+  #endif
 
     if (NULL == (cfg = fopen(BINDSOCKET_CONFIG, "r"))) {
         syslog_perror(BINDSOCKET_CONFIG, errno);
@@ -182,7 +205,8 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
 
 static int
 bindsocket_client_session (const int cfd,
-                           const int argc, char * const * const restrict argv)
+                           struct bindsocket_addrinfo_strs *
+                             const restrict aistr)
 {
     /* <<<FUTURE: might add additional logging of request and success/failure */
     int fd;
@@ -210,10 +234,9 @@ bindsocket_client_session (const int cfd,
     alarm(2);
 
     /* receive addrinfo from client */
-    if (!(5 != argc                               /*(-1 for infinite poll)*/
+    if (!(NULL == aistr                           /*(-1 for infinite poll)*/
           ? bindsocket_unixdomain_recv_addrinfo(cfd, -1, &ai)
-          : bindsocket_addrinfo_from_strs(&ai, argv[0], argv[1],
-                                          argv[2], argv[3], argv[4]))) {
+          : bindsocket_addrinfo_from_strs(&ai, aistr))) {
         alarm(0); /* not strictly needed since callers exit upon return */
         syslog_perror("recv addrinfo error or invalid addrinfo", errno);
         return EXIT_FAILURE;
@@ -502,8 +525,9 @@ main (int argc, char *argv[])
      */
 
     if (!daemon) {
+        struct bindsocket_addrinfo_strs aistr;
+        struct bindsocket_addrinfo_strs *aistrptr = &aistr;
         struct stat st;
-        char *args[5];
         if (0 != fstat(STDIN_FILENO, &st)) {
             syslog_perror("fstat stdin", errno);
             return EXIT_FAILURE;
@@ -512,17 +536,24 @@ main (int argc, char *argv[])
             syslog_perror("invalid socket on bindsocket stdin", 0);
             return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
         }
-        if (1 == argc) {
-            if (!bindsocket_addrinfo_split_str(argv[0], &args[0], &args[1],
-                                               &args[2], &args[3], &args[4])) {
-                syslog_perror("invalid address info arguments", 0);
-                return EXIT_FAILURE;
-            }
-            argc = 5;
-            argv = args;
+        switch (argc) {
+          case 0: aistrptr = NULL;
+                  break;
+          case 1: if (bindsocket_addrinfo_split_str(&aistr, argv[0]))
+                      break;
+                  syslog_perror("invalid address info arguments", errno);
+                  return EXIT_FAILURE;
+          case 5: aistr.family   = argv[0];
+                  aistr.socktype = argv[1];
+                  aistr.protocol = argv[2];
+                  aistr.service  = argv[3];
+                  aistr.addr     = argv[4];
+                  break;
+          default: syslog_perror("invalid number of arguments", EINVAL);
+                   return EXIT_FAILURE;
         }
 
-        return bindsocket_client_session(STDIN_FILENO, argc, argv);
+        return bindsocket_client_session(STDIN_FILENO, aistrptr);
     }
 
     /*
@@ -559,7 +590,7 @@ main (int argc, char *argv[])
             ++bindsocket_children;
             if (0 == fork()) {
                 retry_close(sfd);
-                _exit(bindsocket_client_session(cfd, 0, NULL));
+                _exit(bindsocket_client_session(cfd, NULL));
             }
             retry_close(cfd);
         }
