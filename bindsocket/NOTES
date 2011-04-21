@@ -98,8 +98,6 @@
  * - provide example client code that interfaces with bindsocket for popular
  *   programs such as Apache.  (Also: graceful Apache restart via transferring
  *   the listening socket(s))
- * - create install target that installs bindsocket setuid root
- *   and creates /var/run/bindsocket/ with proper permissions
  * - create test target that compiles with overrides and config file
  *   so that test can occur without root privilege
  *   (create directory with config file 700 for test)

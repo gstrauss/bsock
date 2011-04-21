@@ -62,13 +62,13 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 #endif
 
 #ifndef BINDSOCKET_CONFIG
-#define BINDSOCKET_CONFIG "/etc/bindsocket"
+#error "BINDSOCKET_CONFIG must be defined"
 #endif
 
 /* N.B. directory (and tree above it) must be writable only by root */
 /* Unit test drivers not run as root should override this location at compile */
 #ifndef BINDSOCKET_SOCKET_DIR
-#define BINDSOCKET_SOCKET_DIR "/var/run/bindsocket"
+#error "BINDSOCKET_SOCKET_DIR must be defined"
 #endif
 #define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
 

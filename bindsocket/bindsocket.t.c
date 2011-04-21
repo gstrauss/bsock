@@ -46,9 +46,10 @@
 
 #include <bindsocket_unixdomain.h>
 
-#ifndef BINDSOCKET_SOCKET
-#define BINDSOCKET_SOCKET "/var/run/bindsocket/socket"
+#ifndef BINDSOCKET_SOCKET_DIR
+#error "BINDSOCKET_SOCKET_DIR must be defined"
 #endif
+#define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
 
 extern char **environ;
 
