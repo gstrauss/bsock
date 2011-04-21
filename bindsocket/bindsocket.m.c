@@ -61,16 +61,16 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 #define BINDSOCKET_GROUP "daemon"
 #endif
 
+#ifndef BINDSOCKET_CONFIG
+#define BINDSOCKET_CONFIG "/etc/bindsocket"
+#endif
+
 /* N.B. directory (and tree above it) must be writable only by root */
 /* Unit test drivers not run as root should override this location at compile */
 #ifndef BINDSOCKET_SOCKET_DIR
 #define BINDSOCKET_SOCKET_DIR "/var/run/bindsocket"
 #endif
 #define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
-/* <<<FUTURE: /etc/bindsocket for config file? */
-#ifndef BINDSOCKET_CONFIG
-#define BINDSOCKET_CONFIG BINDSOCKET_SOCKET_DIR "/config"
-#endif
 
 #ifndef BINDSOCKET_SYSLOG_IDENT
 #define BINDSOCKET_SYSLOG_IDENT "bindsocket"

@@ -91,12 +91,10 @@
  *
  *
  * FUTURE:
- * - is there a process which cleans out /var/run/ regularly and
- *     deleted /var/run/bindsocket/config?
- *     (or does it happen on reboot?)
  * - create small program that checks for canonicalized strings in config file
  *     and provides more detailed error messages for config file errors
  *     (might do at daemon startup or add command line config check flag)
+ *     might create mcdb with hash of canonicalized username + addrinfo strings
  * - provide example client code that interfaces with bindsocket for popular
  *   programs such as Apache.  (Also: graceful Apache restart via transferring
  *   the listening socket(s))
@@ -105,7 +103,6 @@
  * - create test target that compiles with overrides and config file
  *   so that test can occur without root privilege
  *   (create directory with config file 700 for test)
- * - might create mcdb with hash of canonicalized username + addrinfo strings
  * - run programs with memory leak generators and stuff
  * - port and test bindsocket on additional platforms (FreeBSD, OpenBSD, ...)
  * - sysctl can prevent accidental usage of specific non-privileged ports
