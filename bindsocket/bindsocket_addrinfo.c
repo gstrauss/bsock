@@ -29,9 +29,11 @@
 #include <bindsocket_addrinfo.h>
 
 #include <sys/types.h>
+#include <ctype.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -125,7 +127,20 @@ bindsocket_addrinfo_socktype_to_str (const int socktype)
 static int
 bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
-    struct protoent * const restrict pe = getprotobyname(protocol);
+    struct protoent * restrict pe = NULL;
+
+    if (!isdigit(protocol[0]))
+        pe = getprotobyname(protocol);
+    else {
+        /* check strtol() succeeded, entire string converted
+         * to number and (0 <= lproto && lproto <= INT_MAX) */
+        char *e;
+        long lproto;
+        if ((errno = 0, lproto = strtol(protocol, &e, 10), 0 == errno)
+            && '\0' == *e && 0 == (lproto >> 31))
+            pe = getprotobynumber((int)lproto); /*(check validity)*/
+    }
+
     return (pe != NULL ? pe->p_proto : (errno = EPROTONOSUPPORT, -1));
 }
 
