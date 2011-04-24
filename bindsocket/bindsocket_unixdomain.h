@@ -46,35 +46,41 @@ int
 bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath);
 
 ssize_t
-bindsocket_unixdomain_recvmsg (const int fd,
+bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
                                struct iovec * const restrict iov,
                                const size_t iovlen);
 
-/* sample client code */
 ssize_t
-bindsocket_unixdomain_sendmsg (const int fd,
+bindsocket_unixdomain_send_fd (const int fd, const int sfd,
                                struct iovec * const restrict iov,
                                const size_t iovlen);
-
-/* sample client code corresponding to bindsocket_unixdomain_send_fd() */
-int
-bindsocket_unixdomain_recv_fd (const int fd);
-
-bool
-bindsocket_unixdomain_send_fd (const int cfd, const int fd);
 
 bool
 bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
-                                     struct addrinfo * const restrict ai);
+                                     struct addrinfo * const restrict ai,
+                                     int * const restrict rfd);
 
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
-                                     struct addrinfo * const restrict ai);
+                                     struct addrinfo * const restrict ai,
+                                     const int sfd);
 
 int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
                                   gid_t * const restrict egid);
+
+#if 0   /* sample code */
+ssize_t
+bindsocket_unixdomain_recvmsg (const int fd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen);
+
+ssize_t
+bindsocket_unixdomain_sendmsg (const int fd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen);
+#endif  /* sample code */
 
 #ifdef __cplusplus
 }

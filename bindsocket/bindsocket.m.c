@@ -208,59 +208,77 @@ bindsocket_client_session (const int cfd,
                            struct bindsocket_addrinfo_strs *
                              const restrict aistr)
 {
-    /* <<<FUTURE: might add additional logging of request and success/failure */
-    int fd;
+    int fd = -1, nfd = -1;
     int rc = EXIT_FAILURE;
-    uid_t euid;
-    gid_t egid;
+    uid_t uid;
+    gid_t gid;
     int flag = 1;
     int addr[27];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
     struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
       .ai_addrlen = sizeof(addr),
       .ai_addr    = (struct sockaddr *)addr
     };
-
-    if (0 != bindsocket_unixdomain_getpeereid(cfd, &euid, &egid)) {
-        syslog_perror("getpeereid", errno);
-        return EXIT_FAILURE;
-    }
-
-    /* syslog all connections to (or instantiations of) bindsocket daemon
-     * <<<FUTURE: might write custom wrapper to platform-specific getpeereid()
-     * and combine with syslog() call to log pid and other info, if available */
-    syslog(LOG_INFO, "connect: uid:%d gid:%d", euid, egid);
+    struct iovec iov = { .iov_base = &flag, .iov_len = sizeof(flag) };
 
     /* set alarm (uncaught here) to enforce time limit on blocking syscalls */
     alarm(2);
 
-    /* receive addrinfo from client */
-    if (!(NULL == aistr                           /*(-1 for infinite poll)*/
-          ? bindsocket_unixdomain_recv_addrinfo(cfd, -1, &ai)
-          : bindsocket_addrinfo_from_strs(&ai, aistr))) {
-        alarm(0); /* not strictly needed since callers exit upon return */
-        syslog_perror("recv addrinfo error or invalid addrinfo", errno);
-        return EXIT_FAILURE;
-    }
+    do {  /*(required steps follow this block; this might be made subroutine)*/
 
-    /* check client credentials to authorize client request,
-     * bind socket, send socket fd to client (no poll since send only one msg)*/
-    if (bindsocket_is_authorized_addrinfo(&ai, euid, egid)) {
-        if (   0 <= (fd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol))
-            && 0 == setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
-            && 0 == bind(fd, (struct sockaddr *)ai.ai_addr, ai.ai_addrlen)) {
-            rc = bindsocket_unixdomain_send_fd(cfd, fd)
-               ? EXIT_SUCCESS
-               : EXIT_FAILURE;
-            if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
-                syslog_perror("sendmsg", errno);
+        /* get client credentials */
+        if (0 != bindsocket_unixdomain_getpeereid(cfd, &uid, &gid)) {
+            syslog_perror("getpeereid", errno);
+            break;
         }
-        else
-            syslog_perror("socket,setsockopt,bind", errno);
 
-        retry_close(fd);/* not strictly needed since callers exit upon return */
-    }
+        /* syslog all connections to (or instantiations of) bindsocket daemon
+         * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
+         * and combine with syslog() to log pid and other info, if available */
+        syslog(LOG_INFO, "connect: uid:%d gid:%d", uid, gid);
 
+        /* receive addrinfo from client */
+        if (!(NULL == aistr                           /*(-1 for infinite poll)*/
+              ? bindsocket_unixdomain_recv_addrinfo(cfd, -1, &ai, &fd)
+              : bindsocket_addrinfo_from_strs(&ai, aistr))) {
+            syslog_perror("recv addrinfo error or invalid addrinfo", errno);
+            break;
+        }
+
+        /* check client credentials to authorize client request */
+        if (!bindsocket_is_authorized_addrinfo(&ai, uid, gid))
+            break;
+
+        /* create socket (if not provided by client) and bind to address */
+        if (-1 == fd) {
+            fd = nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
+            if (-1 == fd) {
+                syslog_perror("socket", errno);
+                break;
+            }
+        }
+        if (   0 != setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
+            || 0 != bind(fd, (struct sockaddr *)ai.ai_addr, ai.ai_addrlen)) {
+            syslog_perror("setsockopt,bind", errno);
+            break;
+        }
+
+        rc = EXIT_SUCCESS;
+
+    } while (0);
+
+    /* send 4-byte value in data to indicate success or errno value
+     * (send socket fd to client if new socket, no poll since only one send) */
+    flag = (rc == EXIT_SUCCESS) ? 0 : errno;
+    rc = (bindsocket_unixdomain_send_fd(cfd, nfd, &iov, 1) == iov.iov_len)
+      ? EXIT_SUCCESS
+      : EXIT_FAILURE;
+    if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
+        syslog_perror("sendmsg", errno);
+
+    retry_close(fd);/* not strictly needed since callers exit upon return */
     alarm(0); /* not strictly needed since callers exit upon return */
+    /* <<<FUTURE: might add additional logging of request and success/failure
+     *            (would need to catch and handle alarm(), too) */
     return rc;
 }
 
@@ -289,7 +307,8 @@ static volatile int bindsocket_children = 0;
 /* bindsocket high and low watermarks for in-flight forked children.
  * If hiwat is exceeded, then wait num children falls to lowat before continuing
  * to accept new connections.  bindsocket expects to be very fast and seldom
- * called, so detection of any outstanding behavior should be escalated. */
+ * called, so detection of any outstanding behavior should be escalated.
+ * (setrlimit(RLIMIT_NPROC,...) not used since rlimit does not apply to root) */
 #define BINDSOCKET_CHILD_HIWAT 16
 #define BINDSOCKET_CHILD_LOWAT  8
 
@@ -573,6 +592,12 @@ main (int argc, char *argv[])
     sfd = bindsocket_daemon_init_socket();
     if (-1 == sfd)
         return EXIT_FAILURE;
+
+    /* efficiency: perform tasks that result in initialization in daemon,
+     * which are inherited by child, instead of initialization in every child */
+    getpwuid(0);
+    setprotoent(1);
+    setservent(1);
 
     /* daemon event loop
      * parent: accept and fork

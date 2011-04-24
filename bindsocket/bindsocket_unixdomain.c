@@ -136,104 +136,25 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
 }
 
 ssize_t
-bindsocket_unixdomain_recvmsg (const int fd,
+bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
                                struct iovec * const restrict iov,
                                const size_t iovlen)
-{
-    /* (nonblocking recvmsg(); caller might poll() before call to here)*/
-    ssize_t r;
-    /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
-    char ctrlbuf[108]; /* BSD mbuf is 108 */
-    struct msghdr msg = {
-      .msg_name       = NULL,
-      .msg_namelen    = 0,
-      .msg_iov        = iov,
-      .msg_iovlen     = iovlen,
-      .msg_control    = ctrlbuf,
-      .msg_controllen = sizeof(ctrlbuf),
-      .msg_flags      = 0
-    };
-    struct cmsghdr *cmsg;
-    do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
-    if (r < 1)  /* EOF (r=0) or error (r=-1) */
-        return r;
-
-    /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
-    /*(MSG_CTRUNC is unexpected in bindsocket and is notable error/attack)*/
-    /* N.B. since bindsocket_client_session() handled in short-lived child
-     * fork()ed from parent daemon and will exit soon, simply syslog.
-     * Alternatively, daemon could closelog(), close fds > STDERR_FILENO,
-     * and then repeat call to openlog() */
-    if (msg.msg_flags & MSG_CTRUNC)
-        syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
-
-    errno = 0; /* returning -1 with errno == 0 means no fd received */
-
-    /* recvmsg() can receive multiple fds even if MSG_PEEK
-     * recvmsg() can receive multiple fds even if MSG_CTRUNC (ctrlbuf too small)
-     * recvmsg() can receive int array of fds and/or multiple cmsgs with fds
-     * (defensive client must handle multiple fds received unexpectedly)
-     * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
-
-    for (cmsg=CMSG_FIRSTHDR(&msg); NULL != cmsg; cmsg=CMSG_NXTHDR(&msg,cmsg)) {
-        if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
-            int * const fds = (int *)CMSG_DATA(cmsg);
-            int n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-            /* close excess fds received; unexpected by bindsocket */
-            while (n-- > 0)
-                nointr_close(fds[n]);
-        }
-    }
-
-    return r;
-}
-
-/* sample client code */
-ssize_t
-bindsocket_unixdomain_sendmsg (const int fd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen)
-{
-    /* (nonblocking sendmsg(); caller might poll() before call to here)*/
-    /* (caller should handle EAGAIN and EWOULDBLOCK) */
-    ssize_t w;
-    struct msghdr msg = {
-      .msg_name       = NULL,
-      .msg_namelen    = 0,
-      .msg_iov        = iov,
-      .msg_iovlen     = iovlen,
-      .msg_control    = NULL,
-      .msg_controllen = 0,
-      .msg_flags      = 0
-    };
-    do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
-    } while (-1 == w && errno == EINTR);
-    return w;
-    /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
-}
-
-/* sample client code corresponding to bindsocket_unixdomain_send_fd() */
-int
-bindsocket_unixdomain_recv_fd (const int fd)
 {
     /* receive and return file descriptor sent over unix domain socket */
     /* 'man cmsg' provides example code */
     ssize_t r;
-    char iovbuf[4];/*match iovbuf data size in bindsocket_unixdomain_send_fd()*/
-    struct iovec iov = { .iov_base = iovbuf, .iov_len = sizeof(iovbuf) };
     /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
     char ctrlbuf[108]; /* BSD mbuf is 108 */
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,
-      .msg_iov        = &iov,
-      .msg_iovlen     = 1,
+      .msg_iov        = iov,
+      .msg_iovlen     = iovlen,
       .msg_control    = ctrlbuf,
       .msg_controllen = sizeof(ctrlbuf),
       .msg_flags      = 0
     };
     struct cmsghdr *cmsg;
-    int rfd = -1;
     do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
     if (r < 1) {  /* EOF (r=0) or error (r=-1) */
         if (0 == r && 0 == errno) errno = EPIPE;
@@ -245,64 +166,69 @@ bindsocket_unixdomain_recv_fd (const int fd)
     if (msg.msg_flags & MSG_CTRUNC)
         syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
 
-    errno = 0; /* returning -1 with errno == 0 means no fd received */
-
     /* recvmsg() can receive multiple fds even if MSG_CTRUNC (ctrlbuf too small)
      * recvmsg() can receive int array of fds and/or multiple cmsgs with fds
      * (defensive client must handle multiple fds received unexpectedly)
      * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
 
+    *rfd = -1;
     for (cmsg=CMSG_FIRSTHDR(&msg); NULL != cmsg; cmsg=CMSG_NXTHDR(&msg,cmsg)) {
         if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
             int * const fds = (int *)CMSG_DATA(cmsg);
             int n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-            if (-1 == rfd)
-                rfd = fds[0];  /* received fd; success */
+            if (-1 == *rfd)
+                *rfd = fds[0];  /* received fd; success */
             /* close excess fds received; unexpected by bindsocket */
             while (n-- > 0) {
-                if (fds[n] != rfd)
+                if (fds[n] != *rfd)
                     nointr_close(fds[n]);
             }
         }
     }
-    return rfd;
+    return r;
 }
 
-bool
-bindsocket_unixdomain_send_fd (const int cfd, const int fd)
+ssize_t
+bindsocket_unixdomain_send_fd (const int fd, const int sfd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen)
 {
-    /* pass any non-zero-length data so client can distinguish msg from EOF */
+    /* pass any non-zero-length data so client can distinguish msg from EOF
+     * (caller must provide iov array with iov[0].iov_len != 0) */
     /* 'man cmsg' provides sample code */
     /*(caller might first poll() POLLOUT since nonblocking sendmsg() employed)*/
     ssize_t w;
-    char iovbuf[4] = {0,0,0,0};
-    struct iovec iov = { .iov_base = iovbuf, .iov_len = sizeof(iovbuf) };
-    char ctrlbuf[CMSG_SPACE(sizeof(int))]; /* fd int-sized; 4 bytes of data */
+    char ctrlbuf[CMSG_SPACE(sizeof(int))]; /* sfd int-sized; 4 bytes of data */
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,
-      .msg_iov        = &iov,
-      .msg_iovlen     = 1,
+      .msg_iov        = iov,
+      .msg_iovlen     = iovlen,
       .msg_control    = ctrlbuf,
       .msg_controllen = sizeof(ctrlbuf),
       .msg_flags      = 0
     };
     struct cmsghdr *cmsg   = CMSG_FIRSTHDR(&msg);
     /* avoid gcc warning: dereferencing type-punned pointer ... */
-    /*  *(int *)CMSG_DATA(cmsg) = fd; */
-    int * const fds = (int *)CMSG_DATA(cmsg); fds[0] = fd;
+    /*  *(int *)CMSG_DATA(cmsg) = sfd; */
+    int * const fds = (int *)CMSG_DATA(cmsg); fds[0] = sfd;
     cmsg->cmsg_level       = SOL_SOCKET;
     cmsg->cmsg_type        = SCM_RIGHTS;
     cmsg->cmsg_len         = msg.msg_controllen = CMSG_LEN(sizeof(int));/*data*/
-    do { w = sendmsg(cfd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
+    if (-1 == sfd) {   /*(skip sending control msg (cmsg) if fd to send is -1)*/
+        msg.msg_control    = NULL;
+        msg.msg_controllen = 0;
+    }
+    do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
     } while (-1 == w && errno == EINTR);
-    return (-1 != w);
+    return w;
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
 
 bool
 bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
-                                     struct addrinfo * const restrict ai)
+                                     struct addrinfo * const restrict ai,
+                                     int * const restrict rfd)
 {
     /* receive addrinfo request */
     /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
@@ -317,10 +243,9 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
       { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
-    errno = 0;
     if (1 != retry_poll_fd(fd, POLLIN|POLLRDHUP, msec)) return false;
-    ssize_t r =
-      bindsocket_unixdomain_recvmsg(fd, iov, sizeof(iov)/sizeof(struct iovec));
+    ssize_t r = bindsocket_unixdomain_recv_fd(fd, rfd, iov,
+                                              sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
     if (r < sizeof(protover))
@@ -365,7 +290,8 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
-                                     struct addrinfo * const restrict ai)
+                                     struct addrinfo * const restrict ai,
+                                     const int sfd)
 {
     /* msg sent atomically, or else not transmitted: error w/ errno==EMSGSIZE */
     /* Note: struct addrinfo contains pointers.  These are not valid on other
@@ -377,13 +303,13 @@ bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
       { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
-    errno = 0;
     if (1 != retry_poll_fd(fd, POLLOUT, msec)) return false;
-    ssize_t w =
-      bindsocket_unixdomain_sendmsg(fd, iov, sizeof(iov)/sizeof(struct iovec));
+    ssize_t w = bindsocket_unixdomain_send_fd(fd, sfd, iov,
+                                              sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
+
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 #if 0 /* sample client code sending an addrinfo string (structured precisely) */
     const char * const msg = "AF_INET SOCK_STREAM tcp 80 0.0.0.0";
@@ -433,3 +359,83 @@ bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
 {
     return getpeereid(s, euid, egid);
 }
+
+
+#if 0  /* sample code */
+
+ssize_t
+bindsocket_unixdomain_recvmsg (const int fd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen)
+{
+    /* (nonblocking recvmsg(); caller might poll() before call to here)*/
+    ssize_t r;
+    /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
+    char ctrlbuf[108]; /* BSD mbuf is 108 */
+    struct msghdr msg = {
+      .msg_name       = NULL,
+      .msg_namelen    = 0,
+      .msg_iov        = iov,
+      .msg_iovlen     = iovlen,
+      .msg_control    = ctrlbuf,
+      .msg_controllen = sizeof(ctrlbuf),
+      .msg_flags      = 0
+    };
+    struct cmsghdr *cmsg;
+    do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
+    if (r < 1)  /* EOF (r=0) or error (r=-1) */
+        return r;
+
+    /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
+    /*(MSG_CTRUNC is unexpected in bindsocket and is notable error/attack)*/
+    /* N.B. since bindsocket_client_session() handled in short-lived child
+     * fork()ed from parent daemon and will exit soon, simply syslog.
+     * Alternatively, daemon could closelog(), close fds > STDERR_FILENO,
+     * and then repeat call to openlog() */
+    if (msg.msg_flags & MSG_CTRUNC)
+        syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
+
+    /* recvmsg() can receive multiple fds even if MSG_PEEK
+     * recvmsg() can receive multiple fds even if MSG_CTRUNC (ctrlbuf too small)
+     * recvmsg() can receive int array of fds and/or multiple cmsgs with fds
+     * (defensive client must handle multiple fds received unexpectedly)
+     * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
+
+    for (cmsg=CMSG_FIRSTHDR(&msg); NULL != cmsg; cmsg=CMSG_NXTHDR(&msg,cmsg)) {
+        if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
+            int * const fds = (int *)CMSG_DATA(cmsg);
+            int n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+            /* close excess fds received; unexpected by bindsocket */
+            while (n-- > 0)
+                nointr_close(fds[n]);
+        }
+    }
+
+    return r;
+}
+
+/* sample client code */
+ssize_t
+bindsocket_unixdomain_sendmsg (const int fd,
+                               struct iovec * const restrict iov,
+                               const size_t iovlen)
+{
+    /* (nonblocking sendmsg(); caller might poll() before call to here)*/
+    /* (caller should handle EAGAIN and EWOULDBLOCK) */
+    ssize_t w;
+    struct msghdr msg = {
+      .msg_name       = NULL,
+      .msg_namelen    = 0,
+      .msg_iov        = iov,
+      .msg_iovlen     = iovlen,
+      .msg_control    = NULL,
+      .msg_controllen = 0,
+      .msg_flags      = 0
+    };
+    do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
+    } while (-1 == w && errno == EINTR);
+    return w;
+    /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
+}
+
+#endif /* sample code */

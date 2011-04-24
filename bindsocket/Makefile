@@ -10,6 +10,9 @@ all: $(TARGETS)
 CC=gcc
 CFLAGS+=-pipe -std=c99 -pedantic -O2 -D_XOPEN_SOURCE=600 -Wall -Winline -I.
 
+# (daemon benefits from resolving symbols at load time; one-shot is extra cost)
+LDFLAGS+= -Wl,-z,now
+
 bindsocket.m.o: CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
 bindsocket.m.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket.t.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'

@@ -1,6 +1,7 @@
 /* bindsocket - bind() sockets to restricted ports for lower-privilege daemons
  *
  * Historically, ports 1-1023 are restricted and only root can bind to them.
+ *   (IPPORT_RESERVED = 1024)
  * Traditionally, there have been two ways to run non-root daemons on low ports:
  * a) inetd  (root daemon listens on low port and for each connection accept(),
  *    fork()s, drop privileges, exec()s non-root daemon for single connection)
@@ -46,9 +47,9 @@
  *
  *
  * bindsocket setup
- * - create directory for bindsocket unix domain socket (/var/run/bindsocket)
+ * - create directory for bindsocket unix domain socket (/var/run/bindsocket/)
  *   (ownership root:root, permissions 0755)
- * - create bindsocket config file (/var/run/bindsocket/config)
+ * - create bindsocket config file (/etc/bindsocket)
  *   (ownership root:root, permissions 0644 or even as restrictive as 0400)
  *   populate config file, e.g.
  *     apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
@@ -101,6 +102,8 @@
  * - create test target that compiles with overrides and config file
  *   so that test can occur without root privilege
  *   (create directory with config file 700 for test)
+ *   (build with outputs going elsewhere using VPATH and add -I.. so that
+ *    developer can not accidentally 'install' test executables)
  * - run programs with memory leak generators and stuff
  * - port and test bindsocket on additional platforms (FreeBSD, OpenBSD, ...)
  * - sysctl can prevent accidental usage of specific non-privileged ports

@@ -96,6 +96,7 @@ main (int argc, char *argv[])
     setuid(500);
 
     int sfd;
+    int nfd = -1;
     if (1 == argc || 6 == argc) {
         while (0 != close(sv[0]) && errno == EINTR) ;/*similar to nointr_close*/
         sfd = sv[1];
@@ -127,7 +128,10 @@ main (int argc, char *argv[])
         iaddr.sin_family = AF_INET;
         iaddr.sin_port   = htons(8080);
         iaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        if (!bindsocket_unixdomain_send_addrinfo(sfd, -1, &ai)) {
+       #if 1  /* test sending socket created by client */
+        nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
+       #endif
+        if (!bindsocket_unixdomain_send_addrinfo(sfd, -1, &ai, nfd)) {
             perror("bindsocket_unixdomain_send_addrinfo");
             return EXIT_FAILURE;
         }
@@ -141,16 +145,19 @@ main (int argc, char *argv[])
       #endif
     }
 
+    int fd = -1;
+    int errnum = EXIT_FAILURE;
+    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
     struct pollfd pfd = { .fd = sfd, .events = POLLIN|POLLRDHUP, .revents = 0 };
-    int fd = (1 == poll(&pfd, 1, -1))
-      ? bindsocket_unixdomain_recv_fd(sfd)
-      : -1;
-    if (-1 == fd)
-        perror("bindsocket_unixdomain_recv_fd");
+    if (1 == poll(&pfd, 1, -1)) {
+        if (   -1 == bindsocket_unixdomain_recv_fd(sfd, &fd, &iov, 1)
+            || (errno = errnum) != 0)
+            perror("bindsocket_unixdomain_recv_fd");
+    }
     while (0 != close(sfd) && errno == EINTR) ; /* similar to nointr_close() */
-    fprintf(stderr, "received fd: %d\n", fd);
+    fprintf(stderr, "sent fd: %d; received fd: %d\n", nfd, fd);
     /* document: caller should check sanity: fd >= 0 */
     /* document: caller should set F_CLOEXEC if desired, and then listen()*/
 
-    return EXIT_SUCCESS;
+    return errnum;
 }
