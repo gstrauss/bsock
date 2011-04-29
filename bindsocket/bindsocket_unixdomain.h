@@ -63,7 +63,7 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
-                                     struct addrinfo * const restrict ai,
+                                     const struct addrinfo * const restrict ai,
                                      const int sfd);
 
 int

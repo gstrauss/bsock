@@ -60,6 +60,7 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
     int n; /*EINTR results in retrying poll with same timeout again and again*/
     do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
+    if (0 == n) errno = ETIMEDOUT; /* specific for bindsocket; not generic */
     return n;
 }
 
@@ -290,7 +291,7 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
-                                     struct addrinfo * const restrict ai,
+                                     const struct addrinfo * const restrict ai,
                                      const int sfd)
 {
     /* msg sent atomically, or else not transmitted: error w/ errno==EMSGSIZE */
@@ -299,9 +300,9 @@ bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
      * Could avoid by copying struct addrinfo, setting pointers zero in copy */
     uint64_t protover = 0; /* bindsocket v0 and space for flags */
     struct iovec iov[] = {
-      { .iov_base = &protover,   .iov_len = sizeof(protover) },
-      { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
-      { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
+      { .iov_base = &protover,             .iov_len = sizeof(protover) },
+      { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
+      { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
     };
     if (1 != retry_poll_fd(fd, POLLOUT, msec)) return false;
     ssize_t w = bindsocket_unixdomain_send_fd(fd, sfd, iov,

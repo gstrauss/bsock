@@ -194,10 +194,11 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         while (!rc && NULL != fgets(line, sizeof(line), cfg))
             rc = (0 == memcmp(line, cmpstr, cmplen));
         if (!rc)
-            syslog_perror("permission denied", 0);
+            syslog_perror("permission denied", (errno = EACCES));
     }
     else
-        syslog_perror("ownership/permissions incorrect on "BINDSOCKET_CONFIG,0);
+        syslog_perror("ownership/permissions incorrect on "BINDSOCKET_CONFIG,
+                      (errno = EPERM));
 
     fclose(cfg);  /* not required; bindsocket_client_session() exits soon */
     return rc;
@@ -268,7 +269,7 @@ bindsocket_client_session (const int cfd,
 
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
-    flag = (rc == EXIT_SUCCESS) ? 0 : errno;
+    flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
     rc = (bindsocket_unixdomain_send_fd(cfd, nfd, &iov, 1) == iov.iov_len)
       ? EXIT_SUCCESS
       : EXIT_FAILURE;
@@ -484,7 +485,7 @@ bindsocket_daemon_init_socket (void)
     }
     if (st.st_uid != euid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
         syslog_perror("ownership/permissions incorrect on "
-                      BINDSOCKET_SOCKET_DIR, 0);
+                      BINDSOCKET_SOCKET_DIR, (errno = EPERM));
         return -1;
     }
 
@@ -552,7 +553,8 @@ main (int argc, char *argv[])
             return EXIT_FAILURE;
         }
         if (!S_ISSOCK(st.st_mode)) {
-            syslog_perror("invalid socket on bindsocket stdin", 0);
+            syslog_perror("invalid socket on bindsocket stdin",
+                          (errno = ENOTSOCK));
             return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
         }
         switch (argc) {
@@ -582,7 +584,7 @@ main (int argc, char *argv[])
     if (getuid() != geteuid()) {
         /* do not permit setuid privileges to initiate daemon mode */
         syslog_perror(BINDSOCKET_SYSLOG_IDENT
-                      " daemon can not be started via setuid", 0);
+                      " daemon can not be started via setuid",(errno = EACCES));
         return EXIT_FAILURE;
     }
 
