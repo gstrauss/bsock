@@ -239,7 +239,7 @@ bindsocket_client_session (const int cfd,
 
         /* receive addrinfo from client */
         if (!(NULL == aistr                           /*(-1 for infinite poll)*/
-              ? bindsocket_unixdomain_recv_addrinfo(cfd, -1, &ai, &fd)
+              ? bindsocket_unixdomain_poll_recv_addrinfo(cfd, &ai, &fd, -1)
               : bindsocket_addrinfo_from_strs(&ai, aistr))) {
             syslog_perror("recv addrinfo error or invalid addrinfo", errno);
             break;
@@ -303,8 +303,6 @@ setuid_stdinit (void)
     return true;
 }
 
-static volatile int bindsocket_children = 0;
-
 /* bindsocket high and low watermarks for in-flight forked children.
  * If hiwat is exceeded, then wait num children falls to lowat before continuing
  * to accept new connections.  bindsocket expects to be very fast and seldom
@@ -313,22 +311,7 @@ static volatile int bindsocket_children = 0;
 #define BINDSOCKET_CHILD_HIWAT 16
 #define BINDSOCKET_CHILD_LOWAT  8
 
-static void  __attribute__((noinline)) __attribute__((cold))
-bindsocket_wait_children (void)
-{
-    /* syslog() once every 10 secs while excess pending children condition */
-    static time_t prior = 0;
-    const time_t t = time(NULL);
-    if (prior+10 < t) {
-        prior = t;
-        syslog(LOG_CRIT, "pending children (%d) > hi watermark (%d)",
-               bindsocket_children, BINDSOCKET_CHILD_HIWAT);
-    }
-
-    /* bindsocket_children is 'volatile' */
-    while (bindsocket_children > BINDSOCKET_CHILD_LOWAT)
-        poll(NULL, 0, 100);
-}
+static volatile int bindsocket_children = 0;
 
 static void
 daemon_sa_chld (int signum)
@@ -338,6 +321,38 @@ daemon_sa_chld (int signum)
     do { pid = waitpid(-1, NULL, WNOHANG);
     } while (pid > 0 ? --remaining > 0 : (-1 == pid && errno == EINTR));
     bindsocket_children = (-1 == pid && errno == ECHILD) ? 0 : remaining;
+}
+
+static void  __attribute__((noinline)) __attribute__((cold))
+bindsocket_wait_children (void)
+{
+    /* syslog() once every 10 secs while excess pending children condition */
+    static time_t prior = 0;
+    const time_t t = time(NULL);
+    sigset_t sigset;
+    int signum;
+    if (prior+10 < t) {
+        prior = t;
+        syslog(LOG_CRIT, "pending children (%d) > hi watermark (%d)",
+               bindsocket_children, BINDSOCKET_CHILD_HIWAT);
+    }
+
+    (void) sigemptyset(&sigset);
+    (void) sigaddset(&sigset, SIGALRM);
+    (void) sigaddset(&sigset, SIGCHLD);
+    (void) sigaddset(&sigset, SIGHUP);
+    (void) sigaddset(&sigset, SIGINT);
+    (void) sigaddset(&sigset, SIGTERM);
+
+    /* bindsocket_children is 'volatile' */
+    while (bindsocket_children > BINDSOCKET_CHILD_LOWAT) {
+        if (0 == sigwait(&sigset, &signum)) {
+            if (SIGCHLD == signum)
+                daemon_sa_chld(signum);
+            else
+                raise(signum);
+        }
+    }
 }
 
 static void

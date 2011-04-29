@@ -49,22 +49,38 @@ ssize_t
 bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
                                struct iovec * const restrict iov,
                                const size_t iovlen);
+ssize_t
+bindsocket_unixdomain_poll_recv_fd (const int fd, int * const restrict rfd,
+                                    struct iovec * const restrict iov,
+                                    const size_t iovlen, const int msec);
 
 ssize_t
 bindsocket_unixdomain_send_fd (const int fd, const int sfd,
                                struct iovec * const restrict iov,
                                const size_t iovlen);
+ssize_t
+bindsocket_unixdomain_poll_send_fd (const int fd, const int sfd,
+                                    struct iovec * const restrict iov,
+                                    const size_t iovlen, const int msec);
 
 bool
-bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
+bindsocket_unixdomain_recv_addrinfo (const int fd,
                                      struct addrinfo * const restrict ai,
                                      int * const restrict rfd);
+bool
+bindsocket_unixdomain_poll_recv_addrinfo (const int fd,
+                                     struct addrinfo * const restrict ai,
+                                     int * const restrict rfd, const int msec);
 
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
-bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
+bindsocket_unixdomain_send_addrinfo (const int fd,
                                      const struct addrinfo * const restrict ai,
                                      const int sfd);
+bool
+bindsocket_unixdomain_poll_send_addrinfo (const int fd,
+                                     const struct addrinfo * const restrict ai,
+                                     const int sfd, const int msec);
 
 int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,

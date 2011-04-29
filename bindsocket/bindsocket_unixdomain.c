@@ -60,7 +60,7 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
     int n; /*EINTR results in retrying poll with same timeout again and again*/
     do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
-    if (0 == n) errno = ETIMEDOUT; /* specific for bindsocket; not generic */
+    if (0 == n) errno = ETIME; /* specific for bindsocket; not generic */
     return n;
 }
 
@@ -86,7 +86,7 @@ bindsocket_unixdomain_socket_connect (const char * const restrict sockpath)
         return fd;
 
     if (-1 != fd) {
-        int errnum = errno;
+        const int errnum = errno;
         nointr_close(fd);
         errno = errnum;
     }
@@ -129,7 +129,7 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
         return fd;
 
     if (-1 != fd) {
-        int errnum = errno;
+        const int errnum = errno;
         nointr_close(fd);
         errno = errnum;
     }
@@ -190,6 +190,16 @@ bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
 }
 
 ssize_t
+bindsocket_unixdomain_poll_recv_fd (const int fd, int * const restrict rfd,
+                                    struct iovec * const restrict iov,
+                                    const size_t iovlen, const int msec)
+{
+    return (retry_poll_fd(fd, POLLIN|POLLRDHUP, msec) == 1)
+      ? bindsocket_unixdomain_recv_fd(fd, rfd, iov, iovlen)
+      : -1;
+}
+
+ssize_t
 bindsocket_unixdomain_send_fd (const int fd, const int sfd,
                                struct iovec * const restrict iov,
                                const size_t iovlen)
@@ -226,8 +236,18 @@ bindsocket_unixdomain_send_fd (const int fd, const int sfd,
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
 
+ssize_t
+bindsocket_unixdomain_poll_send_fd (const int fd, const int sfd,
+                                    struct iovec * const restrict iov,
+                                    const size_t iovlen, const int msec)
+{
+    return (retry_poll_fd(fd, POLLOUT, msec) == 1)
+      ? bindsocket_unixdomain_send_fd(fd, sfd, iov, iovlen)
+      : -1;
+}
+
 bool
-bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
+bindsocket_unixdomain_recv_addrinfo (const int fd,
                                      struct addrinfo * const restrict ai,
                                      int * const restrict rfd)
 {
@@ -244,7 +264,6 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
       { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
-    if (1 != retry_poll_fd(fd, POLLIN|POLLRDHUP, msec)) return false;
     ssize_t r = bindsocket_unixdomain_recv_fd(fd, rfd, iov,
                                               sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
@@ -288,9 +307,19 @@ bindsocket_unixdomain_recv_addrinfo (const int fd, const int msec,
     return false;   /* invalid client request; undecipherable format */
 }
 
+bool
+bindsocket_unixdomain_poll_recv_addrinfo (const int fd,
+                                     struct addrinfo * const restrict ai,
+                                     int * const restrict rfd, const int msec)
+{
+    return (retry_poll_fd(fd, POLLIN|POLLRDHUP, msec) == 1)
+      ? bindsocket_unixdomain_recv_addrinfo(fd, ai, rfd)
+      : false;
+}
+
 /* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
-bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
+bindsocket_unixdomain_send_addrinfo (const int fd,
                                      const struct addrinfo * const restrict ai,
                                      const int sfd)
 {
@@ -304,7 +333,6 @@ bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
       { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
     };
-    if (1 != retry_poll_fd(fd, POLLOUT, msec)) return false;
     ssize_t w = bindsocket_unixdomain_send_fd(fd, sfd, iov,
                                               sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
@@ -320,6 +348,17 @@ bindsocket_unixdomain_send_addrinfo (const int fd, const int msec,
     perror("send");
     return false;
 #endif
+
+/* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
+bool
+bindsocket_unixdomain_poll_send_addrinfo (const int fd,
+                                     const struct addrinfo * const restrict ai,
+                                     const int sfd, const int msec)
+{
+    return (retry_poll_fd(fd, POLLOUT, msec) == 1)
+      ? bindsocket_unixdomain_send_addrinfo(fd, ai, sfd)
+      : false;
+}
 
 #ifdef __linux__
 /* obtain peer credentials
