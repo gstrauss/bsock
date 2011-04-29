@@ -40,10 +40,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifndef POLLRDHUP
-#define POLLRDHUP 0
-#endif
-
 #include <bindsocket_unixdomain.h>
 
 #ifndef BINDSOCKET_SOCKET_DIR

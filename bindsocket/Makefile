@@ -16,6 +16,8 @@ LDFLAGS+= -Wl,-z,now
 bindsocket.m.o: CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
 bindsocket.m.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket.t.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket_unixdomain.o: \
+                CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

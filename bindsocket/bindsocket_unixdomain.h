@@ -83,6 +83,10 @@ bindsocket_unixdomain_poll_send_addrinfo (const int fd,
                                      const int sfd, const int msec);
 
 int
+bindsocket_unixdomain_bindresvaddr (const int fd,
+                                    const struct addrinfo * const restrict ai);
+
+int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
                                   gid_t * const restrict egid);
 

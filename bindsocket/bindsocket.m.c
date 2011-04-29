@@ -35,7 +35,6 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <inttypes.h>
-#include <poll.h>
 #include <pwd.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -52,10 +51,6 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
 #include <bindsocket_addrinfo.h>
 #include <bindsocket_unixdomain.h>
-
-#ifndef POLLRDHUP
-#define POLLRDHUP 0
-#endif
 
 #ifndef BINDSOCKET_GROUP
 #define BINDSOCKET_GROUP "daemon"
