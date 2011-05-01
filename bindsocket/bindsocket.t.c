@@ -40,6 +40,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <bindsocket_bind.h>
 #include <bindsocket_unixdomain.h>
 
 #ifndef BINDSOCKET_SOCKET_DIR
@@ -59,6 +60,7 @@ main (int argc, char *argv[])
 
     /* simple test: default is socketpair.  extra argc != 6 means daemon mode */
 
+  #if 0
     if (1 == argc || 6 == argc) {
         if (0 != socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) {
             perror("socketpair");
@@ -90,9 +92,11 @@ main (int argc, char *argv[])
 
     setgid(500);
     setuid(500);
+  #endif
 
     int sfd;
     int nfd = -1;
+  #if 0
     if (1 == argc || 6 == argc) {
         while (0 != close(sv[0]) && errno == EINTR) ;/*similar to nointr_close*/
         sfd = sv[1];
@@ -105,6 +109,7 @@ main (int argc, char *argv[])
             return EXIT_FAILURE;
         }
     }
+  #endif
 
     if (6 != argc) {
       #if 1
@@ -126,6 +131,12 @@ main (int argc, char *argv[])
         iaddr.sin_addr.s_addr = htonl(INADDR_ANY);
        #if 1  /* test sending socket created by client */
         nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
+        #if 1
+            if (0 != bindsocket_bind_resvaddr(nfd, &ai))
+                perror("bindsocket_bind_resvaddr");
+            fprintf(stderr, "bound nfd: %d\n", nfd);
+            return 0;
+        #endif
        #endif
         if (!bindsocket_unixdomain_send_addrinfo(sfd, &ai, nfd)) {
             perror("bindsocket_unixdomain_send_addrinfo");
@@ -150,7 +161,7 @@ main (int argc, char *argv[])
     while (0 != close(sfd) && errno == EINTR) ; /* similar to nointr_close() */
     fprintf(stderr, "sent fd: %d; received fd: %d\n", nfd, fd);
     /* document: caller should check sanity: fd >= 0 */
-    /* document: caller should set F_CLOEXEC if desired, and then listen()*/
+    /* document: caller should set FD_CLOEXEC if desired, and then listen()*/
 
     return errnum;
 }

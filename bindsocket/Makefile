@@ -1,6 +1,7 @@
 TARGETS:= bindsocket bindsocket.t
 
 PREFIX?=/usr/local
+BINDSOCKET_EXE?=$(PREFIX)/sbin/bindsocket
 BINDSOCKET_CONFIG?=$(PREFIX)/etc/bindsocket
 BINDSOCKET_SOCKET_DIR?=$(PREFIX)/var/run/bindsocket
 
@@ -13,11 +14,11 @@ CFLAGS+=-pipe -std=c99 -pedantic -O2 -D_XOPEN_SOURCE=600 -Wall -Winline -I.
 # (daemon benefits from resolving symbols at load time; one-shot is extra cost)
 LDFLAGS+= -Wl,-z,now
 
-bindsocket.m.o: CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
-bindsocket.m.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
-bindsocket.t.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
-bindsocket_unixdomain.o: \
-                CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket.t.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_EXE='"$(BINDSOCKET_EXE)"'
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -25,7 +26,9 @@ bindsocket_unixdomain.o: \
 bindsocket: bindsocket.m.o bindsocket_addrinfo.o bindsocket_unixdomain.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
-bindsocket.t: bindsocket.t.o bindsocket_addrinfo.o bindsocket_unixdomain.o
+bindsocket.t: LDFLAGS+= -ldl
+bindsocket.t: bindsocket.t.o bindsocket_addrinfo.o bindsocket_unixdomain.o \
+              bindsocket_bind.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 .PHONY: install install-suid

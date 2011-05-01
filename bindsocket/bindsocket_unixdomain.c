@@ -360,52 +360,6 @@ bindsocket_unixdomain_poll_send_addrinfo (const int fd,
       : false;
 }
 
-
-#ifndef BINDSOCKET_SOCKET_DIR
-#error "BINDSOCKET_SOCKET_DIR must be defined"
-#endif
-#define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
-
-int
-bindsocket_unixdomain_bindresvaddr (const int fd,
-                                    const struct addrinfo * const restrict ai)
-{
-    /* (bindresvaddr name is similar to bindresvport(),
-     *  but similarities end there)
-     * (ai->ai_next is ignored) */
-
-    int rfd = -1;
-    int errnum = 0;
-    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
-    const int ms = 5000; /*(poll timeout in millisecs)*/
-    const int sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
-    if (-1 == sfd)
-        return -1;
-
-    /* bindsocket_unixdomain_poll_recv_fd()
-     *   fills errnum to indicate remote success/failure
-     *   (else manually set errnum (upon failure to retrieve remote status))
-     * (no poll before sending addrinfo since this is first write to socket) */
-    if (!bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
-        || (-1 == bindsocket_unixdomain_poll_recv_fd(sfd, &rfd, &iov, 1, ms)))
-        errnum = errno;
-
-  #if 1
-    nointr_close(sfd);
-    if (-1 != rfd)
-        nointr_close(rfd);
-  #else  /* replace nointr_close() with the following if forking this routine */
-    while (0 != close(sfd) && errno == EINTR) ;    /*similar to nointr_close()*/
-    if (-1 != rfd)
-        while (0 != close(rfd) && errno == EINTR) ;/*similar to nointr_close()*/
-  #endif
-
-    errno = errnum;
-
-    return (0 == errnum) ? 0 : -1;
-}
-
-
 #ifdef __linux__
 /* obtain peer credentials
  * (requires Linux getsockopt SO_PEERCRED or BSD-style getpeereid() support) */
