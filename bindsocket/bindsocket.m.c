@@ -94,13 +94,12 @@ syslog_perror (const char * const restrict str, const int errnum)
     else
         syslog(LOG_ERR, "%s", str);
 
-    if (0 == syslog_perror_level) { /*(stderr closed when daemon; skip perror)*/
-        if (0 != errnum) {
-            errno = errnum;
-            perror(str);
-        }
+    if (0 == syslog_perror_level) { /*(stderr closed when daemon; skip stderr)*/
+        if (0 != errnum)
+            fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s: %s\n", str,
+                    strerror(errnum));
         else
-            fprintf(stderr, "%s\n", str);
+            fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s\n", str);
     }
 }
 
