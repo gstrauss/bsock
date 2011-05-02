@@ -41,6 +41,9 @@ int
 bindsocket_bind_resvaddr (const int fd,
                           const struct addrinfo * const restrict ai);
 
+int
+bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
+                           socklen_t addrlen);
 
 #ifdef __cplusplus
 }

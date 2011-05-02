@@ -35,6 +35,9 @@
  * bindsocket config file line format:
  *     username address_family socket_type protocol service_or_port address
  * - specify separate lines for each difference, since exact match is performed
+ * - strings are case-sensitive
+ *     use uppercase addr family, socktype constants (e.g. AF_INET, SOCK_STREAM)
+ *     use lowercase for protocol (e.g. tcp) or alias in /etc/protocols
  * - use port 0 if service_or_port does not apply to addr family (e.g. AF_UNIX)
  * - blank lines and comments (lines beginning with #) are skipped
  * - address must be an address string not a constant, e.g.
@@ -69,6 +72,8 @@
  *     http://www.lst.de/~okir/blackhats/node121.html
  *   Linux Socket Programming by Example - Warren Gay
  *     "17. Passing Credentials and File Descriptors"
+ *   authbind  (Ian Jackson, 1998)
+ *     http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind
  *
  *
  * Alternative ideas:
@@ -90,6 +95,29 @@
  * get in the way of programs which supervise daemons, as the program described
  * here might.
  *
+ * authbind allows a program which does not or should not run as root to bind
+ * a socket to low-numbered ports in a controlled way.  It uses LD_LIBRARY_PATH
+ * and interposes a custom bind() to catch and redirect bind() to a privileged
+ * subprocess.  [Ed: bindsocket daemon using unix domain sockets to transfer
+ * file descriptor was developed prior to the author becoming aware of authbind]
+ * bindsocket supports IPv4, IPv6, and unix domain sockets.
+ * authbind supports only IPv4, though there is a patch for IPv6 support
+ *   (http://toroid.org/ams/etc/authbind-ipv6-support)
+ * authbind configuration supports multiple ways to authorize bind request
+ * including specific IP and port, CIDR prefix matching, and port ranges.
+ * bindsocket is intentionally less flexible, supporting only exact matches
+ * for IP and port.  authbind distributes the configs in filesystem paths to
+ * avoid reading and parsing the entire config for each request, whereas
+ * bindsocket currently has a monolithic config file.  If bindsocket config
+ * parsing becomes a performance bottleneck, this will be revisited.
+ * authbind disallows port >= IPPORT_RESERVED/2 and < IPPORT_RESERVED since
+ * those are used by bindresvport() for, e.g. rsh outbound connections.
+ * authbind presumably must reject these ports because one authbind config file
+ * authorization mode just looks at IP address and will bind to any port
+ * requested if the IP address matches.  On the other hand, bindsocket requires
+ * explicit specification of port, so if admin explicitly configures a port
+ * in the range [IPPORT_RESERVED/2, IPPORT_RESERVED), then bindsocket allows it.
+ *
  *
  * FUTURE:
  * - create small program that checks for canonicalized strings in config file
@@ -98,12 +126,22 @@
  *     might create mcdb with hash of canonicalized username + addrinfo strings
  * - provide example client code that interfaces with bindsocket for popular
  *   programs such as Apache.  (Also: graceful Apache restart via transferring
- *   the listening socket(s))
+ *   the listening socket(s)).  Additionally, similar to authbind, provide
+ *   shared library that interposes version of bind() that contacts bindsocket
+ *   daemon so that existing programs can use bindsocket without modification.
  * - create test target that compiles with overrides and config file
  *   so that test can occur without root privilege
  *   (create directory with config file 700 for test)
  *   (build with outputs going elsewhere using VPATH and add -I.. so that
  *    developer can not accidentally 'install' test executables)
+ * - performance: test what system calls get hit in child in daemon mode.  Then,
+ *   add calls to resolve the symbols in daemon parent init so that they are all
+ *   loaded before fork().  Link -z now (avoid lazy loading/symbol resolution).
+ *   Open config file and stat it after each accept (re-opening if needed).
+ *   Benchmark typical service times to one-shot with and without -z now and to
+ *   daemon, with and without -z now.  Catch HUP signal and reopen databases
+ *   e.g. /etc/services and /etc/protocols (endservent(), endprotoent(), and
+ *   then setservent(1) and setprotoent(1) to pass stayopen flag)
  * - run programs with memory leak generators and stuff
  * - port and test bindsocket on additional platforms (FreeBSD, OpenBSD, ...)
  * - sysctl can prevent accidental usage of specific non-privileged ports
@@ -114,4 +152,10 @@
  *   and use bindsocket to dole out standard ports for non-privileged daemons
  *   like Postgres (5432), MySQL (3306), and others, while other non-privileged
  *   accounts (not postgres, mysql, etc) will not be able to bind to those ports
+ *   Alternatively, provide features similar to portreserve, but keep a copy of
+ *   the socket in the daemon and dole it out to those authorized to receive it.
+ *   Doing so removes the race condition where a daemon that is listening on a
+ *   non-privileged port restarts and allowing a race condition where another
+ *   process owned by a different user grabs the non-privileged port.
+ *     (man portreserve)
  */

@@ -221,11 +221,29 @@ bindsocket_client_session (const int cfd,
 
     do {  /*(required steps follow this block; this might be made subroutine)*/
 
-        /* get client credentials */
-        if (0 != bindsocket_unixdomain_getpeereid(cfd, &uid, &gid)) {
-            syslog_perror("getpeereid", errno);
+        /* get client credentials
+         * (require connected socket for daemon and for no args in one-shot) */
+        if (NULL == aistr || 0 == getpeername(cfd, ai.ai_addr, &ai.ai_addrlen)){
+            if (0 != bindsocket_unixdomain_getpeereid(cfd, &uid, &gid)) {
+                syslog_perror("getpeereid", errno);
+                break;
+            }
+        }
+        else if (NULL != aistr || ENOTCONN == errno) {
+            /* authbind: client provided socket to which to bind()
+             *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
+             * bindsocket has args and stdin is not a connected socket.
+             * bindsocket is running setuid; use real uid, gid as credentials */
+            fd  = cfd;
+            uid = getuid();
+            gid = getgid();
+        }
+        else {
+            syslog_perror("getpeername", errno);
             break;
         }
+
+        ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
 
         /* syslog all connections to (or instantiations of) bindsocket daemon
          * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
@@ -265,11 +283,15 @@ bindsocket_client_session (const int cfd,
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
     flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
-    rc = (bindsocket_unixdomain_send_fd(cfd, nfd, &iov, 1) == iov.iov_len)
-      ? EXIT_SUCCESS
-      : EXIT_FAILURE;
-    if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
-        syslog_perror("sendmsg", errno);
+    if (cfd != fd) {
+        rc = (bindsocket_unixdomain_send_fd(cfd, nfd, &iov, 1) == iov.iov_len)
+          ? EXIT_SUCCESS
+          : EXIT_FAILURE;
+        if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
+            syslog_perror("sendmsg", errno);
+    }
+    else
+        rc = flag;  /* authbind: set exit value */
 
     retry_close(fd);/* not strictly needed since callers exit upon return */
     alarm(0); /* not strictly needed since callers exit upon return */
