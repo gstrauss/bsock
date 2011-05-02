@@ -39,11 +39,16 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <stdbool.h>
 #include <unistd.h>
 
 extern char **environ;
 
 #include <bindsocket_unixdomain.h>
+
+#ifndef BINDSOCKET_POLL_TIMEOUT
+#define BINDSOCKET_POLL_TIMEOUT 5000  /*(poll timeout in millisecs)*/
+#endif
 
 #ifndef BINDSOCKET_EXE
 #error "BINDSOCKET_EXE must be defined"
@@ -59,81 +64,99 @@ nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
 static int
+bindsocket_bind_send_addr_and_recv (const int fd,
+                                    const struct addrinfo * const restrict ai,
+                                    const int sfd)
+{
+    /* bindsocket_unixdomain_poll_recv_fd()
+     *   fills errnum to indicate remote success/failure
+     * (no poll before sending addrinfo since this is first write to socket)
+     * (close rfd unconditionally since expecting rfd == -1 and there
+     *  is no provision made to return rfd to caller in current usage) */
+    int rfd = -1;
+    int errnum = 0;
+    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
+    if (bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
+        && -1 != bindsocket_unixdomain_poll_recv_fd(sfd, &rfd, &iov, 1,
+                                                    BINDSOCKET_POLL_TIMEOUT)) {
+        if (-1 != rfd) nointr_close(rfd);
+    }
+    else
+        errnum = errno;
+
+    return errnum;
+}
+
+static bool
 bindsocket_bind_viafork (const int fd,
                          const struct addrinfo * const restrict ai)
 {
     /* (ai->ai_next is ignored) */
-    pid_t pid;
-    const int ms = 5000; /*(poll timeout in millisecs)*/
     int sv[2];
-    int errnum = 0;
-    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
+    int errnum;
+    pid_t pid;
     struct stat st;
-    char *args[] = { BINDSOCKET_EXE, NULL };
 
     if (0 != stat(BINDSOCKET_EXE, &st))
-        return -1;
+        return false;
     if (!(st.st_mode & S_ISUID))
-        return (errno = EPERM, -1);
+        return (errno = EPERM, false);
 
     if (0 != socketpair(AF_UNIX, SOCK_STREAM, 0, sv))
-        return -1;
+        return false;
 
     pid = fork();/*(not retrying fork on EAGAIN; ?add counter, limited retry?)*/
     if (0 == pid) {       /* child; no retry if child signalled, errno==EINTR */
-        if (dup2(sv[0], STDIN_FILENO) != STDIN_FILENO)
+        static char *args[] = { BINDSOCKET_EXE, NULL };
+        if (   dup2(sv[0], STDIN_FILENO) != STDIN_FILENO
+            || (sv[0] != STDIN_FILENO && 0 != close(sv[0]))
+            || (sv[1] != STDIN_FILENO && 0 != close(sv[1])))
             _exit(errno);
-        if (sv[0] != STDIN_FILENO) close(sv[0]);
-        if (sv[1] != STDIN_FILENO) close(sv[1]);
         fcntl(STDIN_FILENO, F_SETFD, 0);/* unset all fdflags, incl FD_CLOEXEC */
         execve(args[0], args, environ);
         _exit(errno); /*(not reached unless execve() failed)*/
     }
     else if (-1 != pid) { /* parent */
-        nointr_close(sv[0]);  /* see comments in bindsocket_bind_resvaddr() */
-        if (!bindsocket_unixdomain_send_addrinfo(sv[1], ai, fd)
-            || (-1==bindsocket_unixdomain_poll_recv_fd(sv[1],&sv[0],&iov,1,ms)))
-            errnum = errno;
-        while (pid != waitpid(pid, NULL, 0) && errno==EINTR) ;/*ignore exit rc*/
+        nointr_close(sv[0]);
+        errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sv[1]);
+        while (pid != waitpid(pid,NULL,0) && errno == EINTR) ;
+        /* reap child process but ignore exit status; program might be ignoring
+         * SIGCHLD or might have custom SIGCHLD handler, either of which would
+         * prevent waitpid() above from reliably obtaining child status */
     }
-    else                  /* fork() error */
+    else {                /* fork() error */
         errnum = errno;
+        nointr_close(sv[0]);
+    }
 
-    if (-1 != sv[0]) nointr_close(sv[0]);
-    if (-1 != sv[1]) nointr_close(sv[1]);
+    nointr_close(sv[1]);
     errno = errnum;
-    return (0 == errnum) ? 0 : -1;
+    return (0 == errnum);
+}
+
+static bool
+bindsocket_bind_viasock (const int fd,
+                         const struct addrinfo * const restrict ai)
+{
+    int errnum;
+    const int sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
+    if (-1 == sfd)
+        return false;
+
+    errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sfd);
+    nointr_close(sfd);
+    errno = errnum;
+    return (0 == errnum);
 }
 
 int
 bindsocket_bind_resvaddr (const int fd,
                           const struct addrinfo * const restrict ai)
 {
-    /* (bindresvaddr name is similar to bindresvport(),
-     *  but similarities end there)
+    /* (bindresvaddr name similar to bindresvport(), but similarities end there)
+     * (return value 0 for success, -1 upon error; match return value of bind())
      * (ai->ai_next is ignored) */
-
-    int rfd = -1;
-    int errnum = 0;
-    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
-    const int ms = 5000; /*(poll timeout in millisecs)*/
-    const int sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
-    if (-1 == sfd)
-        return bindsocket_bind_viafork(fd, ai);
-
-    /* bindsocket_unixdomain_poll_recv_fd()
-     *   fills errnum to indicate remote success/failure
-     *   (else manually set errnum (upon failure to retrieve remote status))
-     * (no poll before sending addrinfo since this is first write to socket) */
-    if (!bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
-        || (-1 == bindsocket_unixdomain_poll_recv_fd(sfd, &rfd, &iov, 1, ms)))
-        errnum = errno;
-
-    nointr_close(sfd);
-    if (-1 != rfd)
-        nointr_close(rfd);
-
-    errno = errnum;
-
-    return (0 == errnum) ? 0 : -1;
+    return (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
+      ? 0
+      : -1;
 }
