@@ -383,7 +383,8 @@ daemon_signal_init (void)
 {
     /* configure signal handlers for bindsocket desired behaviors
      *   SIGALRM: default handler
-     *   SIGCLD:  ignore
+     *   SIGPIPE: ignore
+     *   SIGCLD:  track number of children
      *   SIGHUP:  clean up and exit (for now)
      *   SIGINT:  clean up and exit
      *   SIGTERM: clean up and exit
@@ -394,6 +395,13 @@ daemon_signal_init (void)
     act.sa_handler = SIG_DFL;
     act.sa_flags = 0;  /* omit SA_RESTART */
     if (sigaction(SIGALRM, &act, (struct sigaction *) NULL) != 0) {
+        syslog_perror("sigaction", errno);
+        return false;
+    }
+
+    act.sa_handler = SIG_IGN;
+    act.sa_flags = 0;  /* omit SA_RESTART */
+    if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0) {
         syslog_perror("sigaction", errno);
         return false;
     }
