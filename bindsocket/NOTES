@@ -3,7 +3,7 @@
  * Historically, ports 1-1023 are restricted and only root can bind to them.
  *   (IPPORT_RESERVED = 1024)
  * Traditionally, there have been two ways to run non-root daemons on low ports:
- * a) inetd  (root daemon listens on low port and for each connection accept(),
+ * a) inetd  (root daemon listens on low port and for each connection accept()s,
  *    fork()s, drop privileges, exec()s non-root daemon for single connection)
  * b) daemon starts up as root, bind()s to low port, and drops root privileges
  *
@@ -20,9 +20,12 @@
  * file for bindsocket specifies which users can request sockets on which 
  * addresses and ports.  bindsocket authorizes the socket request, binds to
  * the address and port, and then passes the bound socket back to the client
- * over the unix domain socket.  The daemon can set socket options such as
- * SO_KEEPALIVE, SO_SNDBUF, SO_RCVBUF, etc and then listen() to the socket as
- * if it had called bind() itself.
+ * over the unix domain socket.  The client can set socket options such as
+ * SO_KEEPALIVE, SO_SNDBUF, SO_RCVBUF, etc, as well as file descriptor flags
+ * (e.g. FD_CLOEXEC), and then listen() / accept() on the socket as if the
+ * client process had called bind() itself.  If the client (optionally) passes
+ * an unbound socket to the bindsocket daemon along with the addrinfo request,
+ * then bindsocket will authorize and bind the address to the socket provided.
  *
  * Another option for using bindsocket is to install it as setuid root program.
  * This is not required if running bindsocket as daemon.  However, if installed
@@ -30,6 +33,21 @@
  * domain sockets and can start up bindsocket with one of the sockets on the
  * STDIN_FILENO of bindsocket.  bindsocket will then operate as described above,
  * but only for a single address and port socket request.
+ *
+ * As a special-case, if zero (0) is the requested port for AF_INET or AF_INET6,
+ * then bindsocket will bind to a reserved port < IPPORT_RESERVED (1024).  This
+ * could e.g. be used by rsh and ssh if these client programs were setuid 'rsh'
+ * or setuid 'ssh', where 'rsh' and 'ssh' were not 'root', and the bindsocket
+ * config file permitted these users to request addrinfo specifying port 0.
+ * (Better recommendation is to delete rsh and rlogin, and to remove the setid
+ * bit from ssh as the setuid root of client ssh program is not required for
+ * typical use.)  Note that specifying port 0 traditionally means that the
+ * operating system should bind to an ephemeral port, an unprivileged high port,
+ * but is used here to indicate a request to bind to a privileged low port.
+ * After all, one need not call bindsocket to bind to a privileged port if
+ * explicitly calling bind and requesting that the operating system choose an
+ * unprivileged port.  Most outbound connections simply call connect() and do
+ * not call bind().
  *
  *
  * bindsocket config file line format:
@@ -110,6 +128,7 @@
  * avoid reading and parsing the entire config for each request, whereas
  * bindsocket currently has a monolithic config file.  If bindsocket config
  * parsing becomes a performance bottleneck, this will be revisited.
+ * (Forking for each connection to bindsocket is likely to be bottleneck first.)
  * authbind disallows port >= IPPORT_RESERVED/2 and < IPPORT_RESERVED since
  * those are used by bindresvport() for, e.g. rsh outbound connections.
  * authbind presumably must reject these ports because one authbind config file
@@ -129,6 +148,9 @@
  *   the listening socket(s)).  Additionally, similar to authbind, provide
  *   shared library that interposes version of bind() that contacts bindsocket
  *   daemon so that existing programs can use bindsocket without modification.
+ *   (Document and provide a way for caller to choose whether or not to pass
+ *    bind requests that specify port 0 to bindsocket to request a privileged
+ *    port, or directly to bind() to request a non-privileged port)
  * - create test target that compiles with overrides and config file
  *   so that test can occur without root privilege
  *   (create directory with config file 700 for test)

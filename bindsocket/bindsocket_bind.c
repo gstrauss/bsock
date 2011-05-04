@@ -203,7 +203,7 @@ bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
         char host[INET6_ADDRSTRLEN];
         char port[6];
         switch (getnameinfo(ai.ai_addr, ai.ai_addrlen, host, sizeof(host),
-                            nserv,sizeof(nserv),NI_NUMERICHOST|NI_NUMERICSERV)){
+                            port, sizeof(port), NI_NUMERICHOST|NI_NUMERICSERV)){
           case 0: if (atoi(port) < IPPORT_RESERVED) break;
                   else return bind_rtld_next(sockfd, ai.ai_addr, ai.ai_addrlen);
           case default:    errno = EINVAL; return -1;

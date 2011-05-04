@@ -115,6 +115,55 @@ retry_close (const int fd)
     return r;
 }
 
+#ifndef IPPORT_RESERVEDSTART
+#define IPPORT_RESERVEDSTART 600
+#endif
+static int
+bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
+{
+    /* (code below honors sin_addr or sin6_addr, if specified) */
+    /* (getpid() is poor choice if code is used many times in threaded process
+     *  (with same pid).  As it is, this code is not as random as it could be)*/
+    in_port_t port;
+    const in_port_t pstart = (in_port_t)
+      (getpid()%(IPPORT_RESERVED-IPPORT_RESERVEDSTART)) + IPPORT_RESERVEDSTART;
+    in_port_t *portptr;
+    socklen_t addrlen;
+    struct sockaddr_in saddr;
+    if (NULL == sa) {
+        memset(&saddr, '\0', sizeof(saddr));
+        saddr.sin_family = AF_INET;
+        sa = (struct sockaddr *)&saddr;
+        portptr = &saddr.sin_port;
+        addrlen = sizeof(saddr);
+    }
+    else if (AF_INET == sa->sa_family) {
+        portptr = &((struct sockaddr_in *)sa)->sin_port;
+        addrlen = sizeof(struct sockaddr_in);
+    }
+    else if (AF_INET6 == sa->sa_family) {
+        portptr = &((struct sockaddr_in6 *)sa)->sin6_port;
+        addrlen = sizeof(struct sockaddr_in6);
+    }
+    else {
+        errno = EAFNOSUPPORT;
+        return -1;
+    }
+
+    port = pstart;
+    do {
+        *portptr = htons(port);
+        if (0 == bind(sockfd, sa, addrlen))
+            return 0;
+        else if (errno != EADDRINUSE && errno != EINTR)
+            return -1;
+
+        if (++port == IPPORT_RESERVED)
+            port = IPPORT_RESERVEDSTART;
+    } while (port != pstart);
+    return -1;
+}
+
 static bool
 bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                                    const uid_t uid, const gid_t gid)
@@ -141,6 +190,11 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         return true;
     if (NULL == (pw = getpwuid(uid)))
         return false;
+
+    if (ai->ai_family != ai->ai_addr->sa_family) {
+        syslog_perror("addrinfo inconsistent", EINVAL);
+        return false;
+    }
 
     /* convert username and addrinfo to string for comparison with config file
      * (validate and canonicalize user input)
@@ -261,7 +315,7 @@ bindsocket_client_session (const int cfd,
         if (!bindsocket_is_authorized_addrinfo(&ai, uid, gid))
             break;
 
-        /* create socket (if not provided by client) and bind to address */
+        /* create socket (if not provided by client) */
         if (-1 == fd) {
             fd = nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
             if (-1 == fd) {
@@ -269,13 +323,24 @@ bindsocket_client_session (const int cfd,
                 break;
             }
         }
-        if (   0 != setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
-            || 0 != bind(fd, (struct sockaddr *)ai.ai_addr, ai.ai_addrlen)) {
-            syslog_perror("setsockopt,bind", errno);
-            break;
-        }
 
-        rc = EXIT_SUCCESS;
+        /* bind to address (special-case port == 0 to bind to reserved port) */
+        if (   (AF_INET == ai.ai_family
+                && 0 == ((struct sockaddr_in *)ai.ai_addr)->sin_port)
+            || (AF_INET6 == ai.ai_family
+                && 0 == ((struct sockaddr_in6 *)ai.ai_addr)->sin6_port)   ) {
+            if (0 == bindsocket_bindresvport_sa(fd, ai.ai_addr))
+                rc = EXIT_SUCCESS;
+            else
+                syslog_perror("bindresvport_sa", errno);
+        }
+        else {
+            if (0 == setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
+                && 0 == bind(fd, ai.ai_addr, ai.ai_addrlen))
+                rc = EXIT_SUCCESS;
+            else
+                syslog_perror("setsockopt,bind", errno);
+        }
 
     } while (0);
 
