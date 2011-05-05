@@ -46,6 +46,8 @@ struct bindsocket_addrinfo_strs {
     const char *addr;
 };
 
+/* ai->ai_addr must be provided containing usage storage of len ai->ai_addrlen
+ * (recommend: int addr[27]; ai->ai_addr=addr; ai->ai_addrlen=sizeof(addr); )*/
 bool
 bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
                               const struct bindsocket_addrinfo_strs *

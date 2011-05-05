@@ -53,7 +53,7 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 #include <bindsocket_unixdomain.h>
 
 #ifndef BINDSOCKET_GROUP
-#define BINDSOCKET_GROUP "daemon"
+#error "BINDSOCKET_GROUP must be defined"
 #endif
 
 #ifndef BINDSOCKET_CONFIG
@@ -575,7 +575,7 @@ bindsocket_daemon_atexit (void)
 static int
 bindsocket_daemon_init_socket (void)
 {
-    struct passwd *pw;
+    struct group *gr;
     struct stat st;
     int sfd;
     const uid_t euid = geteuid();
@@ -604,8 +604,8 @@ bindsocket_daemon_init_socket (void)
     bindsocket_daemon_pid = getpid();
     atexit(bindsocket_daemon_atexit);
 
-    if (NULL != (pw = getpwnam(BINDSOCKET_GROUP))
-        && 0 == chown(BINDSOCKET_SOCKET, euid, pw->pw_gid)
+    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP))
+        && 0 == chown(BINDSOCKET_SOCKET, euid, gr->gr_gid)
         && 0 == chmod(BINDSOCKET_SOCKET, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP))
         return sfd;
 
@@ -702,6 +702,7 @@ main (int argc, char *argv[])
     /* efficiency: perform tasks that result in initialization in daemon,
      * which are inherited by child, instead of initialization in every child */
     getpwuid(0);
+    getgrgid(0);
     setprotoent(1);
     setservent(1);
 

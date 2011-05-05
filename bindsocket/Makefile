@@ -4,6 +4,7 @@ PREFIX?=/usr/local
 BINDSOCKET_EXE?=$(PREFIX)/sbin/bindsocket
 BINDSOCKET_CONFIG?=$(PREFIX)/etc/bindsocket
 BINDSOCKET_SOCKET_DIR?=$(PREFIX)/var/run/bindsocket
+BINDSOCKET_GROUP?=daemon
 
 .PHONY: all
 all: $(TARGETS)
@@ -16,6 +17,7 @@ LDFLAGS+= -Wl,-z,now
 
 RPATH= -Wl,-rpath=$(PREFIX)/lib
 
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_GROUP='"$(BINDSOCKET_GROUP)"'
 bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
 bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket.t.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
@@ -40,13 +42,14 @@ bindsocket.t: bindsocket.t.o libbindsocket.so
 
 # (Note: not currently installing libbindsocket.so with any version suffix)
 .PHONY: install install-suid
-BINDSOCKET_MODE=0555
-install-suid: BINDSOCKET_MODE=4555
+BINDSOCKET_MODE=0550
+install-suid: BINDSOCKET_MODE=4550
 install-suid: install ;
 install:
 	/bin/mkdir -p -m 0755 $(PREFIX)/lib $(PREFIX)/sbin \
           $(dir $(BINDSOCKET_CONFIG)) $(BINDSOCKET_SOCKET_DIR)
-	/usr/bin/install -m $(BINDSOCKET_MODE) -p bindsocket $(PREFIX)/sbin/
+	/usr/bin/install -m $(BINDSOCKET_MODE) -g $(BINDSOCKET_GROUP) -p \
+          bindsocket $(PREFIX)/sbin/
 	/usr/bin/install -m 0555 -p libbindsocket.so $(PREFIX)/lib/
 	[ -f $(BINDSOCKET_CONFIG) ] || \
           (/bin/touch $(BINDSOCKET_CONFIG) && \

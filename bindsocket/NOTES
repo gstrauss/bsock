@@ -68,12 +68,31 @@
  *
  *
  * bindsocket setup
- * - create directory for bindsocket unix domain socket (/var/run/bindsocket/)
- *   (ownership root:root, permissions 0755)
- * - create bindsocket config file (/etc/bindsocket)
- *   (ownership root:root, permissions 0644 or even as restrictive as 0400)
- *   populate config file, e.g.
+ *   make
+ *   make install   # 'install-suid' to install bindsocket setuid root)
+ *   # populate config file, e.g. /usr/local/etc/bindsocket
  *     apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
+ *
+ * Files  (default PREFIX=/usr/local)
+ *   /usr/local/etc/bindsocket           # bindsocket authorization (config)
+ *   /usr/local/lib/libbindsocket.so     # bindsocket library for client/daemon
+ *   /usr/local/sbin/bindsocket          # bindsocket executable (daemon)
+ *   /usr/local/var/run/bin/bindsocket/  # dir containing unix domain socket
+ *
+ * bindsocket logs to LOG_DAEMON syslog facility, by default.
+ * Be sure to config /etc/syslog.conf (or /etc/rsyslog.conf) for daemon.info
+ * Compile with -DBINDSOCKET_SYSLOG_FACILITY=<digit> to modify.
+ * See /usr/include/sys/syslog.h (or similar) for LOG_xxxxx values.
+ *
+ * bindsocket is installed with ownership root:daemon, permissions 0550 with
+ * the 'make install'.  Permissions 4550 are used with 'make install-suid'.
+ * Compile with -DBINDSOCKET_GROUP=xxxxx to modify the group ownership.
+ * By default, this restricts only those users part of group 'daemon' to run
+ * bindsocket.  You are encouraged to use a custom group, e.g. bindsock, and
+ * to add to this custom group those specialized role accounts (e.g. apache)
+ * under which your daemons run.  This group is also used to permission the
+ * bindsocket unix domain socket (e.g. /usr/local/var/run/bindsocket/socket)
+ * to restrict which accounts can connect to bindsocket daemon through socket.
  *
  *
  * bindsocket is by no means the end-all-be-all of security.  Defense-in-depth
