@@ -261,7 +261,7 @@ bindsocket_client_session (const int cfd,
     int rc = EXIT_FAILURE;
     uid_t uid;
     gid_t gid;
-    int flag = 1;
+    int flag;
     int addr[27];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
     struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
       .ai_addrlen = sizeof(addr),
@@ -274,26 +274,31 @@ bindsocket_client_session (const int cfd,
 
     do {  /*(required steps follow this block; this might be made subroutine)*/
 
-        /* get client credentials
-         * (require connected socket for daemon and for no args in one-shot) */
-        if (NULL == aistr || 0 == getpeername(cfd, ai.ai_addr, &ai.ai_addrlen)){
+        /* check if socket connected if args are provided */
+        flag = 0;
+        if (NULL != aistr) {
+            flag = getpeername(cfd, ai.ai_addr, &ai.ai_addrlen);
+            if (0 != flag && errno != ENOTCONN) {
+                syslog_perror("getpeername", errno);
+                break;
+            }
+        }
+
+        /* get client credentials */
+        if (0 == flag) { /* daemon or one-shot with connected socket */
             if (0 != bindsocket_unixdomain_getpeereid(cfd, &uid, &gid)) {
                 syslog_perror("getpeereid", errno);
                 break;
             }
         }
-        else if (NULL != aistr || ENOTCONN == errno) {
-            /* authbind: client provided socket to which to bind()
+        else {
+            /* authbind: client provided as stdin the socket to which to bind()
              *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
              * bindsocket has args and stdin is not a connected socket.
              * bindsocket is running setuid; use real uid, gid as credentials */
             fd  = cfd;
             uid = getuid();
             gid = getgid();
-        }
-        else {
-            syslog_perror("getpeername", errno);
-            break;
         }
 
         ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
@@ -335,6 +340,7 @@ bindsocket_client_session (const int cfd,
                 syslog_perror("bindresvport_sa", errno);
         }
         else {
+            flag = 1;
             if (0 == setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
                 && 0 == bind(fd, ai.ai_addr, ai.ai_addrlen))
                 rc = EXIT_SUCCESS;
