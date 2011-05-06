@@ -1,4 +1,4 @@
-TARGETS:= libbindsocket.so bindsocket bindsocket.t
+TARGETS:= libbindsocket.so libbindsocket_preload.so bindsocket bindsocket.t
 
 PREFIX?=/usr/local
 BINDSOCKET_EXE?=$(PREFIX)/sbin/bindsocket
@@ -26,6 +26,7 @@ bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_EXE='"$(BINDSOCKET_EXE)"'
 
 bindsocket_sobjs=bindsocket_addrinfo.o bindsocket_bind.o bindsocket_unixdomain.o
 $(bindsocket_sobjs):CFLAGS+=-fPIC
+bindsocket_preload.o: CFLAGS+=-fPIC
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -33,6 +34,10 @@ $(bindsocket_sobjs):CFLAGS+=-fPIC
 libbindsocket.so: LDFLAGS+= -ldl
 libbindsocket.so: $(bindsocket_sobjs)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
+# (clear -Wl,-z,now from LDFLAGS by setting LDFLAGS= instead of LDFLAGS+=...)
+libbindsocket_preload.so: LDFLAGS= -L. -lbindsocket -ldl
+libbindsocket_preload.so: bindsocket_preload.o
+	$(CC) $(CFLAGS) $(LDFLAGS) $(RPATH) -shared -o $@ $^
 
 bindsocket: bindsocket.m.o libbindsocket.so
 	$(CC) $(CFLAGS) $(LDFLAGS) $(RPATH) -o $@ $^
@@ -41,7 +46,7 @@ bindsocket.t: bindsocket.t.o libbindsocket.so
 	$(CC) $(CFLAGS) $(LDFLAGS) $(RPATH) -o $@ $^
 
 # (Note: not currently installing libbindsocket.so with any version suffix)
-.PHONY: install install-suid
+.PHONY: install install-suid install-headers
 BINDSOCKET_MODE=0550
 install-suid: BINDSOCKET_MODE=4550
 install-suid: install ;
@@ -51,9 +56,13 @@ install:
 	/usr/bin/install -m $(BINDSOCKET_MODE) -g $(BINDSOCKET_GROUP) -p \
           bindsocket $(PREFIX)/sbin/
 	/usr/bin/install -m 0555 -p libbindsocket.so $(PREFIX)/lib/
+	/usr/bin/install -m 0555 -p libbindsocket_preload.so $(PREFIX)/lib/
 	[ -f $(BINDSOCKET_CONFIG) ] || \
           (/bin/touch $(BINDSOCKET_CONFIG) && \
            /bin/chmod 0644 $(BINDSOCKET_CONFIG))
+install-headers: bindsocket_addrinfo.h bindsocket_bind.h bindsocket_unixdomain.h
+	/bin/mkdir -p -m 0755 $(PREFIX)/include/bindsocket
+	/usr/bin/install -m 0555 -p $^ $(PREFIX)/include/bindsocket/
 
 .PHONY: clean
 clean:

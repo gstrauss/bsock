@@ -136,7 +136,8 @@
  * a socket to low-numbered ports in a controlled way.  It uses LD_LIBRARY_PATH
  * and interposes a custom bind() to catch and redirect bind() to a privileged
  * subprocess.  [Ed: bindsocket daemon using unix domain sockets to transfer
- * file descriptor was developed prior to the author becoming aware of authbind]
+ * file descriptor was developed prior to the author becoming aware of authbind,
+ * and bindsocket use of unix domain sockets provides better error detection.]
  * bindsocket supports IPv4, IPv6, and unix domain sockets.
  * authbind supports only IPv4, though there is a patch for IPv6 support
  *   (http://toroid.org/ams/etc/authbind-ipv6-support)
@@ -156,6 +157,18 @@
  * explicit specification of port, so if admin explicitly configures a port
  * in the range [IPPORT_RESERVED/2, IPPORT_RESERVED), then bindsocket allows it.
  *
+ * Similar to authbind, bindsocket provides a simple .so to interpose the bind()
+ * used by unmodified executables so that the bindsocket daemon is called when
+ * the executable calls bind().
+ *   LD_PRELOAD=/usr/local/lib/libbindsocket_preload.so
+ * Implementation consideration when using LD_PRELOAD:
+ * If the executable calls bind() with an AF_INET or AF_INET6 addr with port 0,
+ * and expects a high port, then bindsocket_preload.c might be modified to
+ * detect port 0 and call bind() from libc instead of the bindsocket daemon,
+ * which will bind() to a low (privileged) port, if the caller is authorized.
+ * Outbound connections from many executables omit the call to bind(), so this
+ * is unlikely to be problem for most usage.
+ *
  *
  * FUTURE:
  * - create small program that checks for canonicalized strings in config file
@@ -164,12 +177,7 @@
  *     might create mcdb with hash of canonicalized username + addrinfo strings
  * - provide example client code that interfaces with bindsocket for popular
  *   programs such as Apache.  (Also: graceful Apache restart via transferring
- *   the listening socket(s)).  Additionally, similar to authbind, provide
- *   shared library that interposes version of bind() that contacts bindsocket
- *   daemon so that existing programs can use bindsocket without modification.
- *   (Document and provide a way for caller to choose whether or not to pass
- *    bind requests that specify port 0 to bindsocket to request a privileged
- *    port, or directly to bind() to request a non-privileged port)
+ *   the listening socket(s)).
  * - create test target that compiles with overrides and config file
  *   so that test can occur without root privilege
  *   (create directory with config file 700 for test)
