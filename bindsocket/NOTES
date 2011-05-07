@@ -197,14 +197,24 @@
  *   http://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
  *     /proc/sys/net/ipv4/ip_local_port_range
  *     /proc/sys/net/ipv4/ip_local_reserved_ports
- *   Patch Linux kernel to adjust root-reserved ports (1-1023) to larger number
- *   and use bindsocket to dole out standard ports for non-privileged daemons
- *   like Postgres (5432), MySQL (3306), and others, while other non-privileged
- *   accounts (not postgres, mysql, etc) will not be able to bind to those ports
- *   Alternatively, provide features similar to portreserve, but keep a copy of
- *   the socket in the daemon and dole it out to those authorized to receive it.
- *   Doing so removes the race condition where a daemon that is listening on a
+ *   FreeBSD has even more flexible sysctl settings.  However, it is not a good
+ *   idea to modify traditional reserved port range where IPPORT_RESERVED=1024,
+ *   so recommend using portreserve and against changing FreeBSD defaults
+ *   for net.inet.ip.portrange.reserved* or net.inet.ip.portrange.low*
+ *   bindsocket does not query for and therefore does not honor changing these.
+ *     net.inet.ip.portrange.reservedlow: 0
+ *     net.inet.ip.portrange.reservedhigh: 1023
+ *     net.inet.ip.portrange.hilast: 65535
+ *     net.inet.ip.portrange.hifirst: 49152
+ *     net.inet.ip.portrange.last: 65535
+ *     net.inet.ip.portrange.first: 10000
+ *     net.inet.ip.portrange.lowlast: 600
+ *     net.inet.ip.portrange.lowfirst: 1023
+ * - Provide features similar to portreserve, but keep a copy of the socket in
+ *   the daemon and dole it out to those authorized to receive it.  Doing so
+ *   removes the race condition where a daemon that is listening on a
  *   non-privileged port restarts and allowing a race condition where another
  *   process owned by a different user grabs the non-privileged port.
  *     (man portreserve)
+ *   e.g. Postgres (5432), MySQL (3306), others
  */
