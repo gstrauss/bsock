@@ -145,7 +145,7 @@ bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
     /* 'man cmsg' provides example code */
     ssize_t r;
     /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
-    char ctrlbuf[108]; /* BSD mbuf is 108 */
+    char ctrlbuf[10240]; /* BSD mbuf is 108 */
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,
@@ -254,7 +254,7 @@ bindsocket_unixdomain_recv_addrinfo (const int fd,
     /* receive addrinfo request */
     /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
      * To support IPv4, IPv6, AF_UNIX domain sockets (2 byte short + 108 chars)
-     * and align buffer: int addr[27]; ai.ai_addr = (struct sockaddr *)addr */
+     * and align buffer: int addr[28]; ai.ai_addr = (struct sockaddr *)addr */
     /* N.B. data received from client is untrustworthy; validate well */
     /* N.B. partial write from client results in error;
      *      client will have to open new connection to retry */
@@ -411,7 +411,7 @@ bindsocket_unixdomain_recvmsg (const int fd,
     /* (nonblocking recvmsg(); caller might poll() before call to here)*/
     ssize_t r;
     /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
-    char ctrlbuf[108]; /* BSD mbuf is 108 */
+    char ctrlbuf[10240]; /* BSD mbuf is 108 */
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,

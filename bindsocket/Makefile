@@ -10,7 +10,8 @@ BINDSOCKET_GROUP?=daemon
 all: $(TARGETS)
 
 CC=gcc
-CFLAGS+=-pipe -std=c99 -pedantic -O2 -D_XOPEN_SOURCE=600 -Wall -Winline -I.
+CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic -Wall -Winline -Werror -I.
+CFLAGS+=-O2
 
 # (daemon benefits from resolving symbols at load time; one-shot is extra cost)
 LDFLAGS+= -Wl,-z,now
@@ -28,6 +29,7 @@ bindsocket_sobjs=bindsocket_addrinfo.o bindsocket_bind.o bindsocket_unixdomain.o
 $(bindsocket_sobjs):CFLAGS+=-fPIC
 bindsocket_preload.o: CFLAGS+=-fPIC
 
+%.o: CFLAGS+=-pthread
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -37,13 +39,15 @@ libbindsocket.so: $(bindsocket_sobjs)
 # (clear -Wl,-z,now from LDFLAGS by setting LDFLAGS= instead of LDFLAGS+=...)
 libbindsocket_preload.so: LDFLAGS= -L. -lbindsocket -ldl
 libbindsocket_preload.so: bindsocket_preload.o
-	$(CC) $(CFLAGS) $(LDFLAGS) $(RPATH) -shared -o $@ $^
+	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
 
-bindsocket: bindsocket.m.o libbindsocket.so
-	$(CC) $(CFLAGS) $(LDFLAGS) $(RPATH) -o $@ $^
+bindsocket: LDFLAGS+=-pthread
+bindsocket: bindsocket.m.o bindsocket_bindresvport.o libbindsocket.so
+	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
+bindsocket.t: LDFLAGS+=-pthread
 bindsocket.t: bindsocket.t.o libbindsocket.so
-	$(CC) $(CFLAGS) $(LDFLAGS) $(RPATH) -o $@ $^
+	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
 # (Note: not currently installing libbindsocket.so with any version suffix)
 .PHONY: install install-suid install-headers

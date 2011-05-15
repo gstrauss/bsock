@@ -50,6 +50,7 @@
 extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
 #include <bindsocket_addrinfo.h>
+#include <bindsocket_bindresvport.h>
 #include <bindsocket_unixdomain.h>
 
 #ifndef BINDSOCKET_GROUP
@@ -115,55 +116,6 @@ retry_close (const int fd)
     return r;
 }
 
-#ifndef IPPORT_RESERVEDSTART
-#define IPPORT_RESERVEDSTART 600
-#endif
-static int
-bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
-{
-    /* (code below honors sin_addr or sin6_addr, if specified) */
-    /* (getpid() is poor choice if code is used many times in threaded process
-     *  (with same pid).  As it is, this code is not as random as it could be)*/
-    in_port_t port;
-    const in_port_t pstart = (in_port_t)
-      (getpid()%(IPPORT_RESERVED-IPPORT_RESERVEDSTART)) + IPPORT_RESERVEDSTART;
-    in_port_t *portptr;
-    socklen_t addrlen;
-    struct sockaddr_in saddr;
-    if (NULL == sa) {
-        memset(&saddr, '\0', sizeof(saddr));
-        saddr.sin_family = AF_INET;
-        sa = (struct sockaddr *)&saddr;
-        portptr = &saddr.sin_port;
-        addrlen = sizeof(saddr);
-    }
-    else if (AF_INET == sa->sa_family) {
-        portptr = &((struct sockaddr_in *)sa)->sin_port;
-        addrlen = sizeof(struct sockaddr_in);
-    }
-    else if (AF_INET6 == sa->sa_family) {
-        portptr = &((struct sockaddr_in6 *)sa)->sin6_port;
-        addrlen = sizeof(struct sockaddr_in6);
-    }
-    else {
-        errno = EAFNOSUPPORT;
-        return -1;
-    }
-
-    port = pstart;
-    do {
-        *portptr = htons(port);
-        if (0 == bind(sockfd, sa, addrlen))
-            return 0;
-        else if (errno != EADDRINUSE && errno != EINTR)
-            return -1;
-
-        if (++port == IPPORT_RESERVED)
-            port = IPPORT_RESERVEDSTART;
-    } while (port != pstart);
-    return -1;
-}
-
 static bool
 bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                                    const uid_t uid, const gid_t gid)
@@ -192,7 +144,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         return false;
 
     if (ai->ai_family != ai->ai_addr->sa_family) {
-        syslog_perror("addrinfo inconsistent", EINVAL);
+        syslog_perror("addrinfo inconsistent", (errno = EINVAL));
         return false;
     }
 
@@ -200,7 +152,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
      * (validate and canonicalize user input)
      * (user input converted to addrinfo and back to str to canonicalize str) */
     if (!bindsocket_addrinfo_to_strs(ai, &aistr, bufstr, sizeof(bufstr))) {
-        syslog_perror("addrinfo string expansion is too long", ENOSPC);
+        syslog_perror("addrinfo string expansion is too long",(errno = ENOSPC));
         return false;
     }
   #if 0
@@ -208,7 +160,8 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                       pw->pw_name, aistr.family, aistr.socktype, aistr.protocol,
                       aistr.service, aistr.addr);
     if (cmplen >= sizeof(cmpstr)) {
-            syslog_perror("addrinfo string expansion is too long", ENOSPC);
+            syslog_perror("addrinfo string expansion is too long",
+                          (errno = ENOSPC));
             return false;
     }
   #else
@@ -224,7 +177,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         || (*(p-1) = ' ',
             NULL==(p=memccpy(p,aistr.addr,    '\0',sizeof(cmpstr)-(p-cmpstr))))
         || sizeof(cmpstr) == p-cmpstr   ) {
-        syslog_perror("addrinfo string expansion is too long", ENOSPC);
+        syslog_perror("addrinfo string expansion is too long", (errno=ENOSPC));
         return false;
     }
     *(p-1) = '\n';
@@ -262,7 +215,7 @@ bindsocket_client_session (const int cfd,
     uid_t uid;
     gid_t gid;
     int flag;
-    int addr[27];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
+    int addr[28];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
     struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
       .ai_addrlen = sizeof(addr),
       .ai_addr    = (struct sockaddr *)addr
@@ -319,6 +272,15 @@ bindsocket_client_session (const int cfd,
         /* check client credentials to authorize client request */
         if (!bindsocket_is_authorized_addrinfo(&ai, uid, gid))
             break;
+
+      #if 0
+        /* check if addr, port already reserved and bound in bindsocket cache */
+        if (-1 != (nfd = bindsocket_addr_reserved(&ai))) {
+            rc = EXIT_SUCCESS;
+            break;
+            /* (incompatible with authbind (cfd == fd)) */
+        }
+      #endif
 
         /* create socket (if not provided by client) */
         if (-1 == fd) {
@@ -680,7 +642,7 @@ main (int argc, char *argv[])
                   aistr.service  = argv[3];
                   aistr.addr     = argv[4];
                   break;
-          default: syslog_perror("invalid number of arguments", EINVAL);
+          default: syslog_perror("invalid number of arguments", (errno=EINVAL));
                    return EXIT_FAILURE;
         }
 

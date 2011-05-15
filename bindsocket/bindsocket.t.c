@@ -37,7 +37,7 @@ int
 main (int argc, char *argv[])
 {
     int nfd;
-    int addr[27];
+    int addr[28];
     struct addrinfo ai = { .ai_addr = (struct sockaddr *)addr,
                            .ai_addrlen = sizeof(addr) };
     struct bindsocket_addrinfo_strs aistr;

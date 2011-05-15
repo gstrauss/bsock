@@ -39,6 +39,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <unistd.h>
 
@@ -71,15 +72,22 @@ bindsocket_bind_send_addr_and_recv (const int fd,
     /* bindsocket_unixdomain_poll_recv_fd()
      *   fills errnum to indicate remote success/failure
      * (no poll before sending addrinfo since this is first write to socket)
-     * (close rfd unconditionally since expecting rfd == -1 and there
-     *  is no provision made to return rfd to caller in current usage) */
+     * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port) */
     int rfd = -1;
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
     if (bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
         && -1 != bindsocket_unixdomain_poll_recv_fd(sfd, &rfd, &iov, 1,
                                                     BINDSOCKET_POLL_TIMEOUT)) {
-        if (-1 != rfd) nointr_close(rfd);
+        if (-1 != rfd) {
+            /* assert(rfd != fd); should not happen from ..._poll_recv_fd() */
+            if (0 == errnum) {
+                do { errnum = dup2(rfd,fd);
+                } while (errnum == -1 && (errno == EINTR || errno == EBUSY));
+                errnum = (errnum == fd) ? 0 : errno;
+            }
+            nointr_close(rfd);
+        }
     }
     else
         errnum = errno;
@@ -105,7 +113,7 @@ bindsocket_bind_viafork (const int fd,
     if (0 != socketpair(AF_UNIX, SOCK_STREAM, 0, sv))
         return false;
 
-    pid = fork();/*(not retrying fork on EAGAIN; ?add counter, limited retry?)*/
+    pid = fork();         /*(bindsocket_bind_resvaddr() retries on EAGAIN)*/
     if (0 == pid) {       /* child; no retry if child signalled, errno==EINTR */
         static char *args[] = { BINDSOCKET_EXE, NULL };
         if (   dup2(sv[0], STDIN_FILENO) != STDIN_FILENO
@@ -156,9 +164,17 @@ bindsocket_bind_resvaddr (const int fd,
     /* (bindresvaddr name similar to bindresvport(), but similarities end there)
      * (return value 0 for success, -1 upon error; match return value of bind())
      * (ai->ai_next is ignored) */
-    return (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
-      ? 0
-      : -1;
+
+    do {
+        if (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
+            return 0;
+    } while (errno == EAGAIN && 0 == poll(NULL, 0, 100));
+
+    switch (errno) {
+      default: errno = EACCES; /*FALLTHRU*/
+      case EACCES: case EADDRINUSE: case EBADF: case EINVAL: case ENOTSOCK:
+        return -1;
+    }
 }
 
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t);
