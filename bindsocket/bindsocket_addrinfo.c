@@ -26,6 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* define _BSD_SOURCE for getprotobyname_r(), getprotobynumber_r() */
+#define _BSD_SOURCE
+
 #include <bindsocket_addrinfo.h>
 
 #include <sys/types.h>
@@ -127,28 +130,41 @@ bindsocket_addrinfo_socktype_to_str (const int socktype)
 static int
 bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
-    struct protoent * restrict pe = NULL;
-
-    if (!isdigit(protocol[0]))
-        pe = getprotobyname(protocol);
+    if (!isdigit(protocol[0])) {
+        struct protoent pe;
+        struct protoent *peres;
+        char buf[1024];
+        if (0 == getprotobyname_r(protocol, &pe, buf, sizeof(buf), &peres))
+            return pe.p_proto;
+        /* (treating all errors as EPROTONOSUPPORT, including ERANGE) */
+    }
     else {
         /* check strtol() succeeded, entire string converted
-         * to number and (0 <= lproto && lproto <= INT_MAX) */
+         * to number and (0 <= lproto && lproto <= INT_MAX)
+         * (thread-safe since only checking validity of proto num) */
         char *e;
         long lproto;
         if ((errno = 0, lproto = strtol(protocol, &e, 10), 0 == errno)
-            && '\0' == *e && 0 == (lproto >> 31))
-            pe = getprotobynumber((int)lproto); /*(check validity)*/
+            && '\0' == *e && 0 == (lproto >> 31)
+            && NULL != getprotobynumber((int)lproto)) /*(check validity only)*/
+            return (int)lproto;
     }
 
-    return (pe != NULL ? pe->p_proto : (errno = EPROTONOSUPPORT, -1));
+    errno = EPROTONOSUPPORT;
+    return -1;
 }
 
-static const char *
-bindsocket_addrinfo_protocol_to_str (const int proto)
+static char *
+bindsocket_addrinfo_protocol_to_str (const int proto,
+                                     char * const buf, const size_t bufsz)
 {
-    struct protoent * const restrict pe = getprotobynumber(proto);
-    return (pe != NULL ? pe->p_name : (errno = EPROTONOSUPPORT, NULL));
+    struct protoent pe;
+    struct protoent *peres;
+    int rc;                /*(recommended bufsz is at least 1024 bytes)*/
+    return (0 == (rc = getprotobynumber_r(proto, &pe, buf, bufsz, &peres)))
+      ? pe.p_name
+      : (errno = (rc == ERANGE ? ENOSPC : EPROTONOSUPPORT), NULL);
+        /* (treating all other errors as EPROTONOSUPPORT) */
 }
 
 bool
@@ -231,18 +247,13 @@ bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
     size_t protolen;
     aistr->family   = bindsocket_addrinfo_family_to_str(ai->ai_family);
     aistr->socktype = bindsocket_addrinfo_socktype_to_str(ai->ai_socktype);
-    aistr->protocol = bindsocket_addrinfo_protocol_to_str(ai->ai_protocol);
+    aistr->protocol = bindsocket_addrinfo_protocol_to_str(ai->ai_protocol,
+                                                          buf, bufsz);
     if (NULL==aistr->family || NULL==aistr->socktype || NULL==aistr->protocol)
         return false;
     protolen = strlen(aistr->protocol) + 1; /* +1 for '\0' */
-    if (protolen <= bufsz) { /*copy str into buf for more predictable lifetime*/
-        memcpy(buf+bufsz-protolen, aistr->protocol, protolen);
-        aistr->protocol = buf+bufsz-protolen;
-    }
-    else {
-        errno = ENOSPC;
-        return false;
-    }
+    memmove(buf+bufsz-protolen, aistr->protocol, protolen);/*(move to buf end)*/
+    aistr->protocol = buf+bufsz-protolen;
 
     if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6) {
         if (INET6_ADDRSTRLEN + 6 + protolen > bufsz) {

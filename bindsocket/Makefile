@@ -75,4 +75,11 @@ clean:
 bindsocket.m.o: bindsocket_addrinfo.h bindsocket_unixdomain.h
 bindsocket.t.o: bindsocket_unixdomain.h
 bindsocket_addrinfo.o: bindsocket_addrinfo.h
+bindsocket_bind.o: bindsocket_bind.h bindsocket_unixdomain.h
+bindsocket_bindresvport.o: bindsocket_bindresvport.h
 bindsocket_unixdomain.o: bindsocket_addrinfo.h bindsocket_unixdomain.h
+
+OSNAME:=$(shell /bin/uname -s)
+ifeq ($(OSNAME),SunOS)
+  CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
+endif

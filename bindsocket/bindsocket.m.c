@@ -88,20 +88,14 @@ syslog_perror (const char * const restrict str, const int errnum)
 {
     /* (not written to use vsyslog(); lazy
      *  and not currently needed for error messages in this program) */
+    char buf[256] = ": ";
+    if (0 == errnum || 0 != strerror_r(errnum, buf+2, sizeof(buf)-2))
+        buf[0] = '\0';
 
-    /* syslog() always */
-    if (0 != errno)
-        syslog(LOG_ERR, "%s: %s", str, strerror(errnum));
-    else
-        syslog(LOG_ERR, "%s", str);
+    syslog(LOG_ERR, "%s%s", str, buf); /* syslog() always */
 
-    if (0 == syslog_perror_level) { /*(stderr closed when daemon; skip stderr)*/
-        if (0 != errnum)
-            fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s: %s\n", str,
-                    strerror(errnum));
-        else
-            fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s\n", str);
-    }
+    if (0 == syslog_perror_level)  /*(stderr closed when daemon; skip stderr)*/
+        fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s%s\n", str, buf);
 }
 
 /* retry_close() - make effort to avoid leaking open file descriptors
@@ -130,17 +124,19 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     char *p;
     struct bindsocket_addrinfo_strs aistr;
     FILE *cfg;
-    struct passwd *pw;
     size_t cmplen;
     struct stat st;
     char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
     char cmpstr[256]; /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
     char bufstr[80];  /* buffer for use by bindsocket_addrinfo_to_strs() */
     bool rc = false;
+    struct passwd pw;
+    struct passwd *pwres;
+    char pwbuf[2048];
 
     if (uid == 0 || gid == 0)  /* permit root or wheel */
         return true;
-    if (NULL == (pw = getpwuid(uid)))
+    if (0 != getpwuid_r(uid, &pw, pwbuf, sizeof(pwbuf), &pwres))
         return false;
 
     if (ai->ai_family != ai->ai_addr->sa_family) {
@@ -157,7 +153,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     }
   #if 0
     cmplen = snprintf(cmpstr, sizeof(cmpstr), "%s %s %s %s %s %s\n",
-                      pw->pw_name, aistr.family, aistr.socktype, aistr.protocol,
+                      pw.pw_name, aistr.family, aistr.socktype, aistr.protocol,
                       aistr.service, aistr.addr);
     if (cmplen >= sizeof(cmpstr)) {
             syslog_perror("addrinfo string expansion is too long",
@@ -165,7 +161,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
             return false;
     }
   #else
-    if (    NULL==(p=memccpy(cmpstr,pw->pw_name,'\0',sizeof(cmpstr)))
+    if (    NULL==(p=memccpy(cmpstr,pw.pw_name,'\0',sizeof(cmpstr)))
         || (*(p-1) = ' ',
             NULL==(p=memccpy(p,aistr.family,  '\0',sizeof(cmpstr)-(p-cmpstr))))
         || (*(p-1) = ' ',
@@ -572,12 +568,12 @@ bindsocket_daemon_init_socket (void)
     bindsocket_daemon_pid = getpid();
     atexit(bindsocket_daemon_atexit);
 
-    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP))
+    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP)) /* ok; no other threads yet */
         && 0 == chown(BINDSOCKET_SOCKET, euid, gr->gr_gid)
         && 0 == chmod(BINDSOCKET_SOCKET, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP))
         return sfd;
 
-    syslog_perror("getpwnam,chown,chmod", errno);
+    syslog_perror("getgrnam,chown,chmod", errno);
     return -1;
 }
 
