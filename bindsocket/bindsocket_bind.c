@@ -147,12 +147,15 @@ bindsocket_bind_viasock (const int fd,
                          const struct addrinfo * const restrict ai)
 {
     int errnum;
-    const int sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
-    if (-1 == sfd)
-        return false;
+    int sfd;
 
-    errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sfd);
-    nointr_close(sfd);
+    do {
+        sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
+        if (-1 == sfd)
+            return false;
+        errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sfd);
+        nointr_close(sfd);
+    } while (errnum == EAGAIN && 0 == poll(NULL, 0, 100));
     errno = errnum;
     return (0 == errnum);
 }
@@ -165,15 +168,13 @@ bindsocket_bind_resvaddr (const int fd,
      * (return value 0 for success, -1 upon error; match return value of bind())
      * (ai->ai_next is ignored) */
 
-    do {
-        if (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
-            return 0;
-    } while (errno == EAGAIN && 0 == poll(NULL, 0, 100));
+    if (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
+        return 0;
 
     switch (errno) {
       default: errno = EACCES; /*FALLTHRU*/
       case EACCES: case EADDRINUSE: case EBADF: case EINVAL: case ENOTSOCK:
-        return -1;
+               return -1;
     }
 }
 
