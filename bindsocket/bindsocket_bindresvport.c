@@ -89,6 +89,11 @@
 #define IPPORT_RESERVEDSTART 600
 #endif
 
+static void bindsocket_bindresvport_cleanup_mutex (void * const restrict mutex)
+{
+    pthread_mutex_unlock((pthread_mutex_t *)mutex);
+}
+
 int
 bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
 {
@@ -131,17 +136,17 @@ bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
          * (getpid() and time() are poorer, more predictable choices) */
         static pthread_mutex_t devurandom_mutex = PTHREAD_MUTEX_INITIALIZER;
         static volatile int ufd = -1;
-        int fd;
+        int fd = ufd;
         int r = -1;
-        if (-1 == (fd = ufd) && 0 == pthread_mutex_trylock(&devurandom_mutex)) {
-            if (-1 == ufd) /* re-check volatile ufd after obtaining mutex */
-                fd = ufd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
-            pthread_mutex_unlock(&devurandom_mutex);
-        }
-        if (-1 != fd && read(fd, &r, sizeof(int)) != sizeof(int)) {
-            r = -1;  /* attempt to re-open() /dev/urandom if read() fails */
+        if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
+            int cancel_type;
+            pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &cancel_type);
+            pthread_cleanup_push(bindsocket_bindresvport_cleanup_mutex,
+                                 &devurandom_mutex);
+            r = -1;
             if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
-                if (read((fd = ufd), &r, sizeof(int)) != sizeof(int)) {
+                fd = ufd; /* re-check volatile ufd after obtaining mutex */
+                if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
                     if (-1 != fd)
                         while (0 != close(fd) && errno == EINTR) ;
                     fd = ufd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
@@ -150,6 +155,8 @@ bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
                 }
                 pthread_mutex_unlock(&devurandom_mutex);
             }
+            pthread_cleanup_pop(0);
+            pthread_setcanceltype(cancel_type, NULL);
         }
         if (-1 != r)
             r ^= (((r>>4)&0xF000)|((r>>12)&0xF00)|((r>>20)&0xF0)|((r>>28)&0xF));

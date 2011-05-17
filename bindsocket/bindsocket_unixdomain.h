@@ -90,7 +90,6 @@ int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
                                   gid_t * const restrict egid);
 
-#if 0   /* sample code */
 ssize_t
 bindsocket_unixdomain_recvmsg (const int fd,
                                struct iovec * const restrict iov,
@@ -100,7 +99,6 @@ ssize_t
 bindsocket_unixdomain_sendmsg (const int fd,
                                struct iovec * const restrict iov,
                                const size_t iovlen);
-#endif  /* sample code */
 
 #ifdef __cplusplus
 }

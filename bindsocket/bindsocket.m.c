@@ -35,6 +35,8 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <inttypes.h>
+#include <poll.h>
+#include <pthread.h>
 #include <pwd.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -108,6 +110,98 @@ retry_close (const int fd)
     do {r = close(fd);} while (r != 0 && errno == EINTR);
     if (0 != r) syslog_perror("close", errno);
     return r;
+}
+
+static void
+bindsocket_cleanup_close (void * const arg)
+{
+    const int fd = *(int *)arg;
+    if (-1 != fd)
+        retry_close(fd);
+}
+
+static void
+bindsocket_cleanup_fclose (void * const arg)
+{
+    FILE * const fp = (FILE *)arg;
+    if (NULL != fp)
+        fclose(fp);
+}
+
+struct bindsocket_client_st {
+  struct bindsocket_client_st *next;
+  pthread_t thread;
+  int fd;
+  uid_t uid;
+  gid_t gid;
+};
+
+/* simple fixed-size statically allocated hash table
+ * using statically allocated elements (enforces max threads)
+ * accessed read/write while holding mutex
+ * (not expecting many simultaneous requests; limiting one thread max per uid)*/
+#define BINDSOCKET_THREAD_TABLE_SZ 32  /* must be power of two */
+#define BINDSOCKET_THREAD_MAX 128
+static pthread_mutex_t
+       bindsocket_thread_table_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct bindsocket_client_st 
+       bindsocket_thread_elts[BINDSOCKET_THREAD_MAX];
+static struct bindsocket_client_st *
+       bindsocket_thread_head = bindsocket_thread_elts;
+static struct bindsocket_client_st *
+       bindsocket_thread_table[BINDSOCKET_THREAD_TABLE_SZ];
+
+static void
+bindsocket_thread_table_init (void)
+{
+    for (unsigned int i = 0; i < BINDSOCKET_THREAD_MAX-1; ++i)
+        bindsocket_thread_elts[i].next = &bindsocket_thread_elts[i+1];
+    bindsocket_thread_elts[BINDSOCKET_THREAD_MAX-1].next = NULL;
+    memset(bindsocket_thread_table, '\0', sizeof(bindsocket_thread_table));
+}
+
+static struct bindsocket_client_st *
+bindsocket_thread_table_query (const struct bindsocket_client_st * const c)
+{
+    const uid_t uid = c->uid;
+    struct bindsocket_client_st *t = 
+      bindsocket_thread_table[(uid & (BINDSOCKET_THREAD_TABLE_SZ-1))];
+    while (NULL != t && t->uid != uid)
+        t = t->next;
+    return t;
+}
+
+static struct bindsocket_client_st *
+bindsocket_thread_table_add (struct bindsocket_client_st * const c)
+{
+    /* (not checking for multiple-add of same uid (do not do that)) */
+    struct bindsocket_client_st ** const next =
+      &bindsocket_thread_table[(c->uid & (BINDSOCKET_THREAD_TABLE_SZ-1))];
+    struct bindsocket_client_st * const t = bindsocket_thread_head;
+    if (NULL == t)
+        return NULL;
+    bindsocket_thread_head = t->next;
+    memcpy(t, c, sizeof(struct bindsocket_client_st));
+    t->next = *next;
+    return (*next = t);
+}
+
+static struct bindsocket_client_st *
+bindsocket_thread_table_remove (struct bindsocket_client_st * const c)
+{
+    /* (removes only first uid found if multiple (should not happen)) */
+    const uid_t uid = c->uid;
+    struct bindsocket_client_st **prev =
+      &bindsocket_thread_table[(uid & (BINDSOCKET_THREAD_TABLE_SZ-1))];
+    struct bindsocket_client_st *t = *prev;
+    while (NULL != t && t->uid != uid)
+        t = *(prev = &t->next);
+    if (NULL != t) {
+        *prev = t->next;
+        t->next = bindsocket_thread_head;
+        bindsocket_thread_head = t;
+    }
+    return t;
 }
 
 static bool
@@ -185,6 +279,10 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         syslog_perror(BINDSOCKET_CONFIG, errno);
         return false;
     }
+
+    /* (requires pthread PTHREAD_CANCEL_DEFERRED type for proper operation) */
+    pthread_cleanup_push(bindsocket_cleanup_fclose, cfg);
+
     if (0 == fstat(fileno(cfg), &st)
         && st.st_uid == geteuid() && !(st.st_mode & (S_IWGRP|S_IWOTH))) {
         /* compare username and addrinfo string; skip # comments, blank lines */
@@ -197,19 +295,17 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         syslog_perror("ownership/permissions incorrect on "BINDSOCKET_CONFIG,
                       (errno = EPERM));
 
-    fclose(cfg);  /* not required; bindsocket_client_session() exits soon */
+    pthread_cleanup_pop(1);  /* fclose(cfg)  */
     return rc;
 }
 
 static int
-bindsocket_client_session (const int cfd,
+bindsocket_client_session (struct bindsocket_client_st * const restrict c,
                            struct bindsocket_addrinfo_strs *
                              const restrict aistr)
 {
     int fd = -1, nfd = -1;
     int rc = EXIT_FAILURE;
-    uid_t uid;
-    gid_t gid;
     int flag;
     int addr[28];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
     struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
@@ -218,63 +314,64 @@ bindsocket_client_session (const int cfd,
     };
     struct iovec iov = { .iov_base = &flag, .iov_len = sizeof(flag) };
 
-    /* set alarm (uncaught here) to enforce time limit on blocking syscalls */
-    alarm(2);
-
-    do {  /*(required steps follow this block; this might be made subroutine)*/
-
-        /* check if socket connected if args are provided */
-        flag = 0;
-        if (NULL != aistr) {
-            flag = getpeername(cfd, ai.ai_addr, &ai.ai_addrlen);
-            if (0 != flag && errno != ENOTCONN) {
-                syslog_perror("getpeername", errno);
-                break;
-            }
-        }
-
-        /* get client credentials */
-        if (0 == flag) { /* daemon or one-shot with connected socket */
-            if (0 != bindsocket_unixdomain_getpeereid(cfd, &uid, &gid)) {
-                syslog_perror("getpeereid", errno);
-                break;
-            }
-        }
-        else {
+    /* get client credentials (if non-daemon mode) */
+    if (-1 == c->uid) {
+        if (NULL != aistr && 0 != getpeername(c->fd,ai.ai_addr,&ai.ai_addrlen)){
             /* authbind: client provided as stdin the socket to which to bind()
              *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
              * bindsocket has args and stdin is not a connected socket.
              * bindsocket is running setuid; use real uid, gid as credentials */
-            fd  = cfd;
-            uid = getuid();
-            gid = getgid();
+            if (errno == ENOTCONN) {
+                fd = c->fd; /*(Note: setting fd=c->fd is reason why code here)*/
+                c->uid = getuid();
+                c->gid = getgid();
+            }
+            else {
+                syslog_perror("getpeername", errno);
+                return EXIT_FAILURE;
+            }
         }
-
         ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
+        if (-1 == c->uid) {
+            if (0 != bindsocket_unixdomain_getpeereid(c->fd, &c->uid, &c->gid)){
+                syslog_perror("getpeereid", errno);
+                return EXIT_FAILURE;
+            }
+        }
+    }
 
-        /* syslog all connections to (or instantiations of) bindsocket daemon
-         * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
-         * and combine with syslog() to log pid and other info, if available */
-        syslog(LOG_INFO, "connect: uid:%d gid:%d", uid, gid);
+    /* syslog all connections to (or instantiations of) bindsocket daemon
+     * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
+     * and combine with syslog() to log pid and other info, if available */
+    syslog(LOG_INFO, "connect: uid:%d gid:%d", c->uid, c->gid);
 
-        /* receive addrinfo from client */
-        if (!(NULL == aistr                           /*(-1 for infinite poll)*/
-              ? bindsocket_unixdomain_poll_recv_addrinfo(cfd, &ai, &fd, -1)
+    pthread_cleanup_push(bindsocket_cleanup_close, &fd);
+
+    do {  /*(required steps follow this block; this might be made subroutine)*/
+
+        /* receive addrinfo from client
+         * (NOTE: receiving addrinfo is ONLY place in bindsocket that can block
+         *  on client input (at this time).  Set timeout for 2000ms (2 sec)) */
+        if (!(NULL == aistr
+              ? bindsocket_unixdomain_poll_recv_addrinfo(c->fd, &ai, &fd, 2000)
               : bindsocket_addrinfo_from_strs(&ai, aistr))) {
             syslog_perror("recv addrinfo error or invalid addrinfo", errno);
             break;
         }
 
         /* check client credentials to authorize client request */
-        if (!bindsocket_is_authorized_addrinfo(&ai, uid, gid))
+        if (!bindsocket_is_authorized_addrinfo(&ai, c->uid, c->gid))
             break;
 
       #if 0
-        /* check if addr, port already reserved and bound in bindsocket cache */
+        /* check if addr, port already reserved and bound in bindsocket cache
+         * (Note: fd is intentionally not set to nfd to avoid cleanup close) */
         if (-1 != (nfd = bindsocket_addr_reserved(&ai))) {
-            rc = EXIT_SUCCESS;
+            if (c->fd != fd)
+                rc = EXIT_SUCCESS;
+            else /* (incompatible (unsupportable) with authbind (c->fd==fd)) */
+                errno = EACCES;
             break;
-            /* (incompatible with authbind (cfd == fd)) */
         }
       #endif
 
@@ -311,21 +408,44 @@ bindsocket_client_session (const int cfd,
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
     flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
-    if (cfd != fd) {
-        rc = (bindsocket_unixdomain_send_fd(cfd, nfd, &iov, 1) == iov.iov_len)
+    if (c->fd != fd) {
+        rc = (bindsocket_unixdomain_send_fd(c->fd, nfd, &iov, 1) == iov.iov_len)
           ? EXIT_SUCCESS
           : EXIT_FAILURE;
         if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
             syslog_perror("sendmsg", errno);
     }
-    else
+    else {
         rc = flag;  /* authbind: set exit value */
+        fd = -1;    /* no-op bindsocket_cleanup_close(&fd) since fd == c->fd */
+    }
 
-    retry_close(fd);/* not strictly needed since callers exit upon return */
-    alarm(0); /* not strictly needed since callers exit upon return */
-    /* <<<FUTURE: might add additional logging of request and success/failure
-     *            (would need to catch and handle alarm(), too) */
+    pthread_cleanup_pop(1);  /* bindsocket_cleanup_close(&fd)  */
+
+    /* <<<FUTURE: might add additional logging of request and success/failure */
     return rc;
+}
+
+static void
+bindsocket_cleanup_client (void * const arg)
+{
+    struct bindsocket_client_st * const c = (struct bindsocket_client_st *)arg;
+    retry_close(c->fd);
+    /* (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
+     *  bindsocket_thread_table_remove() provides no cancellation point) */
+    pthread_mutex_lock(&bindsocket_thread_table_mutex);
+    bindsocket_thread_table_remove(c);
+    pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+}
+
+static void *
+bindsocket_client_thread (void * const arg)
+{
+    struct bindsocket_client_st * const c = (struct bindsocket_client_st *) arg;
+    pthread_cleanup_push(bindsocket_cleanup_client, c);
+    bindsocket_client_session(c, NULL);  /* ignore rc */
+    pthread_cleanup_pop(1);  /* bindsocket_cleanup_client(c) */
+    return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
 static bool
@@ -348,58 +468,6 @@ setuid_stdinit (void)
     return true;
 }
 
-/* bindsocket high and low watermarks for in-flight forked children.
- * If hiwat is exceeded, then wait num children falls to lowat before continuing
- * to accept new connections.  bindsocket expects to be very fast and seldom
- * called, so detection of any outstanding behavior should be escalated.
- * (setrlimit(RLIMIT_NPROC,...) not used since rlimit does not apply to root) */
-#define BINDSOCKET_CHILD_HIWAT 16
-#define BINDSOCKET_CHILD_LOWAT  8
-
-static volatile int bindsocket_children = 0;
-
-static void
-daemon_sa_chld (int signum)
-{
-    pid_t pid;
-    int remaining = bindsocket_children; /* bindsocket_children is 'volatile' */
-    do { pid = waitpid(-1, NULL, WNOHANG);
-    } while (pid > 0 ? --remaining > 0 : (-1 == pid && errno == EINTR));
-    bindsocket_children = (-1 == pid && errno == ECHILD) ? 0 : remaining;
-}
-
-static void  __attribute__((noinline)) __attribute__((cold))
-bindsocket_wait_children (void)
-{
-    /* syslog() once every 10 secs while excess pending children condition */
-    static time_t prior = 0;
-    const time_t t = time(NULL);
-    sigset_t sigset;
-    int signum;
-    if (prior+10 < t) {
-        prior = t;
-        syslog(LOG_CRIT, "pending children (%d) > hi watermark (%d)",
-               bindsocket_children, BINDSOCKET_CHILD_HIWAT);
-    }
-
-    (void) sigemptyset(&sigset);
-    (void) sigaddset(&sigset, SIGALRM);
-    (void) sigaddset(&sigset, SIGCHLD);
-    (void) sigaddset(&sigset, SIGHUP);
-    (void) sigaddset(&sigset, SIGINT);
-    (void) sigaddset(&sigset, SIGTERM);
-
-    /* bindsocket_children is 'volatile' */
-    while (bindsocket_children > BINDSOCKET_CHILD_LOWAT) {
-        if (0 == sigwait(&sigset, &signum)) {
-            if (SIGCHLD == signum)
-                daemon_sa_chld(signum);
-            else
-                raise(signum);
-        }
-    }
-}
-
 static void
 daemon_sa_handler (int signum)
 {
@@ -412,7 +480,7 @@ daemon_signal_init (void)
     /* configure signal handlers for bindsocket desired behaviors
      *   SIGALRM: default handler
      *   SIGPIPE: ignore
-     *   SIGCLD:  track number of children
+     *   SIGCLD:  ignore
      *   SIGHUP:  clean up and exit (for now)
      *   SIGINT:  clean up and exit
      *   SIGTERM: clean up and exit
@@ -434,7 +502,7 @@ daemon_signal_init (void)
         return false;
     }
 
-    act.sa_handler = daemon_sa_chld;
+    act.sa_handler = SIG_IGN;
     act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
     if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
         syslog_perror("sigaction", errno);
@@ -580,7 +648,11 @@ bindsocket_daemon_init_socket (void)
 int
 main (int argc, char *argv[])
 {
-    int sfd, cfd, daemon = false, supervised = false;
+    int sfd, daemon = false, supervised = false, errnum = EAGAIN;
+    struct bindsocket_client_st m;
+    struct bindsocket_client_st *c;
+    pthread_attr_t attr;
+    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(int) };
 
     /* setuid safety measures must be performed before anything else */
     if (!setuid_stdinit())
@@ -642,7 +714,10 @@ main (int argc, char *argv[])
                    return EXIT_FAILURE;
         }
 
-        return bindsocket_client_session(STDIN_FILENO, aistrptr);
+        m.fd  = STDIN_FILENO;
+        m.uid = -1;
+        m.gid = -1;
+        return bindsocket_client_session(&m, aistrptr);
     }
 
     /*
@@ -664,35 +739,76 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
 
     /* efficiency: perform tasks that result in initialization in daemon,
-     * which are inherited by child, instead of initialization in every child */
+     * which are inherited by child, instead of initialization in every child
+     * <<<FUTURE: long-running process should refresh periodically; on SIGHUP */
     getpwuid(0);
     getgrgid(0);
     setprotoent(1);
     setservent(1);
 
+    if (   0 != pthread_attr_init(&attr)
+        || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
+        || 0 != pthread_attr_setstacksize(&attr, 131072)){/*(should be plenty)*/
+        syslog_perror("pthread_attr_*", errno);
+        return EXIT_FAILURE;
+    }
+    bindsocket_thread_table_init();
+
     /* daemon event loop
-     * parent: accept and fork
-     * child: close listen sfd, check credentials, bind socket, send sock fd
-     * (Note: by virtue of daemon_init() which detaches from calling process,
-     *  bindsocket has no child processes at this point.  (If supervised, then
-     *  bindsocket started as root and bindsocket should not have any children))
-     * (Note: technically, bindsocket_children increment should be made atomic)
+     * accept, get client credentials, insert into table, spawn handler thread
+     *
+     * (As written, code is extensible to use timer thread which expires long
+     *  running threads using pthread_cancel().  Not implemented in bindsocket
+     *  since bindsocket only blocks on reading addrinfo from client, and
+     *  handler thread poll()s for limited time before aborting.)  (It should
+     *  be possible to implement as single-thread using poll() for POLLIN on
+     *  all accept()ed connections, and then handling in-line once data ready.
+     *  Alternatively via SIGIO.)
      */
-    bindsocket_children = 0;
     do {
-        if (bindsocket_children > BINDSOCKET_CHILD_HIWAT)
-            bindsocket_wait_children();
-        if (-1 != (cfd = accept(sfd, NULL, NULL))) {
-            ++bindsocket_children;
-            if (0 == fork()) {
-                retry_close(sfd);
-                _exit(bindsocket_client_session(cfd, NULL));
-            }
-            retry_close(cfd);
+
+        /* accept new connection */
+        if (-1 == (m.fd = accept(sfd, NULL, NULL))) {
+            if (errno != EINTR && errno != ECONNABORTED)
+                break;
+            continue;
         }
-        else if (errno != EINTR && errno != ECONNABORTED)
-            break;
+
+        /* get client credentials */
+        if (0 != bindsocket_unixdomain_getpeereid(m.fd, &m.uid, &m.gid)) {
+            syslog_perror("getpeereid", errno);
+            retry_close(m.fd);
+            continue;
+        }
+
+        /* allocate thread table entry; permit one request at a time per uid */
+        c = NULL;
+        pthread_mutex_lock(&bindsocket_thread_table_mutex);
+        if (bindsocket_thread_table_query(&m) == NULL) {
+            while ((c = bindsocket_thread_table_add(&m)) == NULL) {
+                /* (pause 1ms and retry if max threads already in progress) */
+                pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+                poll(NULL, 0, 1);
+                pthread_mutex_lock(&bindsocket_thread_table_mutex);
+            }
+        }
+        pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+        if (NULL == c) {
+            /* sendmsg with EAGAIN; permit only one request at a time per uid */
+            bindsocket_unixdomain_sendmsg(m.fd, &iov, 1);
+            retry_close(m.fd);
+            continue;
+        }
+
+        /* create handler thread */
+        if (0 != pthread_create(&c->thread,&attr,bindsocket_client_thread,c)) {
+            bindsocket_thread_table_remove(c);
+            retry_close(m.fd);
+            continue;
+        }
+
     } while (1);
     syslog_perror("accept", errno);
+    pthread_attr_destroy(&attr);
     return EXIT_FAILURE;
 }

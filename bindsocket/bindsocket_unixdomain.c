@@ -401,8 +401,7 @@ bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
 }
 
 
-#if 0  /* sample code */
-
+/* sample code */
 ssize_t
 bindsocket_unixdomain_recvmsg (const int fd,
                                struct iovec * const restrict iov,
@@ -454,7 +453,6 @@ bindsocket_unixdomain_recvmsg (const int fd,
     return r;
 }
 
-/* sample client code */
 ssize_t
 bindsocket_unixdomain_sendmsg (const int fd,
                                struct iovec * const restrict iov,
@@ -477,5 +475,3 @@ bindsocket_unixdomain_sendmsg (const int fd,
     return w;
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
-
-#endif /* sample code */
