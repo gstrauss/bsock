@@ -147,6 +147,12 @@ bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
             if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
                 fd = ufd; /* re-check volatile ufd after obtaining mutex */
                 if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
+                    /* race condition around close and reopen (between threads);
+                     * another thread might read from original ufd, which could
+                     * be opened by another thread to another file.  However,
+                     * reopen should be rare, if ever, after initial open.
+                     * Full safety would employ mutex around all read() in fn.*/
+                    ufd = -1;
                     if (-1 != fd)
                         while (0 != close(fd) && errno == EINTR) ;
                     fd = ufd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
@@ -154,7 +160,7 @@ bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
                         r = -1;
                 }
                 pthread_mutex_unlock(&devurandom_mutex);
-            }
+            } /* (use less random getpid() ^ time() if obtaining mutex fails) */
             pthread_cleanup_pop(0);
             pthread_setcanceltype(cancel_type, NULL);
         }

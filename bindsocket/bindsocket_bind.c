@@ -155,7 +155,7 @@ bindsocket_bind_viasock (const int fd,
             return false;
         errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sfd);
         nointr_close(sfd);
-    } while (errnum == EAGAIN && 0 == poll(NULL, 0, 1));
+    } while (errnum == ETIME || (errnum == EAGAIN && 0 == poll(NULL, 0, 1)));
     errno = errnum;
     return (0 == errnum);
 }

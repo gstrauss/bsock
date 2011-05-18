@@ -149,7 +149,7 @@ static struct bindsocket_client_st
 static struct bindsocket_client_st *
        bindsocket_thread_head = bindsocket_thread_elts;
 static struct bindsocket_client_st *
-       bindsocket_thread_table[BINDSOCKET_THREAD_TABLE_SZ];
+       bindsocket_thread_table[BINDSOCKET_THREAD_TABLE_SZ]; /*static init to 0*/
 
 static void
 bindsocket_thread_table_init (void)
@@ -157,7 +157,6 @@ bindsocket_thread_table_init (void)
     for (unsigned int i = 0; i < BINDSOCKET_THREAD_MAX-1; ++i)
         bindsocket_thread_elts[i].next = &bindsocket_thread_elts[i+1];
     bindsocket_thread_elts[BINDSOCKET_THREAD_MAX-1].next = NULL;
-    memset(bindsocket_thread_table, '\0', sizeof(bindsocket_thread_table));
 }
 
 static struct bindsocket_client_st *
