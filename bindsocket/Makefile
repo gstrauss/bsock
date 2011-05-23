@@ -42,7 +42,8 @@ libbindsocket_preload.so: bindsocket_preload.o
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
 
 bindsocket: LDFLAGS+=-pthread
-bindsocket: bindsocket.m.o bindsocket_bindresvport.o libbindsocket.so
+bindsocket: bindsocket.m.o bindsocket_bindresvport.o bindsocket_syslog.o \
+            libbindsocket.so
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
 bindsocket.t: LDFLAGS+=-pthread
@@ -72,12 +73,14 @@ install-headers: bindsocket_addrinfo.h bindsocket_bind.h bindsocket_unixdomain.h
 clean:
 	$(RM) $(TARGETS) *.o
 
-bindsocket.m.o: bindsocket_addrinfo.h bindsocket_unixdomain.h
+bindsocket.m.o: bindsocket_addrinfo.h bindsocket_syslog.h \
+                bindsocket_unixdomain.h
 bindsocket.t.o: bindsocket_unixdomain.h
 bindsocket_addrinfo.o: bindsocket_addrinfo.h
 bindsocket_bind.o: bindsocket_bind.h bindsocket_unixdomain.h
 bindsocket_bindresvport.o: bindsocket_bindresvport.h
 bindsocket_unixdomain.o: bindsocket_addrinfo.h bindsocket_unixdomain.h
+bindsocket_syslog.o: bindsocket_syslog.h
 
 OSNAME:=$(shell /bin/uname -s)
 ifeq ($(OSNAME),SunOS)
