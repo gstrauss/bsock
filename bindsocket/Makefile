@@ -24,6 +24,7 @@ bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket.t.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_EXE='"$(BINDSOCKET_EXE)"'
+bindsocket_resvaddr.o: CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
 
 bindsocket_sobjs=bindsocket_addrinfo.o bindsocket_bind.o bindsocket_unixdomain.o
 $(bindsocket_sobjs):CFLAGS+=-fPIC
@@ -42,7 +43,8 @@ libbindsocket_preload.so: bindsocket_preload.o
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
 
 bindsocket: LDFLAGS+=-pthread
-bindsocket: bindsocket.m.o bindsocket_bindresvport.o bindsocket_syslog.o \
+bindsocket: bindsocket.m.o bindsocket_bindresvport.o \
+            bindsocket_resvaddr.o bindsocket_syslog.o \
             libbindsocket.so
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
@@ -79,6 +81,7 @@ bindsocket.t.o: bindsocket_unixdomain.h
 bindsocket_addrinfo.o: bindsocket_addrinfo.h
 bindsocket_bind.o: bindsocket_bind.h bindsocket_unixdomain.h
 bindsocket_bindresvport.o: bindsocket_bindresvport.h
+bindsocket_resvaddr.o: bindsocket_resvaddr.h bindsocket_syslog.h
 bindsocket_unixdomain.o: bindsocket_addrinfo.h bindsocket_unixdomain.h
 bindsocket_syslog.o: bindsocket_syslog.h
 

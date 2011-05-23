@@ -53,9 +53,7 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
 #include <bindsocket_addrinfo.h>
 #include <bindsocket_bindresvport.h>
-#if 0
 #include <bindsocket_resvaddr.h>
-#endif
 #include <bindsocket_syslog.h>
 #include <bindsocket_unixdomain.h>
 
@@ -339,7 +337,6 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
         if (!bindsocket_is_authorized_addrinfo(&ai, c->uid, c->gid))
             break;
 
-      #if 0
         /* check if addr, port already reserved and bound in bindsocket cache
          * (Note: fd is intentionally not set to nfd to avoid cleanup close) */
         if (-1 != (nfd = bindsocket_resvaddr_fd(&ai))) {
@@ -349,7 +346,6 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
                 errno = EACCES;
             break;
         }
-      #endif
 
         /* create socket (if not provided by client) */
         if (-1 == fd) {
@@ -732,6 +728,8 @@ main (int argc, char *argv[])
     getgrgid(0);
     setprotoent(1);
     setservent(1);
+
+    bindsocket_resvaddr_config();
 
     if (   0 != pthread_attr_init(&attr)
         || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
