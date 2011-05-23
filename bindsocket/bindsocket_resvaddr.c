@@ -138,7 +138,7 @@ bindsocket_resvaddr_cleanup (void * const arg)
     if (ar == bindsocket_resvaddr_alloc) {
         /* successful reconfig; cleanup ar->prev */
         ar = ar->prev;
-        if (empty_alloc == ar)
+        if (&empty_alloc == ar)
             return;
         /* any thread still servicing request for addr that is no longer 
          * reserved might return invalid descriptor or race with new fd in
