@@ -464,6 +464,7 @@ daemon_signal_init (void)
      *   SIGCLD:  ignore
      *   SIGHUP:  clean up and exit (for now)
      *   SIGINT:  clean up and exit
+     *   SIGQUIT: clean up and exit
      *   SIGTERM: clean up and exit
      */
     struct sigaction act;
@@ -500,6 +501,7 @@ daemon_signal_init (void)
     act.sa_handler = daemon_sa_handler;
     act.sa_flags = 0;  /* omit SA_RESTART */
     if (   sigaction(SIGINT,  &act, (struct sigaction *) NULL) != 0
+        || sigaction(SIGQUIT, &act, (struct sigaction *) NULL) != 0
         || sigaction(SIGTERM, &act, (struct sigaction *) NULL) != 0) {
         bindsocket_syslog(errno, "sigaction");
         return false;
@@ -627,6 +629,55 @@ bindsocket_daemon_init_socket (void)
     return -1;
 }
 
+static void *
+bindsocket_sigwait (void * const arg)
+{
+    sigset_t * const sigs = (sigset_t *)arg;
+    int signum = SIGHUP;
+    for (;;) {
+        switch (signum) {
+          case SIGHUP:
+            /* efficiency: keep databases open */
+            endprotoent();
+            setprotoent(1);
+            endservent();
+            setservent(1);
+            /* refresh table of persistent reserved addresses
+             * (no locks needed; executed while signals blocked) */
+            bindsocket_resvaddr_config();
+            break;
+          case SIGINT: case SIGQUIT: case SIGTERM:
+            daemon_sa_handler(signum);
+            break;
+          default:
+            bindsocket_syslog(0, "caught unexpected signal: %d", signum);
+            break;
+        }
+        (void) sigwait(sigs, &signum);
+    }
+    return NULL;
+}
+
+static void
+bindsocket_thread_signals (void)
+{
+    static sigset_t sigs;/*('static' since must persist after routine returns)*/
+    pthread_t thread;
+    int errnum;
+    (void) sigemptyset(&sigs);
+    (void) sigaddset(&sigs, SIGHUP);
+    (void) sigaddset(&sigs, SIGINT);
+    (void) sigaddset(&sigs, SIGQUIT);
+    (void) sigaddset(&sigs, SIGTERM);
+    /* block signals (signal mask inherited by threads subsequently created) */
+    if (0 != (errnum = pthread_sigmask(SIG_BLOCK, &sigs, NULL))) {
+        bindsocket_syslog((errno = errnum), "pthread_sigmask");
+        return;
+    }
+    if (0 != (errnum = pthread_create(&thread,NULL,&bindsocket_sigwait,&sigs)))
+        bindsocket_syslog((errno = errnum), "pthread_create");
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -721,16 +772,6 @@ main (int argc, char *argv[])
     if (-1 == sfd)
         return EXIT_FAILURE;
 
-    /* efficiency: perform tasks that result in initialization in daemon,
-     * which are inherited by child, instead of initialization in every child
-     * <<<FUTURE: long-running process should refresh periodically; on SIGHUP */
-    getpwuid(0);
-    getgrgid(0);
-    setprotoent(1);
-    setservent(1);
-
-    bindsocket_resvaddr_config();
-
     if (   0 != pthread_attr_init(&attr)
         || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
         || 0 != pthread_attr_setstacksize(&attr, 131072)){/*(should be plenty)*/
@@ -738,6 +779,8 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
     bindsocket_thread_table_init();
+
+    bindsocket_thread_signals();  /* blocks signals for all but one thread */
 
     /* daemon event loop
      * accept, get client credentials, insert into table, spawn handler thread
@@ -754,9 +797,17 @@ main (int argc, char *argv[])
 
         /* accept new connection */
         if (-1 == (m.fd = accept(sfd, NULL, NULL))) {
-            if (errno != EINTR && errno != ECONNABORTED)
-                break;
-            continue;
+            switch (errno) {
+              case ECONNABORTED:
+              case EINTR: continue;
+              case EINVAL:/* listen sfd closed by another thread */
+                          pthread_attr_destroy(&attr);
+                          return EXIT_SUCCESS;
+              default:    /* temporary process/system resource issue */
+                          bindsocket_syslog(errno, "accept");
+                          poll(NULL, 0, 10); /* pause 10ms and continue */
+                          continue;
+            }
         }
 
         /* get client credentials */
@@ -793,7 +844,4 @@ main (int argc, char *argv[])
         }
 
     } while (1);
-    bindsocket_syslog(errno, "accept");
-    pthread_attr_destroy(&attr);
-    return EXIT_FAILURE;
 }
