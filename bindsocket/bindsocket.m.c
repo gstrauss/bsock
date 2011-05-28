@@ -84,6 +84,16 @@ retry_close (const int fd)
     return r;
 }
 
+static int
+retry_poll_fd (const int fd, const short events, const int timeout)
+{
+    struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
+    int n; /*EINTR results in retrying poll with same timeout again and again*/
+    do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
+    if (0 == n) errno = ETIME; /* specific for bindsocket; not generic */
+    return n;
+}
+
 static void
 bindsocket_cleanup_close (void * const arg)
 {
@@ -328,7 +338,8 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
          * (NOTE: receiving addrinfo is ONLY place in bindsocket that can block
          *  on client input (at this time).  Set timeout for 2000ms (2 sec)) */
         if (!(NULL == aistr
-              ? bindsocket_unixdomain_poll_recv_addrinfo(c->fd, &ai, &fd, 2000)
+              ? 1 == retry_poll_fd(c->fd, POLLIN, 2000)
+                && bindsocket_unixdomain_recv_addrinfo(c->fd, &ai, &fd)
               : bindsocket_addrinfo_from_strs(&ai, aistr))) {
             bindsocket_syslog(errno, "recv addrinfo error or invalid addrinfo");
             break;

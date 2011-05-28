@@ -65,11 +65,21 @@ nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
 static int
+retry_poll_fd (const int fd, const short events, const int timeout)
+{
+    struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
+    int n; /*EINTR results in retrying poll with same timeout again and again*/
+    do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
+    if (0 == n) errno = ETIME; /* specific for bindsocket; not generic */
+    return n;
+}
+
+static int
 bindsocket_bind_send_addr_and_recv (const int fd,
                                     const struct addrinfo * const restrict ai,
                                     const int sfd)
 {
-    /* bindsocket_unixdomain_poll_recv_fds()
+    /* bindsocket_unixdomain_recv_fds()
      *   fills errnum to indicate remote success/failure
      * (no poll before sending addrinfo since this is first write to socket)
      * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port) */
@@ -78,10 +88,10 @@ bindsocket_bind_send_addr_and_recv (const int fd,
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
     if (bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
-        && -1 != bindsocket_unixdomain_poll_recv_fds(sfd, &rfd, &nrfd, &iov, 1,
-                                                     BINDSOCKET_POLL_TIMEOUT)) {
+        &&  1 == retry_poll_fd(sfd, POLLIN, BINDSOCKET_POLL_TIMEOUT)
+        && -1 != bindsocket_unixdomain_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
         if (-1 != rfd) {
-            /* assert(rfd != fd); should not happen from ..._poll_recv_fds() */
+            /* assert(rfd != fd); *//*(should not happen)*/
             if (0 == errnum) {
                 do { errnum = dup2(rfd,fd);
                 } while (errnum == -1 && (errno == EINTR || errno == EBUSY));

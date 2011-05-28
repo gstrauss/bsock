@@ -70,11 +70,6 @@ bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
                                 unsigned int * const restrict nrfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen);
-ssize_t
-bindsocket_unixdomain_poll_recv_fds (const int fd, int * const restrict rfds,
-                                     unsigned int * const restrict nrfds,
-                                     struct iovec * const restrict iov,
-                                     const size_t iovlen, const int msec);
 
 ssize_t
 bindsocket_unixdomain_send_fds (const int fd,
@@ -82,34 +77,16 @@ bindsocket_unixdomain_send_fds (const int fd,
                                 unsigned int * const restrict nsfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen);
-ssize_t
-bindsocket_unixdomain_poll_send_fds (const int fd,
-                                     const int * const restrict sfds,
-                                     unsigned int * const restrict nsfds,
-                                     struct iovec * const restrict iov,
-                                     const size_t iovlen, const int msec);
 
 bool
 bindsocket_unixdomain_recv_addrinfo (const int fd,
                                      struct addrinfo * const restrict ai,
                                      int * const restrict rfd);
-bool
-bindsocket_unixdomain_poll_recv_addrinfo (const int fd,
-                                     struct addrinfo * const restrict ai,
-                                     int * const restrict rfd, const int msec);
 
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd,
                                      const struct addrinfo * const restrict ai,
                                      const int sfd);
-bool
-bindsocket_unixdomain_poll_send_addrinfo (const int fd,
-                                     const struct addrinfo * const restrict ai,
-                                     const int sfd, const int msec);
-
-int
-bindsocket_unixdomain_bindresvaddr (const int fd,
-                                    const struct addrinfo * const restrict ai);
 
 int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
