@@ -30,16 +30,12 @@
  * (code could be split into separate .c files, but keep together for brevity)*/
 
 #include <bindsocket_unixdomain.h>
-#include <bindsocket_addrinfo.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <inttypes.h>
-#include <netdb.h>
-#include <stdbool.h>
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
@@ -230,99 +226,6 @@ bindsocket_unixdomain_send_fds (const int fd, const int * const restrict sfds,
     return w;
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
-
-bool
-bindsocket_unixdomain_recv_addrinfo (const int fd,
-                                     struct addrinfo * const restrict ai,
-                                     int * const restrict rfd)
-{
-    /* receive addrinfo request */
-    /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
-     * To support IPv4, IPv6, AF_UNIX domain sockets (2 byte short + 108 chars)
-     * and align buffer: int addr[28]; ai.ai_addr = (struct sockaddr *)addr */
-    /* N.B. data received from client is untrustworthy; validate well */
-    /* N.B. partial write from client results in error;
-     *      client will have to open new connection to retry */
-    uint64_t protover = 0; /* bindsocket v0 and space for flags */
-    struct iovec iov[] = {
-      { .iov_base = &protover,   .iov_len = sizeof(protover) },
-      { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
-      { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
-    };
-    unsigned int nrfds = 1;
-    ssize_t r =bindsocket_unixdomain_recv_fds(fd, rfd, &nrfds, iov,
-                                              sizeof(iov)/sizeof(struct iovec));
-    if (r <= 0)
-        return false;  /* error or client disconnect */
-    if (r < sizeof(protover))
-        return false;  /* truncated msg */
-
-    if (0 == protover) {  /* bindsocket protocol version */
-        if (r >= sizeof(protover)+sizeof(struct addrinfo) && ai->ai_addrlen > 0
-            && r == sizeof(protover)+sizeof(struct addrinfo)+ai->ai_addrlen) {
-            ai->ai_addr      = iov[2].iov_base; /* assign pointer values */
-            ai->ai_canonname = NULL;
-            ai->ai_next      = NULL;
-            return true;
-        }
-        return false;  /* truncated msg or invalid ai->ai_addrlen */
-    }
-    else if ('F' == ((char *)&protover)[1] && '_' == ((char *)&protover)[2]) {
-        /* protover taken as char string beginning "AF_" or "PF_" */
-        /* collapse iovec array into string, parse into tokens, fill addrinfo */
-        struct bindsocket_addrinfo_strs aistr;
-        char line[256];
-        if (r >= sizeof(line)) return false; /* should not happen */
-        /*(sizeof(protover)+sizeof(struct addrinfo) == 40; fits in line[256])*/
-        memcpy(line, &protover, sizeof(protover));
-        memcpy(line + sizeof(protover), ai, sizeof(struct addrinfo));
-        line[r] = '\0';
-        if ((r -= (sizeof(protover) + sizeof(struct addrinfo))) > 0)
-            memcpy(line + sizeof(protover) + sizeof(struct addrinfo),
-                   iov[2].iov_base, r);
-
-        /* restore ai->ai_addrlen ai->ai_addr buffer sizes passed into routine*/
-        ai->ai_addrlen = iov[2].iov_len;
-        ai->ai_addr    = (struct sockaddr *)iov[2].iov_base;
-
-        return bindsocket_addrinfo_split_str(&aistr, line)
-          ? bindsocket_addrinfo_from_strs(ai, &aistr)
-          : false;  /* invalid client request; truncated msg */
-    }
-
-    return false;   /* invalid client request; undecipherable format */
-}
-
-bool
-bindsocket_unixdomain_send_addrinfo (const int fd,
-                                     const struct addrinfo * const restrict ai,
-                                     const int sfd)
-{
-    /* msg sent atomically, or else not transmitted: error w/ errno==EMSGSIZE */
-    /* Note: struct addrinfo contains pointers.  These are not valid on other
-     * side of socket, but do expose client pointer addresses to server.
-     * Could avoid by copying struct addrinfo, setting pointers zero in copy */
-    uint64_t protover = 0; /* bindsocket v0 and space for flags */
-    struct iovec iov[] = {
-      { .iov_base = &protover,             .iov_len = sizeof(protover) },
-      { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
-      { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
-    };
-    unsigned int nsfds = (sfd >= 0);
-    ssize_t w =bindsocket_unixdomain_send_fds(fd, &sfd, &nsfds, iov,
-                                              sizeof(iov)/sizeof(struct iovec));
-    return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
-    /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
-}
-
-#if 0 /* sample client code sending an addrinfo string (structured precisely) */
-    const char * const msg = "AF_INET SOCK_STREAM tcp 80 0.0.0.0";
-    const size_t msglen = strlen(msg);
-    if (msglen == send(sfd, msg, msglen, MSG_NOSIGNAL|MSG_DONTWAIT))
-        return true;
-    perror("send");
-    return false;
-#endif
 
 #ifdef __linux__
 /* obtain peer credentials

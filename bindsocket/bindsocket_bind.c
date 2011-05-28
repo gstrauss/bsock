@@ -45,6 +45,7 @@
 
 extern char **environ;
 
+#include <bindsocket_addrinfo.h>
 #include <bindsocket_unixdomain.h>
 
 #ifndef BINDSOCKET_POLL_TIMEOUT
@@ -87,7 +88,7 @@ bindsocket_bind_send_addr_and_recv (const int fd,
     unsigned int nrfd = 1;
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
-    if (bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
+    if (bindsocket_addrinfo_send(sfd, ai, fd)
         &&  1 == retry_poll_fd(sfd, POLLIN, BINDSOCKET_POLL_TIMEOUT)
         && -1 != bindsocket_unixdomain_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
         if (-1 != rfd) {

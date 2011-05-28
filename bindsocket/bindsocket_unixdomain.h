@@ -30,9 +30,7 @@
 #define INCLUDED_BINDSOCKET_UNIXDOMAIN_H
 
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <stdbool.h>
+#include <sys/uio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,16 +75,6 @@ bindsocket_unixdomain_send_fds (const int fd,
                                 unsigned int * const restrict nsfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen);
-
-bool
-bindsocket_unixdomain_recv_addrinfo (const int fd,
-                                     struct addrinfo * const restrict ai,
-                                     int * const restrict rfd);
-
-bool
-bindsocket_unixdomain_send_addrinfo (const int fd,
-                                     const struct addrinfo * const restrict ai,
-                                     const int sfd);
 
 int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,

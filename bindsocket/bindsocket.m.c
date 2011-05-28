@@ -339,7 +339,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
          *  on client input (at this time).  Set timeout for 2000ms (2 sec)) */
         if (!(NULL == aistr
               ? 1 == retry_poll_fd(c->fd, POLLIN, 2000)
-                && bindsocket_unixdomain_recv_addrinfo(c->fd, &ai, &fd)
+                && bindsocket_addrinfo_recv(c->fd, &ai, &fd)
               : bindsocket_addrinfo_from_strs(&ai, aistr))) {
             bindsocket_syslog(errno, "recv addrinfo error or invalid addrinfo");
             break;

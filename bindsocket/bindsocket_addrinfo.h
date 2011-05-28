@@ -62,6 +62,16 @@ bool
 bindsocket_addrinfo_split_str(struct bindsocket_addrinfo_strs * const aistr,
                               char * const restrict str);
 
+bool
+bindsocket_addrinfo_recv (const int fd,
+                          struct addrinfo * const restrict ai,
+                          int * const restrict rfd);
+
+bool
+bindsocket_addrinfo_send (const int fd,
+                          const struct addrinfo * const restrict ai,
+                          const int sfd);
+
 #ifdef __cplusplus
 }
 #endif
