@@ -575,6 +575,30 @@ daemon_init (const int supervised)
     if (!daemon_signal_init())
         return false;
 
+    /* Sanity check system socket option max memory for ancillary data
+     * (see bindsocket_unixdomain.h for more details) */
+  #ifdef __linux__
+    {
+        ssize_t r;
+        long optmem_max;
+        const int fd = open("/proc/sys/net/core/optmem_max", O_RDONLY, 0);
+        char buf[32];
+        if (-1 != fd) {
+            if ((r = read(fd, buf, sizeof(buf)-1)) >= 0) {
+                buf[r] = '\0';
+                errno = 0;
+                optmem_max = strtol(buf, NULL, 10);
+                if (0 == errno && optmem_max > BINDSOCKET_ANCILLARY_DATA_MAX)
+                    bindsocket_syslog(errno, "max ancillary data very large "
+                      "(%ld > %d); consider recompiling bindsocket with larger "
+                      "BINDSOCKET_ANCILLARY_DATA_MAX", optmem_max,
+                      BINDSOCKET_ANCILLARY_DATA_MAX);
+            }
+            retry_close(fd);
+        }
+    }
+  #endif
+
     return true;
 }
 
@@ -774,7 +798,7 @@ main (int argc, char *argv[])
 
     if (   0 != pthread_attr_init(&attr)
         || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
-        || 0 != pthread_attr_setstacksize(&attr, 131072)){/*(should be plenty)*/
+        || 0 != pthread_attr_setstacksize(&attr, 32768)) {/*(should be plenty)*/
         bindsocket_syslog(errno, "pthread_attr_*");
         return EXIT_FAILURE;
     }

@@ -144,8 +144,7 @@ bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
     /* receive and return file descriptor sent over unix domain socket */
     /* 'man cmsg' provides example code */
     ssize_t r;
-    /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
-    char ctrlbuf[10240]; /* BSD mbuf is 108 */
+    char ctrlbuf[BINDSOCKET_ANCILLARY_DATA_MAX];
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,
@@ -163,7 +162,7 @@ bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
     }
 
     /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
-    /*(MSG_CTRUNC is unexpected from bindsocket daemon; notable error/attack)*/
+    /*(MSG_CTRUNC should not happen if ctrlbuf >= socket max ancillary data)*/
     if (msg.msg_flags & MSG_CTRUNC)
         syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
 
@@ -281,7 +280,7 @@ bindsocket_unixdomain_recv_addrinfo (const int fd,
         }
         return false;  /* truncated msg or invalid ai->ai_addrlen */
     }
-    else if (0 == memcmp(((char *)&protover)+1, "F_", 2)) {
+    else if ('F' == ((char *)&protover)[1] && '_' == ((char *)&protover)[2]) {
         /* protover taken as char string beginning "AF_" or "PF_" */
         /* collapse iovec array into string, parse into tokens, fill addrinfo */
         struct bindsocket_addrinfo_strs aistr;
@@ -409,8 +408,7 @@ bindsocket_unixdomain_recvmsg (const int fd,
 {
     /* (nonblocking recvmsg(); caller might poll() before call to here)*/
     ssize_t r;
-    /* RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF */
-    char ctrlbuf[10240]; /* BSD mbuf is 108 */
+    char ctrlbuf[BINDSOCKET_ANCILLARY_DATA_MAX];
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,
@@ -426,11 +424,7 @@ bindsocket_unixdomain_recvmsg (const int fd,
         return r;
 
     /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
-    /*(MSG_CTRUNC is unexpected in bindsocket and is notable error/attack)*/
-    /* N.B. since bindsocket_client_session() handled in short-lived child
-     * fork()ed from parent daemon and will exit soon, simply syslog.
-     * Alternatively, daemon could closelog(), close fds > STDERR_FILENO,
-     * and then repeat call to openlog() */
+    /*(MSG_CTRUNC should not happen if ctrlbuf >= socket max ancillary data)*/
     if (msg.msg_flags & MSG_CTRUNC)
         syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
 
