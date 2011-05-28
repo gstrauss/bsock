@@ -59,7 +59,6 @@ extern "C" {
 #define BINDSOCKET_ANCILLARY_DATA_MAX 10240
 #endif
 
-/* sample client code */
 int
 bindsocket_unixdomain_socket_connect (const char * const restrict sockpath);
 
@@ -67,22 +66,28 @@ int
 bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath);
 
 ssize_t
-bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen);
+bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
+                                unsigned int * const restrict nrfds,
+                                struct iovec * const restrict iov,
+                                const size_t iovlen);
 ssize_t
-bindsocket_unixdomain_poll_recv_fd (const int fd, int * const restrict rfd,
-                                    struct iovec * const restrict iov,
-                                    const size_t iovlen, const int msec);
+bindsocket_unixdomain_poll_recv_fds (const int fd, int * const restrict rfds,
+                                     unsigned int * const restrict nrfds,
+                                     struct iovec * const restrict iov,
+                                     const size_t iovlen, const int msec);
 
 ssize_t
-bindsocket_unixdomain_send_fd (const int fd, const int sfd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen);
+bindsocket_unixdomain_send_fds (const int fd,
+                                const int * const restrict sfds,
+                                unsigned int * const restrict nsfds,
+                                struct iovec * const restrict iov,
+                                const size_t iovlen);
 ssize_t
-bindsocket_unixdomain_poll_send_fd (const int fd, const int sfd,
-                                    struct iovec * const restrict iov,
-                                    const size_t iovlen, const int msec);
+bindsocket_unixdomain_poll_send_fds (const int fd,
+                                     const int * const restrict sfds,
+                                     unsigned int * const restrict nsfds,
+                                     struct iovec * const restrict iov,
+                                     const size_t iovlen, const int msec);
 
 bool
 bindsocket_unixdomain_recv_addrinfo (const int fd,
@@ -93,7 +98,6 @@ bindsocket_unixdomain_poll_recv_addrinfo (const int fd,
                                      struct addrinfo * const restrict ai,
                                      int * const restrict rfd, const int msec);
 
-/* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd,
                                      const struct addrinfo * const restrict ai,
@@ -110,16 +114,6 @@ bindsocket_unixdomain_bindresvaddr (const int fd,
 int
 bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
                                   gid_t * const restrict egid);
-
-ssize_t
-bindsocket_unixdomain_recvmsg (const int fd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen);
-
-ssize_t
-bindsocket_unixdomain_sendmsg (const int fd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen);
 
 #ifdef __cplusplus
 }

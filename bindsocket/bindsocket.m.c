@@ -287,6 +287,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
       .ai_addr    = (struct sockaddr *)addr
     };
     struct iovec iov = { .iov_base = &flag, .iov_len = sizeof(flag) };
+    unsigned int nfds;
 
     /* get client credentials (if non-daemon mode) */
     if (-1 == c->uid) {
@@ -390,7 +391,9 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
      * (send socket fd to client if new socket, no poll since only one send) */
     flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
     if (c->fd != fd) {
-        rc = (bindsocket_unixdomain_send_fd(c->fd, nfd, &iov, 1) == iov.iov_len)
+        nfds = (-1 != nfd);
+        rc = (bindsocket_unixdomain_send_fds(c->fd, &nfd, &nfds, &iov, 1)
+              == iov.iov_len)
           ? EXIT_SUCCESS
           : EXIT_FAILURE;
         if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
@@ -855,7 +858,7 @@ main (int argc, char *argv[])
         pthread_mutex_unlock(&bindsocket_thread_table_mutex);
         if (NULL == c) {
             /* sendmsg with EAGAIN; permit only one request at a time per uid */
-            bindsocket_unixdomain_sendmsg(m.fd, &iov, 1);
+            bindsocket_unixdomain_send_fds(m.fd, NULL, NULL, &iov, 1);
             retry_close(m.fd);
             continue;
         }

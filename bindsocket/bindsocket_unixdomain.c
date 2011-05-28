@@ -64,7 +64,6 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     return n;
 }
 
-/* sample client code */
 int
 bindsocket_unixdomain_socket_connect (const char * const restrict sockpath)
 {
@@ -136,12 +135,47 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
     return -1;
 }
 
-ssize_t
-bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen)
+static void
+bindsocket_unixdomain_recv_ancillary (struct msghdr * const restrict msg,
+                                      int * const restrict rfds,
+                                      unsigned int * const restrict nrfdsp)
 {
-    /* receive and return file descriptor sent over unix domain socket */
+    struct cmsghdr *cmsg;
+    unsigned int nrfd = 0;
+    const unsigned int nrfds = nrfdsp != NULL ? *nrfdsp : 0;
+
+    /* recvmsg() can receive multiple fds even if MSG_CTRUNC (ctrlbuf too small)
+     * recvmsg() can receive int array of fds and/or multiple cmsgs with fds
+     * (defensive client must handle multiple fds received unexpectedly)
+     * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
+
+    for (cmsg=CMSG_FIRSTHDR(msg); NULL != cmsg; cmsg=CMSG_NXTHDR(msg,cmsg)) {
+        if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
+            const int * const restrict fds = (int *)CMSG_DATA(cmsg);
+            const unsigned int nfds = (cmsg->cmsg_len-CMSG_LEN(0))/sizeof(int);
+            unsigned int nfd = nrfds - nrfd;
+            if (0 !=nfd) {
+                if (nfd > nfds)
+                    nfd = nfds;
+                memcpy(rfds+nrfd, fds, nfd*sizeof(int));
+                nrfd += nfd;
+            }
+            while (nfd < nfds)
+                nointr_close(fds[nfd++]);  /* close excess fds received */
+        }
+    }
+
+    if (nrfdsp != NULL)
+        *nrfdsp = nrfd;
+}
+
+ssize_t
+bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
+                                unsigned int * const restrict nrfds,
+                                struct iovec * const restrict iov,
+                                const size_t iovlen)
+{
+    /* receive and return file descriptor(s) sent over unix domain socket */
     /* 'man cmsg' provides example code */
     ssize_t r;
     char ctrlbuf[BINDSOCKET_ANCILLARY_DATA_MAX];
@@ -154,7 +188,6 @@ bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
       .msg_controllen = sizeof(ctrlbuf),
       .msg_flags      = 0
     };
-    struct cmsghdr *cmsg;
     do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
     if (r < 1) {  /* EOF (r=0) or error (r=-1) */
         if (0 == r && 0 == errno) errno = EPIPE;
@@ -166,69 +199,58 @@ bindsocket_unixdomain_recv_fd (const int fd, int * const restrict rfd,
     if (msg.msg_flags & MSG_CTRUNC)
         syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
 
-    /* recvmsg() can receive multiple fds even if MSG_CTRUNC (ctrlbuf too small)
-     * recvmsg() can receive int array of fds and/or multiple cmsgs with fds
-     * (defensive client must handle multiple fds received unexpectedly)
-     * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
+    bindsocket_unixdomain_recv_ancillary(&msg, rfds, nrfds);
 
-    *rfd = -1;
-    for (cmsg=CMSG_FIRSTHDR(&msg); NULL != cmsg; cmsg=CMSG_NXTHDR(&msg,cmsg)) {
-        if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
-            int * const fds = (int *)CMSG_DATA(cmsg);
-            int n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-            if (-1 == *rfd)
-                *rfd = fds[0];  /* received fd; success */
-            /* close excess fds received; unexpected by bindsocket */
-            while (n-- > 0) {
-                if (fds[n] != *rfd)
-                    nointr_close(fds[n]);
-            }
-        }
-    }
     return r;
 }
 
 ssize_t
-bindsocket_unixdomain_poll_recv_fd (const int fd, int * const restrict rfd,
-                                    struct iovec * const restrict iov,
-                                    const size_t iovlen, const int msec)
+bindsocket_unixdomain_poll_recv_fds (const int fd, int * const restrict rfds,
+                                     unsigned int * const restrict nrfds,
+                                     struct iovec * const restrict iov,
+                                     const size_t iovlen, const int msec)
 {
     return (retry_poll_fd(fd, POLLIN|POLLRDHUP, msec) == 1)
-      ? bindsocket_unixdomain_recv_fd(fd, rfd, iov, iovlen)
+      ? bindsocket_unixdomain_recv_fds(fd, rfds, nrfds, iov, iovlen)
       : -1;
 }
 
 ssize_t
-bindsocket_unixdomain_send_fd (const int fd, const int sfd,
-                               struct iovec * const restrict iov,
-                               const size_t iovlen)
+bindsocket_unixdomain_send_fds (const int fd, const int * const restrict sfds,
+                                unsigned int * const restrict nsfds,
+                                struct iovec * const restrict iov,
+                                const size_t iovlen)
 {
+    /* send iov msg and (optional) file descriptor(s) over unix domain socket */
     /* pass any non-zero-length data so client can distinguish msg from EOF
-     * (caller must provide iov array with iov[0].iov_len != 0) */
+     * (caller must provide iov array with iov[0].iov_len != 0 to pass fds) */
     /* 'man cmsg' provides sample code */
     /*(caller might first poll() POLLOUT since nonblocking sendmsg() employed)*/
+    /*(caller should handle EAGAIN and EWOULDBLOCK) */
     ssize_t w;
-    char ctrlbuf[CMSG_SPACE(sizeof(int))]; /* sfd int-sized; 4 bytes of data */
     struct msghdr msg = {
       .msg_name       = NULL,
       .msg_namelen    = 0,
       .msg_iov        = iov,
       .msg_iovlen     = iovlen,
-      .msg_control    = ctrlbuf,
-      .msg_controllen = sizeof(ctrlbuf),
+      .msg_control    = NULL,
+      .msg_controllen = 0,
       .msg_flags      = 0
     };
-    struct cmsghdr *cmsg   = CMSG_FIRSTHDR(&msg);
-    /* avoid gcc warning: dereferencing type-punned pointer ... */
-    /*  *(int *)CMSG_DATA(cmsg) = sfd; */
-    int * const fds = (int *)CMSG_DATA(cmsg); fds[0] = sfd;
-    cmsg->cmsg_level       = SOL_SOCKET;
-    cmsg->cmsg_type        = SCM_RIGHTS;
-    cmsg->cmsg_len         = msg.msg_controllen = CMSG_LEN(sizeof(int));/*data*/
-    if (-1 == sfd) {   /*(skip sending control msg (cmsg) if fd to send is -1)*/
-        msg.msg_control    = NULL;
-        msg.msg_controllen = 0;
+
+    const unsigned int isz = (nsfds != NULL ? *nsfds : 0) * sizeof(int);
+    char ctrlbuf[CMSG_SPACE(isz+4)]; /*(+4 to ensure not 0-len array)*/
+    if (0 != isz) {  /*(fill control msg (cmsg) if fds to send)*/
+        struct cmsghdr * restrict cmsg;
+        msg.msg_control    = ctrlbuf;
+        msg.msg_controllen = sizeof(ctrlbuf);
+        cmsg = CMSG_FIRSTHDR(&msg);
+        memcpy(CMSG_DATA(cmsg), sfds, isz);
+        cmsg->cmsg_level   = SOL_SOCKET;
+        cmsg->cmsg_type    = SCM_RIGHTS;
+        cmsg->cmsg_len     = msg.msg_controllen = CMSG_LEN(isz); /*data*/
     }
+
     do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
     } while (-1 == w && errno == EINTR);
     return w;
@@ -236,12 +258,14 @@ bindsocket_unixdomain_send_fd (const int fd, const int sfd,
 }
 
 ssize_t
-bindsocket_unixdomain_poll_send_fd (const int fd, const int sfd,
-                                    struct iovec * const restrict iov,
-                                    const size_t iovlen, const int msec)
+bindsocket_unixdomain_poll_send_fds (const int fd,
+                                     const int * const restrict sfds,
+                                     unsigned int * const restrict nsfds,
+                                     struct iovec * const restrict iov,
+                                     const size_t iovlen, const int msec)
 {
     return (retry_poll_fd(fd, POLLOUT, msec) == 1)
-      ? bindsocket_unixdomain_send_fd(fd, sfd, iov, iovlen)
+      ? bindsocket_unixdomain_send_fds(fd, sfds, nsfds, iov, iovlen)
       : -1;
 }
 
@@ -263,7 +287,8 @@ bindsocket_unixdomain_recv_addrinfo (const int fd,
       { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
-    ssize_t r = bindsocket_unixdomain_recv_fd(fd, rfd, iov,
+    unsigned int nrfds = 1;
+    ssize_t r =bindsocket_unixdomain_recv_fds(fd, rfd, &nrfds, iov,
                                               sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
@@ -316,7 +341,6 @@ bindsocket_unixdomain_poll_recv_addrinfo (const int fd,
       : false;
 }
 
-/* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_send_addrinfo (const int fd,
                                      const struct addrinfo * const restrict ai,
@@ -332,13 +356,13 @@ bindsocket_unixdomain_send_addrinfo (const int fd,
       { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
     };
-    ssize_t w = bindsocket_unixdomain_send_fd(fd, sfd, iov,
+    unsigned int nsfds = (sfd >= 0);
+    ssize_t w =bindsocket_unixdomain_send_fds(fd, &sfd, &nsfds, iov,
                                               sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
 
-/* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 #if 0 /* sample client code sending an addrinfo string (structured precisely) */
     const char * const msg = "AF_INET SOCK_STREAM tcp 80 0.0.0.0";
     const size_t msglen = strlen(msg);
@@ -348,7 +372,6 @@ bindsocket_unixdomain_send_addrinfo (const int fd,
     return false;
 #endif
 
-/* sample client code corresponding to bindsocket_unixdomain_recv_addrinfo() */
 bool
 bindsocket_unixdomain_poll_send_addrinfo (const int fd,
                                      const struct addrinfo * const restrict ai,
@@ -400,51 +423,14 @@ bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
 }
 
 
-/* sample code */
+#if 0 /* sample code */
 ssize_t
 bindsocket_unixdomain_recvmsg (const int fd,
                                struct iovec * const restrict iov,
                                const size_t iovlen)
 {
     /* (nonblocking recvmsg(); caller might poll() before call to here)*/
-    ssize_t r;
-    char ctrlbuf[BINDSOCKET_ANCILLARY_DATA_MAX];
-    struct msghdr msg = {
-      .msg_name       = NULL,
-      .msg_namelen    = 0,
-      .msg_iov        = iov,
-      .msg_iovlen     = iovlen,
-      .msg_control    = ctrlbuf,
-      .msg_controllen = sizeof(ctrlbuf),
-      .msg_flags      = 0
-    };
-    struct cmsghdr *cmsg;
-    do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
-    if (r < 1)  /* EOF (r=0) or error (r=-1) */
-        return r;
-
-    /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
-    /*(MSG_CTRUNC should not happen if ctrlbuf >= socket max ancillary data)*/
-    if (msg.msg_flags & MSG_CTRUNC)
-        syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
-
-    /* recvmsg() can receive multiple fds even if MSG_PEEK
-     * recvmsg() can receive multiple fds even if MSG_CTRUNC (ctrlbuf too small)
-     * recvmsg() can receive int array of fds and/or multiple cmsgs with fds
-     * (defensive client must handle multiple fds received unexpectedly)
-     * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
-
-    for (cmsg=CMSG_FIRSTHDR(&msg); NULL != cmsg; cmsg=CMSG_NXTHDR(&msg,cmsg)) {
-        if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
-            int * const fds = (int *)CMSG_DATA(cmsg);
-            int n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-            /* close excess fds received; unexpected by bindsocket */
-            while (n-- > 0)
-                nointr_close(fds[n]);
-        }
-    }
-
-    return r;
+    return bindsocket_unixdomain_recv_fds(fd, NULL, NULL, iov, iovlen);
 }
 
 ssize_t
@@ -453,19 +439,6 @@ bindsocket_unixdomain_sendmsg (const int fd,
                                const size_t iovlen)
 {
     /* (nonblocking sendmsg(); caller might poll() before call to here)*/
-    /* (caller should handle EAGAIN and EWOULDBLOCK) */
-    ssize_t w;
-    struct msghdr msg = {
-      .msg_name       = NULL,
-      .msg_namelen    = 0,
-      .msg_iov        = iov,
-      .msg_iovlen     = iovlen,
-      .msg_control    = NULL,
-      .msg_controllen = 0,
-      .msg_flags      = 0
-    };
-    do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
-    } while (-1 == w && errno == EINTR);
-    return w;
-    /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
+    return bindsocket_unixdomain_send_fds(fd, NULL, NULL, iov, iovlen);
 }
+#endif

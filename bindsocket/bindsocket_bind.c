@@ -69,18 +69,19 @@ bindsocket_bind_send_addr_and_recv (const int fd,
                                     const struct addrinfo * const restrict ai,
                                     const int sfd)
 {
-    /* bindsocket_unixdomain_poll_recv_fd()
+    /* bindsocket_unixdomain_poll_recv_fds()
      *   fills errnum to indicate remote success/failure
      * (no poll before sending addrinfo since this is first write to socket)
      * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port) */
     int rfd = -1;
+    unsigned int nrfd = 1;
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
     if (bindsocket_unixdomain_send_addrinfo(sfd, ai, fd)
-        && -1 != bindsocket_unixdomain_poll_recv_fd(sfd, &rfd, &iov, 1,
-                                                    BINDSOCKET_POLL_TIMEOUT)) {
+        && -1 != bindsocket_unixdomain_poll_recv_fds(sfd, &rfd, &nrfd, &iov, 1,
+                                                     BINDSOCKET_POLL_TIMEOUT)) {
         if (-1 != rfd) {
-            /* assert(rfd != fd); should not happen from ..._poll_recv_fd() */
+            /* assert(rfd != fd); should not happen from ..._poll_recv_fds() */
             if (0 == errnum) {
                 do { errnum = dup2(rfd,fd);
                 } while (errnum == -1 && (errno == EINTR || errno == EBUSY));
