@@ -64,7 +64,8 @@ int
 bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath);
 
 ssize_t
-bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
+bindsocket_unixdomain_recv_fds (const int fd,
+                                int * const restrict rfds,
                                 unsigned int * const restrict nrfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen);
@@ -72,12 +73,13 @@ bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
 ssize_t
 bindsocket_unixdomain_send_fds (const int fd,
                                 const int * const restrict sfds,
-                                unsigned int * const restrict nsfds,
+                                unsigned int nsfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen);
 
 int
-bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
+bindsocket_unixdomain_getpeereid (const int s,
+                                  uid_t * const restrict euid,
                                   gid_t * const restrict egid);
 
 #ifdef __cplusplus

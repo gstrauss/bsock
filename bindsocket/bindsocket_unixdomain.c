@@ -151,7 +151,8 @@ bindsocket_unixdomain_recv_ancillary (struct msghdr * const restrict msg,
 }
 
 ssize_t
-bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
+bindsocket_unixdomain_recv_fds (const int fd,
+                                int * const restrict rfds,
                                 unsigned int * const restrict nrfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen)
@@ -186,8 +187,9 @@ bindsocket_unixdomain_recv_fds (const int fd, int * const restrict rfds,
 }
 
 ssize_t
-bindsocket_unixdomain_send_fds (const int fd, const int * const restrict sfds,
-                                unsigned int * const restrict nsfds,
+bindsocket_unixdomain_send_fds (const int fd,
+                                const int * const restrict sfds,
+                                unsigned int nsfds,
                                 struct iovec * const restrict iov,
                                 const size_t iovlen)
 {
@@ -208,17 +210,16 @@ bindsocket_unixdomain_send_fds (const int fd, const int * const restrict sfds,
       .msg_flags      = 0
     };
 
-    const unsigned int isz = (nsfds != NULL ? *nsfds : 0) * sizeof(int);
-    char ctrlbuf[CMSG_SPACE(isz+4)]; /*(+4 to ensure not 0-len array)*/
-    if (0 != isz) {  /*(fill control msg (cmsg) if fds to send)*/
+    char ctrlbuf[CMSG_SPACE((nsfds*=sizeof(int))+4)]; /*(+4 ensures not 0-len)*/
+    if (0 != nsfds) {  /*(fill control msg (cmsg) if fds to send)*/
         struct cmsghdr * restrict cmsg;
         msg.msg_control    = ctrlbuf;
         msg.msg_controllen = sizeof(ctrlbuf);
         cmsg = CMSG_FIRSTHDR(&msg);
-        memcpy(CMSG_DATA(cmsg), sfds, isz);
+        memcpy(CMSG_DATA(cmsg), sfds, nsfds);
         cmsg->cmsg_level   = SOL_SOCKET;
         cmsg->cmsg_type    = SCM_RIGHTS;
-        cmsg->cmsg_len     = msg.msg_controllen = CMSG_LEN(isz); /*data*/
+        cmsg->cmsg_len     = msg.msg_controllen = CMSG_LEN(nsfds); /*data*/
     }
 
     do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
@@ -261,7 +262,8 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 #endif
 
 int
-bindsocket_unixdomain_getpeereid (const int s, uid_t * const restrict euid,
+bindsocket_unixdomain_getpeereid (const int s,
+                                  uid_t * const restrict euid,
                                   gid_t * const restrict egid)
 {
     return getpeereid(s, euid, egid);
@@ -284,6 +286,6 @@ bindsocket_unixdomain_sendmsg (const int fd,
                                const size_t iovlen)
 {
     /* (nonblocking sendmsg(); caller might poll() before call to here)*/
-    return bindsocket_unixdomain_send_fds(fd, NULL, NULL, iov, iovlen);
+    return bindsocket_unixdomain_send_fds(fd, NULL, 0, iov, iovlen);
 }
 #endif
