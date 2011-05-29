@@ -56,6 +56,10 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 #endif
 #define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
 
+#ifndef BINDSOCKET_SOCKET_MODE
+#define BINDSOCKET_SOCKET_MODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP
+#endif
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -281,7 +285,7 @@ bindsocket_daemon_init_socket (void)
 
     if (NULL != (gr = getgrnam(BINDSOCKET_GROUP)) /* ok; no other threads yet */
         && 0 == chown(BINDSOCKET_SOCKET, euid, gr->gr_gid)
-        && 0 == chmod(BINDSOCKET_SOCKET, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP))
+        && 0 == chmod(BINDSOCKET_SOCKET, BINDSOCKET_SOCKET_MODE))
         return sfd;
 
     bindsocket_syslog(errno, "getgrnam,chown,chmod");

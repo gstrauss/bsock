@@ -4,6 +4,7 @@ PREFIX?=/usr/local
 BINDSOCKET_EXE?=$(PREFIX)/sbin/bindsocket
 BINDSOCKET_CONFIG?=$(PREFIX)/etc/bindsocket
 BINDSOCKET_SOCKET_DIR?=$(PREFIX)/var/run/bindsocket
+BINDSOCKET_SOCKET_MODE?=0660
 BINDSOCKET_GROUP?=daemon
 
 .PHONY: all
@@ -21,6 +22,7 @@ RPATH= -Wl,-rpath=$(PREFIX)/lib
 bindsocket.m.o:     CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
 bindsocket_daemon.o:CFLAGS+=-DBINDSOCKET_GROUP='"$(BINDSOCKET_GROUP)"'
 bindsocket_daemon.o:CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket_daemon.o:CFLAGS+=-DBINDSOCKET_SOCKET_MODE='$(BINDSOCKET_SOCKET_MODE)'
 bindsocket.t.o:     CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket_bind.o:  CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
 bindsocket_bind.o:  CFLAGS+=-DBINDSOCKET_EXE='"$(BINDSOCKET_EXE)"'
@@ -75,7 +77,8 @@ install-headers: bindsocket_addrinfo.h bindsocket_bind.h bindsocket_unixdomain.h
 clean:
 	$(RM) $(TARGETS) *.o
 
-bindsocket.m.o: bindsocket_addrinfo.h bindsocket_daemon.h bindsocket_syslog.h \
+bindsocket.m.o: bindsocket_addrinfo.h bindsocket_bindresvport.h \
+                bindsocket_daemon.h bindsocket_resvaddr.h bindsocket_syslog.h \
                 bindsocket_unixdomain.h
 bindsocket.t.o: bindsocket_unixdomain.h
 bindsocket_addrinfo.o: bindsocket_addrinfo.h bindsocket_unixdomain.h

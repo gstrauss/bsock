@@ -89,9 +89,92 @@
 #define IPPORT_RESERVEDSTART 600
 #endif
 
+#ifndef BINDSOCKET_BINDRESVPORT_SKIP
+#define BINDSOCKET_BINDRESVPORT_SKIP \
+  623,631,636,664,749,750,783,873,992,993,994,995
+/*
+ * (collected from https://bugzilla.redhat.com/show_bug.cgi?id=103401)
+ *
+ * 623     (DMTF/ASF RMCP)
+ * 631     (IPP == CUPS)
+ * 636     (LDAPS)
+ * 664     (DMTF/ASF RSP)
+ * 749     (Kerberos V kadmin)
+ * 750     (Kerberos V kdc)
+ * 783     (spamd in spamassassin)
+ * 873     (rsyncd)
+ * 992-995 (SSL-enabled telnet, IMAP, IRC, and POP3)
+ *
+ * Alert Standard Format (ASF)
+ * (NICs might discard packets for non-ASF usage of these ports.)
+ * http://en.wikipedia.org/wiki/Alert_Standard_Format
+ */
+#endif
+
+#ifdef BINDSOCKET_BINDRESVPORT_SKIP  /* comma-separated list of ports to skip */
+static int
+bindsocket_bindresvport_skip (const unsigned int port)
+{
+    /*(FUTURE: use bsearch() if list is long)*/
+    static const unsigned int skiplist[] = { BINDSOCKET_BINDRESVPORT_SKIP };
+    size_t i;
+    for (i = 0; i < sizeof(skiplist)/sizeof(int) && skiplist[i] != port; ++i) ;
+    return (i != sizeof(skiplist)/sizeof(int)); /* port is on skiplist */
+}
+#else
+#define bindsocket_bindresvport_skip(port) 0
+#endif
+
 static void bindsocket_bindresvport_cleanup_mutex (void * const restrict mutex)
 {
     pthread_mutex_unlock((pthread_mutex_t *)mutex);
+}
+
+static int
+bindsocket_bindresvport_random_port (void)
+{
+    /* Choosing pseudo-random starting port to which to attempt to bind().
+     * /dev/urandom provides decent randomness (unless entropy runs out).
+     * XOR lower 4 nibbles with the upper 4 nibbles in reverse order
+     * since lowest bits provided by /dev/urandom are less random.
+     * (Note: read() not protected with mutex since reading random bytes!)
+     * (arc4random() would be even better defense against random spoofing)
+     * (getpid() and time() are poorer, more predictable choices) */
+    static pthread_mutex_t devurandom_mutex = PTHREAD_MUTEX_INITIALIZER;
+    static volatile int ufd = -1;
+    int fd = ufd;
+    int r = -1;
+    if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
+        int cancel_type;
+        pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &cancel_type);
+        pthread_cleanup_push(bindsocket_bindresvport_cleanup_mutex,
+                             &devurandom_mutex);
+        r = -1;
+        if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
+            fd = ufd; /* re-check volatile ufd after obtaining mutex */
+            if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
+                /* race condition around close and reopen (between threads);
+                 * another thread might read from original ufd, which could
+                 * be opened by another thread to another file.  However,
+                 * reopen should be rare, if ever, after initial open.
+                 * Full safety would employ mutex around all read() in fn.*/
+                ufd = -1;
+                if (-1 != fd)
+                    while (0 != close(fd) && errno == EINTR) ;
+                fd = ufd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
+                if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int))
+                    r = -1;
+            }
+            pthread_mutex_unlock(&devurandom_mutex);
+        } /* (use less random getpid() ^ time() if obtaining mutex fails) */
+        pthread_cleanup_pop(0);
+        pthread_setcanceltype(cancel_type, NULL);
+    }
+    if (-1 != r)
+        r ^= (((r>>4)&0xF000)|((r>>12)&0xF00)|((r>>20)&0xF0)|((r>>28)&0xF));
+    else
+        r = (int)(getpid() ^ time(NULL));
+    return(IPPORT_RESERVEDSTART + (r % (IPPORT_RESERVED-IPPORT_RESERVEDSTART)));
 }
 
 int
@@ -126,60 +209,18 @@ bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
     }
 
     pstart = ntohs(*portptr);  /* 0 == pstart trips port range check below */
-    if (pstart < IPPORT_RESERVEDSTART || pstart >= IPPORT_RESERVED) {
-        /* Choosing pseudo-random starting port to which to attempt to bind().
-         * /dev/urandom provides decent randomness (unless entropy runs out).
-         * XOR lower 4 nibbles with the upper 4 nibbles in reverse order
-         * since lowest bits provided by /dev/urandom are less random.
-         * (Note: read() not protected with mutex since reading random bytes!)
-         * (arc4random() would be even better defense against random spoofing)
-         * (getpid() and time() are poorer, more predictable choices) */
-        static pthread_mutex_t devurandom_mutex = PTHREAD_MUTEX_INITIALIZER;
-        static volatile int ufd = -1;
-        int fd = ufd;
-        int r = -1;
-        if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
-            int cancel_type;
-            pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &cancel_type);
-            pthread_cleanup_push(bindsocket_bindresvport_cleanup_mutex,
-                                 &devurandom_mutex);
-            r = -1;
-            if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
-                fd = ufd; /* re-check volatile ufd after obtaining mutex */
-                if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
-                    /* race condition around close and reopen (between threads);
-                     * another thread might read from original ufd, which could
-                     * be opened by another thread to another file.  However,
-                     * reopen should be rare, if ever, after initial open.
-                     * Full safety would employ mutex around all read() in fn.*/
-                    ufd = -1;
-                    if (-1 != fd)
-                        while (0 != close(fd) && errno == EINTR) ;
-                    fd = ufd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
-                    if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int))
-                        r = -1;
-                }
-                pthread_mutex_unlock(&devurandom_mutex);
-            } /* (use less random getpid() ^ time() if obtaining mutex fails) */
-            pthread_cleanup_pop(0);
-            pthread_setcanceltype(cancel_type, NULL);
-        }
-        if (-1 != r)
-            r ^= (((r>>4)&0xF000)|((r>>12)&0xF00)|((r>>20)&0xF0)|((r>>28)&0xF));
-        else
-            r = (int)(getpid() ^ time(NULL));
-        pstart = (in_port_t)
-          (IPPORT_RESERVEDSTART + (r % (IPPORT_RESERVED-IPPORT_RESERVEDSTART)));
-    }
+    if (pstart < IPPORT_RESERVEDSTART || pstart >= IPPORT_RESERVED)
+        pstart = (in_port_t) bindsocket_bindresvport_random_port();
 
     port = pstart;
     do {
-        *portptr = htons(port);
-        if (0 == bind(sockfd, sa, addrlen))
-            return 0;
-        else if (errno != EADDRINUSE)
-            return -1;
-
+        if (!bindsocket_bindresvport_skip(port)) {
+            *portptr = htons(port);
+            if (0 == bind(sockfd, sa, addrlen))
+                return 0;
+            else if (errno != EADDRINUSE)
+                return -1;
+        }
         if (++port == IPPORT_RESERVED)
             port = IPPORT_RESERVEDSTART;
     } while (port != pstart);

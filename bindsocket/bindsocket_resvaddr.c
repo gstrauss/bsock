@@ -55,6 +55,11 @@
 #define BINDSOCKET_RESVADDR_CONFIG BINDSOCKET_CONFIG".resvaddr"
 #endif
 
+/* nointr_close() - make effort to avoid leaking open file descriptors */
+static int
+nointr_close (const int fd)
+{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+
 struct bindsocket_resvaddr {
     struct bindsocket_resvaddr *next;
     struct addrinfo *ai;
@@ -98,12 +103,16 @@ bindsocket_resvaddr_hash (const struct addrinfo * const restrict ai)
     return h;
 }
 
+static int  __attribute__((noinline))  __attribute__((cold))
+bindsocket_resvaddr_rebind (const struct addrinfo * restrict ai,
+                            int * const restrict tfd);
+
 int
 bindsocket_resvaddr_fd (const struct addrinfo * const restrict ai)
 {
     const uint32_t h = bindsocket_resvaddr_hash(ai);
     struct bindsocket_resvaddr_alloc * const ar = bindsocket_resvaddr_alloc;
-    const struct bindsocket_resvaddr * restrict t =
+    struct bindsocket_resvaddr * restrict t =
       ar->table[h & (ar->table_sz-1)];
     const struct addrinfo * restrict tai;
     for (; NULL != t; t = t->next) {
@@ -113,9 +122,45 @@ bindsocket_resvaddr_fd (const struct addrinfo * const restrict ai)
             && ai->ai_family   == tai->ai_family
             && ai->ai_socktype == tai->ai_socktype
             && ai->ai_protocol == tai->ai_protocol)
-            return t->fd;
+            return !(ai->ai_flags & BINDSOCKET_FLAGS_REBIND)
+              ? t->fd
+              : bindsocket_resvaddr_rebind(ai, &t->fd);
     }
     return -1;
+}
+
+static void  __attribute__((cold))
+bindsocket_resvaddr_cleanup_close (void * const arg)
+{
+    const int * const restrict fd = (int *)arg;
+    if (-1 != fd[0])
+        nointr_close(fd[0]);
+    if (-1 != fd[1])
+        nointr_close(fd[1]);
+}
+
+static int  __attribute__((noinline))  __attribute__((cold))
+bindsocket_resvaddr_rebind (const struct addrinfo * restrict ai,
+                            int * const restrict tfd)
+{
+    /* (race condition with re-reading config (mitigated by reconfig sleep)) */
+    /* (requires pthread PTHREAD_CANCEL_DEFERRED type for proper operation) */
+    int fd[] = { -1, -1 }, flag = 1;
+    pthread_cleanup_push(bindsocket_resvaddr_cleanup_close, &fd);
+    if (-1 != (fd[0] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol))
+        && (!(AF_INET == ai->ai_family || AF_INET6 == ai->ai_family)
+            || 0==setsockopt(fd[0],SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag)))
+        /*(race condition with another thread requesting same address)*/
+        && (fd[1] = *tfd, *tfd = -1, 0 == nointr_close(fd[1]))
+        && (fd[1] = -1, 0 == bind(fd[0], ai->ai_addr, ai->ai_addrlen))) {
+        *tfd = fd[0]; fd[0] = -1;
+    }
+    else {
+        bindsocket_syslog(errno, "socket,setsockopt,bind");
+        bindsocket_resvaddr_cleanup_close(&fd);
+    }
+    pthread_cleanup_pop(0);
+    return *tfd;
 }
 
 struct bindsocket_resvaddr_cleanup {
@@ -147,7 +192,7 @@ bindsocket_resvaddr_cleanup (void * const arg)
         for (i = 0; i < ar->elt_count; ++i) {
             if (-1 == bindsocket_resvaddr_fd(ar->elt[i].ai)) {
                 if (-1 != (fd = ar->elt[i].fd)) {
-                    while (0 != close(fd) && errno == EINTR) ;
+                    nointr_close(fd);
                     ar->elt[i].fd = -1;
                 }
             }
@@ -161,7 +206,7 @@ bindsocket_resvaddr_cleanup (void * const arg)
         /* aborted reconfig; cleanup ar */
         for (i = 0; i < ar->elt_count; ++i) {
             if (-1 != (fd = ar->elt[i].fd))
-                while (0 != close(fd) && errno == EINTR) ;
+                nointr_close(fd);
         }
         free(ar);
     }
@@ -309,7 +354,7 @@ bindsocket_resvaddr_config (void)
                                       aistr.family,aistr.socktype,
                                       aistr.protocol,aistr.service,aistr.addr);
                     if (-1 != t->fd) {
-                        while (0 != close(t->fd) && errno == EINTR) ;
+                        nointr_close(t->fd);
                         t->fd = -1;
                     }
                     flag = 1;

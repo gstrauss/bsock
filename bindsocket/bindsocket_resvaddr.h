@@ -37,6 +37,9 @@
 extern "C" {
 #endif
 
+/* use ai->ai_flags for bindsocket flags since otherwise unused by bindsocket */
+#define BINDSOCKET_FLAGS_REBIND AI_PASSIVE /* close() and re-bind() resv addr */
+
 int
 bindsocket_resvaddr_fd (const struct addrinfo * const restrict ai);
 

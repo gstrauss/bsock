@@ -327,6 +327,7 @@ bindsocket_addrinfo_recv (const int fd,
             ai->ai_addr      = iov[2].iov_base; /* assign pointer values */
             ai->ai_canonname = NULL;
             ai->ai_next      = NULL;
+            /*ai->ai_flags = 0;*//* ai_flags are used for bindsocket flags */
             return true;
         }
         return false;  /* truncated msg or invalid ai->ai_addrlen */
