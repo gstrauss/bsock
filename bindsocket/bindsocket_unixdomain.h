@@ -61,7 +61,8 @@ int
 bindsocket_unixdomain_socket_connect (const char * const restrict sockpath);
 
 int
-bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath);
+bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath,
+                                          int * const restrict bound);
 
 ssize_t
 bindsocket_unixdomain_recv_fds (const int fd,

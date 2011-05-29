@@ -372,8 +372,7 @@ bindsocket_addrinfo_send (const int fd,
       { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
     };
-    unsigned int nsfds = (sfd >= 0);
-    ssize_t w =bindsocket_unixdomain_send_fds(fd, &sfd, &nsfds, iov,
+    ssize_t w =bindsocket_unixdomain_send_fds(fd, &sfd, (sfd >= 0), iov,
                                               sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */

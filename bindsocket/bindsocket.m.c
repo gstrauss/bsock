@@ -33,7 +33,6 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <grp.h>
 #include <inttypes.h>
 #include <poll.h>
 #include <pthread.h>
@@ -46,31 +45,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-#include <time.h>
 #include <unistd.h>
-
-extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
 #include <bindsocket_addrinfo.h>
 #include <bindsocket_bindresvport.h>
+#include <bindsocket_daemon.h>
 #include <bindsocket_resvaddr.h>
 #include <bindsocket_syslog.h>
 #include <bindsocket_unixdomain.h>
 
-#ifndef BINDSOCKET_GROUP
-#error "BINDSOCKET_GROUP must be defined"
-#endif
-
 #ifndef BINDSOCKET_CONFIG
 #error "BINDSOCKET_CONFIG must be defined"
 #endif
-
-/* N.B. directory (and tree above it) must be writable only by root */
-/* Unit test drivers not run as root should override this location at compile */
-#ifndef BINDSOCKET_SOCKET_DIR
-#error "BINDSOCKET_SOCKET_DIR must be defined"
-#endif
-#define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
 
 /* retry_close() - make effort to avoid leaking open file descriptors
  *                 call perror() if error */
@@ -441,230 +427,6 @@ bindsocket_client_thread (void * const arg)
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
-static bool
-setuid_stdinit (void)
-{
-    /* Note: not retrying upon interruption; any fail to init means exit fail */
-
-    /* Clear the environment */
-    static char *empty_env[] = { NULL };
-    environ = empty_env;
-
-    /* Unblock all signals (regardless of what was inherited from parent) */
-    sigset_t sigset_empty;
-    if (0 != sigemptyset(&sigset_empty)
-        || sigprocmask(0 != SIG_SETMASK, &sigset_empty, (sigset_t *) NULL)) {
-        bindsocket_syslog(errno, "sigprocmask");
-        return false;
-    }
-
-    return true;
-}
-
-static void
-daemon_sa_handler (int signum)
-{
-    exit(EXIT_SUCCESS);  /* executes atexit() handlers */
-}
-
-static bool
-daemon_signal_init (void)
-{
-    /* configure signal handlers for bindsocket desired behaviors
-     *   SIGALRM: default handler
-     *   SIGPIPE: ignore
-     *   SIGCLD:  ignore
-     *   SIGHUP:  clean up and exit (for now)
-     *   SIGINT:  clean up and exit
-     *   SIGQUIT: clean up and exit
-     *   SIGTERM: clean up and exit
-     */
-    struct sigaction act;
-    (void) sigemptyset(&act.sa_mask);
-
-    act.sa_handler = SIG_DFL;
-    act.sa_flags = 0;  /* omit SA_RESTART */
-    if (sigaction(SIGALRM, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
-        return false;
-    }
-
-    act.sa_handler = SIG_IGN;
-    act.sa_flags = 0;  /* omit SA_RESTART */
-    if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
-        return false;
-    }
-
-    act.sa_handler = SIG_IGN;
-    act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-    if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
-        return false;
-    }
-
-    act.sa_handler = daemon_sa_handler;
-    act.sa_flags = SA_RESTART;
-    if (sigaction(SIGHUP, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
-        return false;
-    }
-
-    act.sa_handler = daemon_sa_handler;
-    act.sa_flags = 0;  /* omit SA_RESTART */
-    if (   sigaction(SIGINT,  &act, (struct sigaction *) NULL) != 0
-        || sigaction(SIGQUIT, &act, (struct sigaction *) NULL) != 0
-        || sigaction(SIGTERM, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
-        return false;
-    }
-
-    return true;
-}
-
-static bool
-daemon_init (const int supervised)
-{
-    /* Note: not retrying upon interruption; any fail to init means exit fail */
-
-    /* Change current working dir to / for sane cwd and to limit mounts in use*/
-    if (0 != chdir("/")) {
-        bindsocket_syslog(errno, "chdir /");
-        return false;
-    }
-
-    /* Detach from parent (process to be inherited by init) unless supervised */
-    if (supervised) {
-        if (setsid() == (pid_t)-1) {
-            bindsocket_syslog(errno, "setsid");
-            return false;
-        }
-    }
-    else {
-        pid_t pid;
-
-        /* Ensure that SIGCHLD is not ignored (might be inherited from caller)*/
-        struct sigaction act;
-        (void) sigemptyset(&act.sa_mask);
-        act.sa_handler = SIG_DFL;
-        act.sa_flags = SA_RESTART;
-        if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
-            bindsocket_syslog(errno, "sigaction");
-            return false;
-        }
-
-        if ((pid = fork()) != 0) {   /* parent */
-            int status = EXIT_FAILURE;
-            if (pid > 0 && waitpid(pid, &status, 0) != pid)
-                status = EXIT_FAILURE;
-            _exit(status);
-        }                            /* child */
-        else if ((pid = setsid()) == (pid_t)-1 || (pid = fork()) != 0) {
-            if ((pid_t)-1 == pid) bindsocket_syslog(errno, "setsid,fork");
-            _exit((pid_t)-1 == pid);
-        }                            /* grandchild falls through */
-    }
-
-    /* Close unneeded file descriptors */
-    /* (not closing all fds > STDERR_FILENO; lazy and we check root is caller)
-     * (if closing all fds, must then closelog(); bindsocket_syslog_openlog())*/
-    if (0 != retry_close(STDIN_FILENO))  return false;
-    if (0 != retry_close(STDOUT_FILENO)) return false;
-    if (!supervised) {
-        if (0 != retry_close(STDERR_FILENO)) return false;
-        bindsocket_syslog_setlevel(BINDSOCKET_SYSLOG_DAEMON);
-    }
-    else {
-        /* STDERR_FILENO must be open so it is not reused for sockets */
-        struct stat st;
-        if (0 != fstat(STDERR_FILENO, &st)) {
-            bindsocket_syslog(errno, "stat STDERR_FILENO");
-            return false;
-        }
-    }
-
-    /* Configure signal handlers for bindsocket desired behaviors */
-    if (!daemon_signal_init())
-        return false;
-
-    /* Sanity check system socket option max memory for ancillary data
-     * (see bindsocket_unixdomain.h for more details) */
-  #ifdef __linux__
-    {
-        ssize_t r;
-        long optmem_max;
-        const int fd = open("/proc/sys/net/core/optmem_max", O_RDONLY, 0);
-        char buf[32];
-        if (-1 != fd) {
-            if ((r = read(fd, buf, sizeof(buf)-1)) >= 0) {
-                buf[r] = '\0';
-                errno = 0;
-                optmem_max = strtol(buf, NULL, 10);
-                if (0 == errno && optmem_max > BINDSOCKET_ANCILLARY_DATA_MAX)
-                    bindsocket_syslog(errno, "max ancillary data very large "
-                      "(%ld > %d); consider recompiling bindsocket with larger "
-                      "BINDSOCKET_ANCILLARY_DATA_MAX", optmem_max,
-                      BINDSOCKET_ANCILLARY_DATA_MAX);
-            }
-            retry_close(fd);
-        }
-    }
-  #endif
-
-    return true;
-}
-
-static int bindsocket_daemon_pid = -1;
-
-static void
-bindsocket_daemon_atexit (void)
-{
-    if (getpid() == bindsocket_daemon_pid)
-        unlink(BINDSOCKET_SOCKET);
-}
-
-static int
-bindsocket_daemon_init_socket (void)
-{
-    struct group *gr;
-    struct stat st;
-    int sfd;
-    const uid_t euid = geteuid();
-    mode_t mask;
-
-    /* sanity check ownership and permissions on dir that will contain socket */
-    /* (note: not checking entire tree above BINDSOCKET_SOCKET_DIR; TOC-TOU) */
-    if (0 != stat(BINDSOCKET_SOCKET_DIR, &st)) {
-        bindsocket_syslog(errno, BINDSOCKET_SOCKET_DIR);
-        return -1;
-    }
-    if (st.st_uid != euid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-        bindsocket_syslog((errno = EPERM),
-                          "ownership/permissions incorrect on %s",
-                          BINDSOCKET_SOCKET_DIR);
-        return -1;
-    }
-
-    mask = umask(0177); /* create socket with very restricted permissions */
-    sfd = bindsocket_unixdomain_socket_bind_listen(BINDSOCKET_SOCKET);
-    umask(mask);        /* restore prior umask */
-    if (-1 == sfd) {
-        bindsocket_syslog(errno, "socket,bind,listen");
-        return -1;
-    }
-
-    bindsocket_daemon_pid = getpid();
-    atexit(bindsocket_daemon_atexit);
-
-    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP)) /* ok; no other threads yet */
-        && 0 == chown(BINDSOCKET_SOCKET, euid, gr->gr_gid)
-        && 0 == chmod(BINDSOCKET_SOCKET, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP))
-        return sfd;
-
-    bindsocket_syslog(errno, "getgrnam,chown,chmod");
-    return -1;
-}
-
 static void *
 bindsocket_sigwait (void * const arg)
 {
@@ -683,7 +445,9 @@ bindsocket_sigwait (void * const arg)
             bindsocket_resvaddr_config();
             break;
           case SIGINT: case SIGQUIT: case SIGTERM:
-            daemon_sa_handler(signum);
+            (void)pthread_sigmask(SIG_UNBLOCK, sigs, NULL);
+            raise(signum); /*not expected to return, but reset mask if it does*/
+            (void)pthread_sigmask(SIG_BLOCK, sigs, NULL);
             break;
           default:
             bindsocket_syslog(0, "caught unexpected signal: %d", signum);
@@ -724,7 +488,7 @@ main (int argc, char *argv[])
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(int) };
 
     /* setuid safety measures must be performed before anything else */
-    if (!setuid_stdinit())
+    if (!bindsocket_daemon_setuid_stdinit())
         return EXIT_FAILURE;
 
     /* openlog() for syslog() */
@@ -801,7 +565,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (!daemon_init(supervised))
+    if (!bindsocket_daemon_init(supervised))
         return EXIT_FAILURE;
 
     sfd = bindsocket_daemon_init_socket();

@@ -26,7 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* Note: module contains both client and server code for bindsocket protocol
+/* (module contains both client and server code)
  * (code could be split into separate .c files, but keep together for brevity)*/
 
 #include <bindsocket_unixdomain.h>
@@ -74,7 +74,8 @@ bindsocket_unixdomain_socket_connect (const char * const restrict sockpath)
 }
 
 int
-bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
+bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath,
+                                          int * const restrict bound)
 {
     /* bind and listen to unix domain socket */
     /* (not bothering to retry bind() and listen(); lazy) */
@@ -91,8 +92,8 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
     saddr.sun_family = AF_UNIX;
     memcpy(saddr.sun_path, sockpath, len+1);
     if (  -1 != (fd = socket(AF_UNIX, SOCK_STREAM, 0))
-        && 0 == bind(fd, (struct sockaddr *)&saddr, sizeof(saddr))
-        && 0 == listen(fd, 4))      /* (arbitrary listen backlog of 4) */
+        && 0 == (*bound = bind(fd, (struct sockaddr *)&saddr, sizeof(saddr)))
+        && 0 == listen(fd, SOMAXCONN))
         return fd;
 
     /* socket exists: test connect, or remove socket and retry to listen */
@@ -104,8 +105,8 @@ bindsocket_unixdomain_socket_bind_listen (const char * const restrict sockpath)
         && 0 == unlink(sockpath)
         && 0 == nointr_close(fd)
         &&-1 != (fd = socket(AF_UNIX, SOCK_STREAM, 0))
-        && 0 == bind(fd, (struct sockaddr *)&saddr, sizeof(saddr))
-        && 0 == listen(fd, 4))      /* (arbitrary listen backlog of 4) */
+        && 0 == (*bound = bind(fd, (struct sockaddr *)&saddr, sizeof(saddr)))
+        && 0 == listen(fd, SOMAXCONN))
         return fd;
 
     if (-1 != fd) {
