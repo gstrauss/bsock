@@ -32,13 +32,10 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <inttypes.h>
 #include <poll.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <netdb.h>
-#include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>

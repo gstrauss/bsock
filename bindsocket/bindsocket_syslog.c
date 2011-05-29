@@ -68,9 +68,10 @@ bindsocket_syslog (const int errnum, const char * const restrict fmt, ...)
     (void)vsnprintf(str, sizeof(str), fmt, ap);/* str is truncated, as needed */
     va_end(ap);
 
-    syslog(LOG_ERR, "%s%s", str, buf); /* syslog() always */
+    if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_PERROR_NOSYSLOG)
+        syslog(LOG_ERR, "%s%s", str, buf);
 
     /*(stderr closed when daemon; skip stderr)*/
-    if (BINDSOCKET_SYSLOG_DAEMON != bindsocket_syslog_level)
+    if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_DAEMON)
         fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s%s\n", str, buf);
 }
