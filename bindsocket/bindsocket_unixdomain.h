@@ -42,16 +42,26 @@ extern "C" {
  * RFC 3542: Advanced Sockets Application Program Interface (API) for IPv6
  * RFC 3542 min ancillary data is 10240; recommends getsockopt SO_SNDBUF
  * (traditional BSD mbuf is 108, which is way too small for RFC 3542 spec)
- * The reason this setting is important is because (at least on Linux) a client
- * can send as many file descriptors as fit in msg_control buf.  Even if
- * recvmsg() reports MSG_CTRUNC, the file descriptors that the client sent are
- * still received (up to sysconf(_SC_OPEN_MAX)), resulting in leakage of file
- * descriptors unless process takes extra measures to close fds it does not know
- * about.  Such an undertaking is difficult to do correctly since process might
- * not know which fds have been opened by lower-level libraries, e.g. to syslog,
+ *
+ * The reason this setting is important is because a client can send many file
+ * descriptors.  On Linux, even if recvmsg() reports MSG_CTRUNC, the file
+ * descriptors that the client sent are still received by the server process
+ * (up to sysconf(_SC_OPEN_MAX)), resulting in leakage of file descriptors
+ * unless process takes extra measures to close fds it does not know about.
+ * Such an undertaking is difficult to do correctly since process might not
+ * know which fds have been opened by lower-level libraries, e.g. to syslog,
  * nscd, /etc/protocols, /etc/services, etc.  Setting this buffer size to the
  * maximum allowed means that MSG_CTRUNC should not be possible.  (Take care
- * if increasing size since buffer is allocated on stack (as of this writing))
+ * if increasing size since buffer is allocated on stack (as of this writing.)
+ * On Linux, client can send the same descriptor many times and it will be
+ * dup'd and received many times by server.  On Linux, there appears to be a
+ * maximum of 255 file descriptors that can be sent with sendmsg() over unix
+ * domain sockets, whether in one or many separate ancillary control buffers.
+ * On Linux, these ancillary control buffers appear to be independent of
+ * SO_RCVBUF and SO_SNDBUF sizes of either client or server; limiting size of
+ * SO_RCVBUF and SO_SNDBUF has no effect on size of ancillary control buffers.
+ * In any case, allocating /proc/sys/net/core/optmem_max for ancillary control
+ * buffers prevents the possibility of MSG_CTRUNC on Linux.
  */
 #ifndef BINDSOCKET_ANCILLARY_DATA_MAX
 #define BINDSOCKET_ANCILLARY_DATA_MAX 10240

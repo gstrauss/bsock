@@ -185,6 +185,11 @@
  * Outbound connections from many executables omit the call to bind(), so this
  * is unlikely to be a problem for most usage.
  *
+ * Example on RedHat/Fedora: /etc/rc.d/init.d/ypbind
+ *   modify: daemon $exec $OTHER_YPBIND_OPTS
+ *   to be:  LD_PRELOAD=/usr/local/lib/libbindsocket_preload.so \
+ *           daemon $exec $OTHER_YPBIND_OPTS
+ *
  *
  * FUTURE:
  * - create small program that checks for canonicalized strings in config file
@@ -243,4 +248,6 @@
  *   and single, coarse timer for connection expiration.  (would need to call
  *   time() in struct bindsocket_client_st and scan pollset at intervals if
  *   open connections -- use much longer poll if no open connections)
+ * - run-time configurable reserved ports; might modify bindsocket_resvaddr.c to
+ *   create reserved port table that can be queried by bindsocket_bindresvport.c
  */

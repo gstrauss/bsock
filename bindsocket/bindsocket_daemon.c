@@ -33,7 +33,6 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <grp.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -44,21 +43,6 @@ extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
 #include <bindsocket_syslog.h>
 #include <bindsocket_unixdomain.h>
-
-#ifndef BINDSOCKET_GROUP
-#error "BINDSOCKET_GROUP must be defined"
-#endif
-
-/* N.B. directory (and tree above it) must be writable only by root */
-/* Unit test drivers not run as root should override this location at compile */
-#ifndef BINDSOCKET_SOCKET_DIR
-#error "BINDSOCKET_SOCKET_DIR must be defined"
-#endif
-#define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
-
-#ifndef BINDSOCKET_SOCKET_MODE
-#define BINDSOCKET_SOCKET_MODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP
-#endif
 
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
@@ -77,7 +61,7 @@ bindsocket_daemon_setuid_stdinit (void)
     /* Unblock all signals (regardless of what was inherited from parent) */
     sigset_t sigset_empty;
     if (0 != sigemptyset(&sigset_empty)
-        || sigprocmask(0 != SIG_SETMASK, &sigset_empty, (sigset_t *) NULL)) {
+        || 0 != sigprocmask(SIG_SETMASK, &sigset_empty, (sigset_t *) NULL)) {
         bindsocket_syslog(errno, "sigprocmask");
         return false;
     }
@@ -105,6 +89,13 @@ bindsocket_daemon_signal_init (void)
      */
     struct sigaction act;
     (void) sigemptyset(&act.sa_mask);
+
+    /* Unblock all signals (regardless of what was inherited from parent)
+     * (repeated from bindsocket_daemon_setuid_stdinit() in case that not run)*/
+    if (0 != sigprocmask(SIG_SETMASK, &act.sa_mask, (sigset_t *) NULL)) {
+        bindsocket_syslog(errno, "sigprocmask");
+        return false;
+    }
 
     act.sa_handler = SIG_DFL;
     act.sa_flags = 0;  /* omit SA_RESTART */
@@ -240,42 +231,49 @@ bindsocket_daemon_init (const int supervised)
 
 static int bindsocket_daemon_pid = -1;
 static int bindsocket_daemon_socket_bound = -1;
+static const char *bindsocket_daemon_socket_path;
 
 static void
 bindsocket_daemon_atexit (void)
 {
     if (0 == bindsocket_daemon_socket_bound
         && getpid() == bindsocket_daemon_pid)
-        unlink(BINDSOCKET_SOCKET);
+        unlink(bindsocket_daemon_socket_path);
 }
 
 int
-bindsocket_daemon_init_socket (void)
+bindsocket_daemon_init_socket (const char * const restrict dir,
+                               const char * const restrict sockpath,
+                               const uid_t uid, const gid_t gid,
+                               const mode_t mode)
 {
-    struct group *gr;
+    /* N.B.: this routine supports a single (one) socket per program */
     struct stat st;
     int sfd;
-    const uid_t euid = geteuid();
     mode_t mask;
 
     /* sanity check ownership and permissions on dir that will contain socket */
-    /* (note: not checking entire tree above BINDSOCKET_SOCKET_DIR; TOC-TOU) */
-    if (0 != stat(BINDSOCKET_SOCKET_DIR, &st)) {
-        bindsocket_syslog(errno, BINDSOCKET_SOCKET_DIR);
+    /* (other ownership and permissions can be safe; this enforces one option)*/
+    /* (note: not checking entire tree above socket dir; TOC-TOU) */
+    if (0 != stat(dir, &st)) {
+        bindsocket_syslog(errno, dir);
         return -1;
     }
-    if (st.st_uid != euid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
+    if (st.st_uid != uid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
         bindsocket_syslog((errno = EPERM),
-                          "ownership/permissions incorrect on %s",
-                          BINDSOCKET_SOCKET_DIR);
+                          "ownership/permissions incorrect on %s", dir);
         return -1;
     }
 
+    /* N.B.: sockpath must persist after main();
+     * sockpath must not be allocated on stack
+     * (would be better to malloc() and copy sockpath) */
+    bindsocket_daemon_socket_path = sockpath;
     bindsocket_daemon_pid = getpid();
     atexit(bindsocket_daemon_atexit);
 
     mask = umask(0177); /* create socket with very restricted permissions */
-    sfd = bindsocket_unixdomain_socket_bind_listen(BINDSOCKET_SOCKET,
+    sfd = bindsocket_unixdomain_socket_bind_listen(sockpath,
                                                &bindsocket_daemon_socket_bound);
     umask(mask);        /* restore prior umask */
     if (-1 == sfd) {
@@ -283,11 +281,9 @@ bindsocket_daemon_init_socket (void)
         return -1;
     }
 
-    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP)) /* ok; no other threads yet */
-        && 0 == chown(BINDSOCKET_SOCKET, euid, gr->gr_gid)
-        && 0 == chmod(BINDSOCKET_SOCKET, BINDSOCKET_SOCKET_MODE))
+    if (0 == chown(sockpath, uid, gid) && 0 == chmod(sockpath, mode))
         return sfd;
 
-    bindsocket_syslog(errno, "getgrnam,chown,chmod");
+    bindsocket_syslog(errno, "chown,chmod");
     return -1;
 }

@@ -94,7 +94,7 @@ bindsocket_bind_send_addr_and_recv (const int fd,
         if (-1 != rfd) {
             /* assert(rfd != fd); *//*(should not happen)*/
             if (0 == errnum) {
-                do { errnum = dup2(rfd,fd);
+                do { errnum = dup2(rfd, fd);
                 } while (errnum == -1 && (errno == EINTR || errno == EBUSY));
                 errnum = (errnum == fd) ? 0 : errno;
             }
@@ -173,11 +173,10 @@ bindsocket_bind_viasock (const int fd,
 }
 
 int
-bindsocket_bind_resvaddr (const int fd,
+bindsocket_bind_addrinfo (const int fd,
                           const struct addrinfo * const restrict ai)
 {
-    /* (bindresvaddr name similar to bindresvport(), but similarities end there)
-     * (return value 0 for success, -1 upon error; match return value of bind())
+    /* (return value 0 for success, -1 upon error; match return value of bind())
      * (ai->ai_next is ignored) */
 
     if (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
@@ -226,8 +225,10 @@ bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
         const short int port = (ai.ai_family == AF_INET)
           ? ntohs(((struct sockaddr_in  *)ai.ai_addr)->sin_port)
           : ntohs(((struct sockaddr_in6 *)ai.ai_addr)->sin6_port);
-        if (port >= IPPORT_RESERVED)
-            return bind_rtld_next(sockfd, ai.ai_addr, ai.ai_addrlen);
+        if (port >= IPPORT_RESERVED
+            && 0 == bind_rtld_next(sockfd, ai.ai_addr, ai.ai_addrlen))
+            return 0;
+            /*(fall through if bind() fails in case persistent reserved addr)*/
       #if 0 /* getnameinfo() is overkill for simple port check */
         char host[INET6_ADDRSTRLEN];
         char port[6];
@@ -244,8 +245,9 @@ bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
     else if (ai.ai_family != AF_UNIX)
         return bind_rtld_next(sockfd, ai.ai_addr, ai.ai_addrlen);
 
-    if (0 == geteuid())
-        return bind_rtld_next(sockfd, ai.ai_addr, ai.ai_addrlen);
+    if (0 == geteuid() && 0 == bind_rtld_next(sockfd,ai.ai_addr,ai.ai_addrlen))
+        return 0;
+        /*(fall through if bind() fails in case persistent reserved addr)*/
 
     optlen = sizeof(ai.ai_socktype);
     if (-1 == getsockopt(sockfd,SOL_SOCKET,SO_TYPE,&ai.ai_socktype,&optlen))
@@ -259,5 +261,5 @@ bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
      * since bindsocket calls getaddrinfo() and uses first entry returned */
   #endif
 
-    return bindsocket_bind_resvaddr(sockfd, &ai);
+    return bindsocket_bind_addrinfo(sockfd, &ai);
 }

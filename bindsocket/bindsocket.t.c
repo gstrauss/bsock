@@ -55,7 +55,7 @@ main (int argc, char *argv[])
 
     if (        bindsocket_addrinfo_from_strs(&ai, &aistr)
         &&-1 != (nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol))
-        && 0 == bindsocket_bind_resvaddr(nfd, &ai))
+        && 0 == bindsocket_bind_addrinfo(nfd, &ai))
         return EXIT_SUCCESS;
 
     perror("bindsocket");

@@ -38,7 +38,7 @@ extern "C" {
 #endif
 
 int
-bindsocket_bind_resvaddr (const int fd,
+bindsocket_bind_addrinfo (const int fd,
                           const struct addrinfo * const restrict ai);
 
 int

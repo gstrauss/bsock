@@ -32,6 +32,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <grp.h>
 #include <poll.h>
 #include <pthread.h>
 #include <pwd.h>
@@ -53,6 +54,21 @@
 
 #ifndef BINDSOCKET_CONFIG
 #error "BINDSOCKET_CONFIG must be defined"
+#endif
+
+#ifndef BINDSOCKET_GROUP
+#error "BINDSOCKET_GROUP must be defined"
+#endif
+
+/* N.B. directory (and tree above it) must be writable only by root */
+/* Unit test drivers not run as root should override this location at compile */
+#ifndef BINDSOCKET_SOCKET_DIR
+#error "BINDSOCKET_SOCKET_DIR must be defined"
+#endif
+#define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
+
+#ifndef BINDSOCKET_SOCKET_MODE
+#define BINDSOCKET_SOCKET_MODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP
 #endif
 
 /* retry_close() - make effort to avoid leaking open file descriptors
@@ -483,6 +499,7 @@ main (int argc, char *argv[])
     struct bindsocket_client_st *c;
     pthread_attr_t attr;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(int) };
+    struct group *gr;
 
     /* setuid safety measures must be performed before anything else */
     if (!bindsocket_daemon_setuid_stdinit())
@@ -492,14 +509,14 @@ main (int argc, char *argv[])
     bindsocket_syslog_openlog();
 
     /* parse arguments */
-    optind = 1;
-    while ((sfd = getopt(argc, argv, "dhF")) != -1) {
+    while ((sfd = getopt(argc, argv, "dhF")) != -1
+           || (daemon && optind != argc)) { /* no additional args for daemon */
         switch (sfd) {
           case 'd': daemon = true; break;
           case 'F': supervised = true; break;
           default:  syslog(LOG_ERR, "bad arguments sent by uid %d", getuid());
                     fprintf(stderr, "\nerror: invalid arguments\n");/*fallthru*/
-          case 'h': fprintf(stdout, "\n"
+          case 'h': fprintf((sfd == 'h' ? stdout : stderr), "\n"
                             "  bindsocket -h\n"
                             "  bindsocket -d [-F]\n"
                             "  bindsocket <addr_family> <socktype> <protocol> "
@@ -507,8 +524,6 @@ main (int argc, char *argv[])
                     return (sfd == 'h' ? EXIT_SUCCESS : EXIT_FAILURE);
         }
     }
-    argc -= optind;
-    argv += optind;
 
     /*
      * one-shot mode; handle single request and exit
@@ -527,7 +542,8 @@ main (int argc, char *argv[])
                               "invalid socket on bindsocket stdin");
             return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
         }
-        switch (argc) {
+        argv += optind;
+        switch ((argc -= optind)) {
           case 0: aistrptr = NULL;
                   break;
           case 1: if (bindsocket_addrinfo_split_str(&aistr, argv[0]))
@@ -562,10 +578,18 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP))) {/*ok; no other threads yet*/
+        bindsocket_syslog(errno, "getgrnam");
+        return EXIT_FAILURE;
+    }
+
     if (!bindsocket_daemon_init(supervised))
         return EXIT_FAILURE;
 
-    sfd = bindsocket_daemon_init_socket();
+    sfd = bindsocket_daemon_init_socket(BINDSOCKET_SOCKET_DIR,
+                                        BINDSOCKET_SOCKET,
+                                        geteuid(), gr->gr_gid,
+                                        BINDSOCKET_SOCKET_MODE);
     if (-1 == sfd)
         return EXIT_FAILURE;
 

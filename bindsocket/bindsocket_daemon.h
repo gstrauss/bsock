@@ -29,6 +29,7 @@
 #ifndef INCLUDED_BINDSOCKET_DAEMON_H
 #define INCLUDED_BINDSOCKET_DAEMON_H
 
+#include <sys/types.h>
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -42,7 +43,10 @@ bool
 bindsocket_daemon_init (const int supervised);
 
 int
-bindsocket_daemon_init_socket (void);
+bindsocket_daemon_init_socket (const char * const restrict dir,
+                               const char * const restrict sockpath,
+                               const uid_t uid, const gid_t gid,
+                               const mode_t mode);
 
 #ifdef __cplusplus
 }

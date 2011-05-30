@@ -19,13 +19,13 @@ LDFLAGS+= -Wl,-z,now
 
 RPATH= -Wl,-rpath=$(PREFIX)/lib
 
-bindsocket.m.o:     CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
-bindsocket_daemon.o:CFLAGS+=-DBINDSOCKET_GROUP='"$(BINDSOCKET_GROUP)"'
-bindsocket_daemon.o:CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
-bindsocket_daemon.o:CFLAGS+=-DBINDSOCKET_SOCKET_MODE='$(BINDSOCKET_SOCKET_MODE)'
-bindsocket.t.o:     CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
-bindsocket_bind.o:  CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
-bindsocket_bind.o:  CFLAGS+=-DBINDSOCKET_EXE='"$(BINDSOCKET_EXE)"'
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_GROUP='"$(BINDSOCKET_GROUP)"'
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_SOCKET_MODE='$(BINDSOCKET_SOCKET_MODE)'
+bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket.t.o:    CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_SOCKET_DIR='"$(BINDSOCKET_SOCKET_DIR)"'
+bindsocket_bind.o: CFLAGS+=-DBINDSOCKET_EXE='"$(BINDSOCKET_EXE)"'
 bindsocket_resvaddr.o: CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
 
 bindsocket_sobjs=bindsocket_addrinfo.o bindsocket_bind.o bindsocket_unixdomain.o
@@ -41,7 +41,7 @@ libbindsocket.so: $(bindsocket_sobjs)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
 # (clear -Wl,-z,now from LDFLAGS by setting LDFLAGS= instead of LDFLAGS+=...)
 libbindsocket_preload.so: LDFLAGS= -L. -lbindsocket -ldl
-libbindsocket_preload.so: bindsocket_preload.o
+libbindsocket_preload.so: bindsocket_preload.o | libbindsocket.so
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
 
 bindsocket: LDFLAGS+=-pthread
