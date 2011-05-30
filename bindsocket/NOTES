@@ -27,15 +27,15 @@ client process had called bind() itself.  If the client (optionally) passes
 an unbound socket to the bindsocket daemon along with the addrinfo request,
 then bindsocket will authorize and bind the address to the socket provided
 (or will dup2() to the socket if the address requested is an address that is
-persistently reserved in the daemon, so set options on socket after the call
-to bindsocket).
+persistently reserved in the daemon).  Client should therefore set options on
+socket after the call to bindsocket.
 
 Another option for using bindsocket is to install it as setuid root program.
 This is not required if running bindsocket as daemon.  However, if installed
 setuid root, then a lower-privilege daemon can create a socketpair() of unix
 domain sockets and can start up bindsocket with one of the sockets on the
 STDIN_FILENO of bindsocket.  bindsocket will then operate as described above,
-but only for a single address and port socket request.
+but only for a single request to bind to an address and port.
 
 As a special-case, if zero (0) is the requested port for AF_INET or AF_INET6,
 then bindsocket will bind to a reserved port < IPPORT_RESERVED (1024).  This
@@ -52,19 +52,21 @@ explicitly calling bind and requesting that the operating system choose an
 unprivileged port.  Most outbound connections simply call connect() and do
 not call bind().  Returning to reserved port < IPPORT_RESERVED, there are
 some systems on which it is desirable to avoid allocating a specific port
-or set of ports in the permitted range.  If BINDSOCKET_BINDRESVPORT_SKIP is
-defined as a comma-separate list of port numbers during compilation of
+or set of ports within the reserved range.  If BINDSOCKET_BINDRESVPORT_SKIP
+is defined as a comma-separate list of port numbers during compilation of
 bindsocket_bindresvport.c, then bindsocket_bindresvport will not assign a
 port on that list.  (This might be turned into a runtime configuration option
 for bindsocket daemon.)  A default set of ports have been reserved based on
 https://bugzilla.redhat.com/show_bug.cgi?id=103401.  See comments at the top
 of bindsocket_bindresvport.c.  An alternate approach is to reserve the
-address using bindsocket.resvaddr config.
+port(s) using bindsocket.resvaddr config to reserve address/port combinations.
 
 
 bindsocket config file line format:
     username address_family socket_type protocol service_or_port address
+    e.g. apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
 - specify separate lines for each difference, since exact match is performed
+  (and use single space character between fields; no leading or trailing space)
 - strings are case-sensitive
     use uppercase addr family, socktype constants (e.g. AF_INET, SOCK_STREAM)
     use lowercase for protocol (e.g. tcp) or alias in /etc/protocols
@@ -86,27 +88,30 @@ bindsocket setup
 
 Files  (default PREFIX=/usr/local)
   /usr/local/etc/bindsocket           # bindsocket authorization (config)
+  /usr/local/etc/bindsocket.resvaddr  # bindsocket persistent reserved addrs
   /usr/local/lib/libbindsocket.so     # bindsocket library for client/daemon
+  /usr/local/lib/libbindsocket_preload.so # bindsocket library for LD_PRELOAD
   /usr/local/sbin/bindsocket          # bindsocket executable (daemon)
-  /usr/local/var/run/bin/bindsocket/  # dir containing unix domain socket
+  /usr/local/var/run/bindsocket/      # dir containing unix domain socket
+  /usr/local/var/run/bindsocket/socket# bindsocket daemon unix domain socket
 
 bindsocket logs to LOG_DAEMON syslog facility, by default.
-Be sure to config /etc/syslog.conf (or /etc/rsyslog.conf) for daemon.info
+Be sure to configure /etc/syslog.conf (or /etc/rsyslog.conf) for daemon.info
 Compile with -DBINDSOCKET_SYSLOG_FACILITY=<LOG_xxxxx> to modify.
 See /usr/include/sys/syslog.h (or similar) for LOG_xxxxx values.
 
 bindsocket is installed with ownership root:daemon, permissions 0550 with
-the 'make install'.  Permissions 4550 are used with 'make install-suid'.
+'make install' target.  Permissions 4550 are used with 'make install-suid'.
 Compile with -DBINDSOCKET_GROUP=xxxxx to modify the group ownership.
 By default, this restricts only those users part of group 'daemon' to run
-bindsocket.  You are encouraged to use a custom group, e.g. bindsock, and
-to add to this custom group those specialized role accounts (e.g. apache)
+bindsocket.  It is recommended that you use a custom group, e.g. bindsock,
+and to add to this custom group those specialized role accounts (e.g. apache)
 under which your daemons run.  This group is also used to permission the
 bindsocket unix domain socket (e.g. /usr/local/var/run/bindsocket/socket)
 to restrict which accounts can connect to bindsocket daemon through socket.
 Permission modes can be modified with gmake command line overrides to
 BINDSOCKET_MODE and/or BINDSOCKET_SOCKET_MODE.  The BINDSOCKET_CONFIG file
-is created 0655 so that others can see the config for troubleshooting.
+is created 0644 so that others can see the config for troubleshooting.
 Change this after install if other permssions are preferred.
 
 
@@ -170,8 +175,8 @@ those are used by bindresvport() for, e.g. rsh outbound connections.
 authbind presumably must reject these ports because one authbind config file
 authorization mode just looks at IP address and will bind to any port
 requested if the IP address matches.  On the other hand, bindsocket requires
-explicit specification of port, so if admin explicitly configures a port
-in the range [IPPORT_RESERVED/2, IPPORT_RESERVED), then bindsocket allows it.
+explicit specification of port, so sysadmin can explicitly configure
+bindsocket to allow a port in the range [IPPORT_RESERVED/2, IPPORT_RESERVED).
 
 Similar to authbind, bindsocket provides a simple .so to interpose the bind()
 used by unmodified executables so that the bindsocket daemon is called when
