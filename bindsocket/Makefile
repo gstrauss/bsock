@@ -14,9 +14,6 @@ CC=gcc
 CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic -Wall -Winline -Werror -I.
 CFLAGS+=-O2
 
-# (daemon benefits from resolving symbols at load time; one-shot is extra cost)
-LDFLAGS+= -Wl,-z,now
-
 RPATH= -Wl,-rpath=$(PREFIX)/lib
 
 bindsocket.m.o:    CFLAGS+=-DBINDSOCKET_CONFIG='"$(BINDSOCKET_CONFIG)"'
@@ -39,8 +36,7 @@ bindsocket_preload.o: CFLAGS+=-fPIC
 libbindsocket.so: LDFLAGS+= -ldl
 libbindsocket.so: $(bindsocket_sobjs)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
-# (clear -Wl,-z,now from LDFLAGS by setting LDFLAGS= instead of LDFLAGS+=...)
-libbindsocket_preload.so: LDFLAGS= -L. -lbindsocket -ldl
+libbindsocket_preload.so: LDFLAGS+= -L. -lbindsocket -ldl
 libbindsocket_preload.so: bindsocket_preload.o | libbindsocket.so
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
 
