@@ -578,7 +578,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (NULL != (gr = getgrnam(BINDSOCKET_GROUP))) {/*ok; no other threads yet*/
+    if (NULL == (gr = getgrnam(BINDSOCKET_GROUP))) {/*ok; no other threads yet*/
         bindsocket_syslog(errno, "getgrnam");
         return EXIT_FAILURE;
     }
