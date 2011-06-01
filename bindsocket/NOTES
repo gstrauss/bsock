@@ -247,6 +247,9 @@ bindsocket does not query for and therefore does not honor changing these.
 
 
 FUTURE:
+- prepare patches for popular programs to attempt to connect to bindsocket
+  as fallback if traditional bind() fails (link against libbindsocket.so
+  or attempt dlopen()?).
 - create small program that checks for canonicalized strings in config file
     and provides more detailed error messages for config file errors
     (might do at daemon startup or add command line config check flag)

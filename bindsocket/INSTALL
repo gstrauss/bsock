@@ -1,0 +1,44 @@
+bindsocket installation
+
+  $ make
+  $ make install
+
+  # Edit and add entries to /usr/local/etc/bindsocket
+  # Edit and add entries to /usr/local/etc/bindsocket.resvaddr (optional)
+
+  # Add bindsocket to your favorite set of system init scripts:
+  #   /usr/local/sbin/bindsocket -d
+  # (Hint: start bindsocket after networking interfaces are configured)
+
+  # Configure syslog to log daemon.info (optional, but recommended)
+
+  # Configure privileged daemons to use bindsocket without running as root
+  #   Add the role account running the daemon to group 'daemon'
+  #     (or change secure-by-default permissions on socket -- see NOTES file)
+  #   LD_PRELOAD=/usr/local/lib/libbindsocket_preload.so daemon_program
+
+See NOTES for more technical (and probably less readable) details and features.
+See Makefile for various overrides, such as alternate installation location.
+
+bindsocket config file line format:
+    username address_family socket_type protocol service_or_port address
+    e.g. apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
+- specify separate lines for each difference, since exact match is performed
+  (and use single space character between fields; no leading or trailing space)
+- strings are case-sensitive
+    use uppercase addr family, socktype constants (e.g. AF_INET, SOCK_STREAM)
+    use lowercase for protocol (e.g. tcp) or alias in /etc/protocols
+- use port 0 if service_or_port does not apply to addr family (e.g. AF_UNIX)
+- blank lines and comments (lines beginning with #) are skipped
+- address must be an address string not a constant, e.g.
+   0.0.0.0            (for INADDR_ANY)
+   127.0.0.1          (for INADDR_LOOPBACK)
+   255.255.255.255    (for INADDR_BROADCAST)
+   ::                 (for IN6ADDR_ANY_INIT)
+   ::1                (for IN6ADDR_LOOPBACK_INIT)
+- config file updates should be made atomically with mv; config files
+  should not be updated in-place (prevent corruption during processing).
+
+bindsocket.resvaddr config file line format:
+- same as bindsocket config, except omit 'username' field
+  e.g. AF_INET SOCK_STREAM tcp 80 0.0.0.0

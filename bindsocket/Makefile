@@ -69,8 +69,9 @@ install-headers: bindsocket_addrinfo.h bindsocket_bind.h bindsocket_unixdomain.h
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bindsocket
 	/usr/bin/install -m 0555 -p $^ $(PREFIX)/include/bindsocket/
 
-.PHONY: clean
-clean:
+.PHONY: clean clean-bindsocket
+clean: clean-bindsocket
+clean-bindsocket:
 	$(RM) $(TARGETS) *.o
 
 bindsocket.m.o: bindsocket_addrinfo.h bindsocket_bindresvport.h \
