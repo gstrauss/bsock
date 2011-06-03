@@ -41,6 +41,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <time.h>
 #include <unistd.h>
 
 extern char **environ;
@@ -65,7 +66,7 @@ static int
 nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
-static int
+static int  __attribute__((noinline))  /*(most client time is spent waiting)*/
 retry_poll_fd (const int fd, const short events, const int timeout)
 {
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
@@ -101,8 +102,13 @@ bindsocket_bind_send_addr_and_recv (const int fd,
             nointr_close(rfd);
         }
     }
-    else
+    else {
         errnum = errno;
+        /* server might have responded and closed socket before client sendmsg*/
+        if (EPIPE == errnum
+            && -1 == bindsocket_unixdomain_recv_fds(sfd, NULL, NULL, &iov, 1))
+            errnum = EPIPE;
+    }
 
     return errnum;
 }
@@ -167,7 +173,15 @@ bindsocket_bind_viasock (const int fd,
             return false;
         errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sfd);
         nointr_close(sfd);
-    } while (errnum == ETIME || (errnum == EAGAIN && 0 == poll(NULL, 0, 1)));
+
+        if (errnum == EAGAIN) {
+            /*(sched_yield() results in non-productive spin on my uniprocessor
+             * during performance tests sending lots of requests by same uid,
+             * since bindsocket defers if uid already has request in progress)*/
+            static const struct timespec ts = { 0, 10L };
+            nanosleep(&ts, NULL);
+        }
+    } while (errnum == EAGAIN || errnum == ETIME);
     errno = errnum;
     return (0 == errnum);
 }

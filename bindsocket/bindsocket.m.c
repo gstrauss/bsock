@@ -37,6 +37,7 @@
 #include <pthread.h>
 #include <pwd.h>
 #include <netdb.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -73,7 +74,7 @@
 
 /* retry_close() - make effort to avoid leaking open file descriptors
  *                 call perror() if error */
-static int
+static int  __attribute__((noinline))
 retry_close (const int fd)
 {
     int r;
@@ -83,7 +84,7 @@ retry_close (const int fd)
     return r;
 }
 
-static int
+static int  __attribute__((noinline))
 retry_poll_fd (const int fd, const short events, const int timeout)
 {
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
@@ -396,9 +397,22 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
 
     } while (0);
 
+    flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
+
+    /* (remove from thread table prior to send due to observed process and 
+     *  thread execution order where a sequence of bind requests from same
+     *  uid would get deferred since this thread did not remove uid from thread
+     *  table before client was able to make another request, and the listening
+     *  thread able to handle it (and defer due to existing request in process))
+     * (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
+     *  bindsocket_thread_table_remove() provides no cancellation point) */
+    pthread_mutex_lock(&bindsocket_thread_table_mutex);
+    bindsocket_thread_table_remove(c);
+    pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+    c->uid = -1;
+
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
-    flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
     if (c->fd != fd) {
         rc = (bindsocket_unixdomain_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
               == iov.iov_len)
@@ -425,18 +439,21 @@ bindsocket_cleanup_client (void * const arg)
     retry_close(c->fd);
     /* (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
      *  bindsocket_thread_table_remove() provides no cancellation point) */
-    pthread_mutex_lock(&bindsocket_thread_table_mutex);
-    bindsocket_thread_table_remove(c);
-    pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+    if ((uid_t)-1 != c->uid) {
+        pthread_mutex_lock(&bindsocket_thread_table_mutex);
+        bindsocket_thread_table_remove(c);
+        pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+    }
 }
 
 static void *
 bindsocket_client_thread (void * const arg)
 {
-    struct bindsocket_client_st * const c = (struct bindsocket_client_st *) arg;
-    pthread_cleanup_push(bindsocket_cleanup_client, c);
-    bindsocket_client_session(c, NULL);  /* ignore rc */
-    pthread_cleanup_pop(1);  /* bindsocket_cleanup_client(c) */
+    struct bindsocket_client_st c; /* copy so that not referencing hash entry */
+    memcpy(&c, arg, sizeof(struct bindsocket_client_st));
+    pthread_cleanup_push(bindsocket_cleanup_client, &c);
+    bindsocket_client_session(&c, NULL);  /* ignore rc */
+    pthread_cleanup_pop(1);  /* bindsocket_cleanup_client(&c) */
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
@@ -643,9 +660,9 @@ main (int argc, char *argv[])
         pthread_mutex_lock(&bindsocket_thread_table_mutex);
         if (bindsocket_thread_table_query(&m) == NULL) {
             while ((c = bindsocket_thread_table_add(&m)) == NULL) {
-                /* (pause 1ms and retry if max threads already in progress) */
+                /* (yield then retry if max threads already in progress) */
                 pthread_mutex_unlock(&bindsocket_thread_table_mutex);
-                poll(NULL, 0, 1);
+                sched_yield();
                 pthread_mutex_lock(&bindsocket_thread_table_mutex);
             }
         }
