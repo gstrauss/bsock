@@ -150,7 +150,7 @@ bindsocket_daemon_init (const int supervised)
 
     /* Detach from parent (process to be inherited by init) unless supervised */
     if (supervised) {
-        if (setsid() == (pid_t)-1) {
+        if (getpgrp() != getpid() && setsid() == (pid_t)-1) {
             bindsocket_syslog(errno, "setsid");
             return false;
         }

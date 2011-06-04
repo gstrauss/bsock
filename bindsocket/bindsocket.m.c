@@ -72,17 +72,10 @@
 #define BINDSOCKET_SOCKET_MODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP
 #endif
 
-/* retry_close() - make effort to avoid leaking open file descriptors
- *                 call perror() if error */
-static int  __attribute__((noinline))
-retry_close (const int fd)
-{
-    int r;
-    if (fd < 0) return 0;
-    do {r = close(fd);} while (r != 0 && errno == EINTR);
-    if (0 != r) bindsocket_syslog(errno, "close");
-    return r;
-}
+/* nointr_close() - make effort to avoid leaking open file descriptors */
+static int
+nointr_close (const int fd)
+{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
 static int  __attribute__((noinline))
 retry_poll_fd (const int fd, const short events, const int timeout)
@@ -99,7 +92,7 @@ bindsocket_cleanup_close (void * const arg)
 {
     const int fd = *(int *)arg;
     if (-1 != fd)
-        retry_close(fd);
+        nointr_close(fd);
 }
 
 static void
@@ -436,7 +429,8 @@ static void
 bindsocket_cleanup_client (void * const arg)
 {
     struct bindsocket_client_st * const c = (struct bindsocket_client_st *)arg;
-    retry_close(c->fd);
+    if (-1 != c->fd)
+        nointr_close(c->fd);
     /* (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
      *  bindsocket_thread_table_remove() provides no cancellation point) */
     if ((uid_t)-1 != c->uid) {
@@ -651,7 +645,7 @@ main (int argc, char *argv[])
         /* get client credentials */
         if (0 != bindsocket_unixdomain_getpeereid(m.fd, &m.uid, &m.gid)) {
             bindsocket_syslog(errno, "getpeereid");
-            retry_close(m.fd);
+            nointr_close(m.fd);
             continue;
         }
 
@@ -670,14 +664,14 @@ main (int argc, char *argv[])
         if (NULL == c) {
             /* sendmsg with EAGAIN; permit only one request at a time per uid */
             bindsocket_unixdomain_send_fds(m.fd, NULL, 0, &iov, 1);
-            retry_close(m.fd);
+            nointr_close(m.fd);
             continue;
         }
 
         /* create handler thread */
         if (0 != pthread_create(&c->thread,&attr,bindsocket_client_thread,c)) {
             bindsocket_thread_table_remove(c);
-            retry_close(m.fd);
+            nointr_close(m.fd);
             continue;
         }
 
