@@ -2,6 +2,7 @@ bindsocket - bind() sockets to restricted ports for lower-privilege daemons
 
 README  - summary (this file)
 INSTALL - quick installation 
+FAQ     - frequently asked questions
 COPYING - copyright/license
 NOTES   - technical details (if interested)
 
