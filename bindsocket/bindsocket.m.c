@@ -183,6 +183,7 @@ bindsocket_authz_config (void)
     pthread_cleanup_push(bindsocket_cleanup_close, &fd);
 
     do {
+
         if (-1 == (fd = open(BINDSOCKET_CONFIG, O_RDONLY, 0))) {
             bindsocket_syslog(errno, BINDSOCKET_CONFIG);
             break;
@@ -218,7 +219,9 @@ bindsocket_authz_config (void)
         const char * const restrict p = bindsocket_authz_lines;
         bindsocket_authz_lines = buf; /* (might do atomic swap in future) */
         /* pause 1 sec for simple and coarse (not perfect) mechanism to give
-         * other threads running strstr() time to finish, else might crash */ 
+         * other threads running strstr() time to finish, else might crash.
+         * (could grab mutex around all access of bindsocket_authz_lines,
+         *  if desired) */
         poll(NULL, 0, 1000);
         if (NULL != p)
             free((void *)(uintptr_t)p);
