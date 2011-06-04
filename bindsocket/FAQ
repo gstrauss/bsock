@@ -1,0 +1,9 @@
+bindsocket FAQ
+
+Q. bindsocket: permission denied
+A. The owner of the process attempting to connect to the bindsocket daemon is
+   not part of group 'daemon' (or the group to which bindsocket is configured
+   to restrict access to the socket).  Alternatively, this might indicate that
+   the daemon is not running and bindsocket was not installed setuid root.
+   (Installing bindsocket setuid root with 'install-setuid' Makefile target
+    is not the default.)
