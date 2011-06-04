@@ -32,6 +32,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <grp.h>
 #include <poll.h>
 #include <pthread.h>
@@ -93,14 +94,6 @@ bindsocket_cleanup_close (void * const arg)
     const int fd = *(int *)arg;
     if (-1 != fd)
         nointr_close(fd);
-}
-
-static void
-bindsocket_cleanup_fclose (void * const arg)
-{
-    FILE * const fp = (FILE *)arg;
-    if (NULL != fp)
-        fclose(fp);
 }
 
 struct bindsocket_client_st {
@@ -178,6 +171,60 @@ bindsocket_thread_table_remove (struct bindsocket_client_st * const c)
     return t;
 }
 
+static const char * restrict bindsocket_authz_lines;
+
+static void
+bindsocket_authz_config (void)
+{
+    char * restrict buf = NULL;
+    struct stat st;
+    int fd = -1;
+
+    pthread_cleanup_push(bindsocket_cleanup_close, &fd);
+
+    do {
+        if (-1 == (fd = open(BINDSOCKET_CONFIG, O_RDONLY, 0))) {
+            bindsocket_syslog(errno, BINDSOCKET_CONFIG);
+            break;
+        }
+
+        if (0 != fstat(fd, &st)
+            || st.st_uid != geteuid() || (st.st_mode & (S_IWGRP|S_IWOTH))) {
+            bindsocket_syslog((errno = EPERM),
+                              "ownership/permissions incorrect on %s",
+                              BINDSOCKET_CONFIG);
+            break;
+        }
+
+        if (NULL == (buf = malloc(st.st_size+2))) {
+            bindsocket_syslog(errno, "malloc");
+            break;
+        }
+        buf[0] = '\n';
+        buf[st.st_size+1] = '\0';
+
+        pthread_cleanup_push(free, buf);
+        if (read(fd, buf+1, st.st_size) != st.st_size) {
+            free(buf);
+            buf = NULL;
+        }
+        pthread_cleanup_pop(0);
+
+    } while (0);
+
+    pthread_cleanup_pop(1);  /* close(fd)  */
+
+    if (NULL != buf) {
+        const char * const restrict p = bindsocket_authz_lines;
+        bindsocket_authz_lines = buf; /* (might do atomic swap in future) */
+        /* pause 1 sec for simple and coarse (not perfect) mechanism to give
+         * other threads running strstr() time to finish, else might crash */ 
+        poll(NULL, 0, 1000);
+        if (NULL != p)
+            free((void *)(uintptr_t)p);
+    }
+}
+
 static bool
 bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                                    const uid_t uid, const gid_t gid)
@@ -185,19 +232,12 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     /* Note: client must specify address family; AF_UNSPEC not supported
      * Note: minimal process optimization implemented (room for improvement)
      *       (numerous options for caching, improving performance if needed)
-     *       (e.g. reading and caching config file by uid in parent daemon
-     *        and re-reading configuration file upon receiving HUP signal,
-     *        or, better, storing strings in mcdb, and re-open mcdb upon HUP) */
+     *       (e.g. bsearch(), or (better) use a cdb) */
 
     char *p;
     struct bindsocket_addrinfo_strs aistr;
-    FILE *cfg;
-    size_t cmplen;
-    struct stat st;
-    char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
     char cmpstr[256]; /* username + AF_UNIX, AF_INET, AF_INET6 bindsocket str */
     char bufstr[80];  /* buffer for use by bindsocket_addrinfo_to_strs() */
-    bool rc = false;
     struct passwd pw;
     struct passwd *pwres;
     char pwbuf[2048];
@@ -221,7 +261,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         return false;
     }
   #if 0
-    cmplen = snprintf(cmpstr, sizeof(cmpstr), "%s %s %s %s %s %s\n",
+    cmplen = snprintf(cmpstr, sizeof(cmpstr), "\n%s %s %s %s %s %s\n",
                       pw.pw_name, aistr.family, aistr.socktype, aistr.protocol,
                       aistr.service, aistr.addr);
     if (cmplen >= sizeof(cmpstr)) {
@@ -230,7 +270,8 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
             return false;
     }
   #else
-    if (    NULL==(p=memccpy(cmpstr,pw.pw_name,'\0',sizeof(cmpstr)))
+    cmpstr[0] = '\n';
+    if (    NULL==(p=memccpy(cmpstr+1,pw.pw_name,'\0',sizeof(cmpstr)-1))
         || (*(p-1) = ' ',
             NULL==(p=memccpy(p,aistr.family,  '\0',sizeof(cmpstr)-(p-cmpstr))))
         || (*(p-1) = ' ',
@@ -248,32 +289,10 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     }
     *(p-1) = '\n';
     *p = '\0';
-    cmplen = p - cmpstr;
+    /*cmplen = (size_t)(p - cmpstr);*/
   #endif
 
-    if (NULL == (cfg = fopen(BINDSOCKET_CONFIG, "r"))) {
-        bindsocket_syslog(errno, BINDSOCKET_CONFIG);
-        return false;
-    }
-
-    /* (requires pthread PTHREAD_CANCEL_DEFERRED type for proper operation) */
-    pthread_cleanup_push(bindsocket_cleanup_fclose, cfg);
-
-    if (0 == fstat(fileno(cfg), &st)
-        && st.st_uid == geteuid() && !(st.st_mode & (S_IWGRP|S_IWOTH))) {
-        /* compare username and addrinfo string; skip # comments, blank lines */
-        while (!rc && NULL != fgets(line, sizeof(line), cfg))
-            rc = (0 == memcmp(line, cmpstr, cmplen));
-        if (!rc)
-            bindsocket_syslog((errno = EACCES), "permission denied");
-    }
-    else
-        bindsocket_syslog((errno = EPERM),
-                          "ownership/permissions incorrect on %s",
-                          BINDSOCKET_CONFIG);
-
-    pthread_cleanup_pop(1);  /* fclose(cfg)  */
-    return rc;
+    return (NULL != strstr(bindsocket_authz_lines, cmpstr));
 }
 
 static int
@@ -290,6 +309,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
       .ai_addr    = (struct sockaddr *)addr
     };
     struct iovec iov = { .iov_base = &flag, .iov_len = sizeof(flag) };
+    uid_t uid;
 
     /* get client credentials (if non-daemon mode) */
     if (-1 == c->uid) {
@@ -316,11 +336,6 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
             }
         }
     }
-
-    /* syslog all connections to (or instantiations of) bindsocket daemon
-     * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
-     * and combine with syslog() to log pid and other info, if available */
-    syslog(LOG_INFO, "connect: uid:%d gid:%d", c->uid, c->gid);
 
     pthread_cleanup_push(bindsocket_cleanup_close, &fd);
 
@@ -402,6 +417,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
     pthread_mutex_lock(&bindsocket_thread_table_mutex);
     bindsocket_thread_table_remove(c);
     pthread_mutex_unlock(&bindsocket_thread_table_mutex);
+    uid = c->uid;
     c->uid = -1;
 
     /* send 4-byte value in data to indicate success or errno value
@@ -421,7 +437,16 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
 
     pthread_cleanup_pop(1);  /* bindsocket_cleanup_close(&fd)  */
 
-    /* <<<FUTURE: might add additional logging of request and success/failure */
+    /* syslog all connections to (or instantiations of) bindsocket daemon
+     * Note: This syslog results in bindsocket taking 1.5x longer (wall clock)
+     * to service each request on my uniprocessor system, so do syslog after
+     * servicing request for benefit of multiple requests on multiprocessors.
+     * (However, if thread cancelled before this point, syslog does not happen)
+     * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
+     * and combine with syslog() to log pid and other info, if available.
+     * <<<FUTURE: might add additional logging of request and success/failure */
+    syslog(LOG_INFO, "connect: uid:%d gid:%d", uid, c->gid);
+
     return rc;
 }
 
@@ -464,9 +489,11 @@ bindsocket_sigwait (void * const arg)
             setprotoent(1);
             endservent();
             setservent(1);
-            /* refresh table of persistent reserved addresses
-             * (no locks needed; executed while signals blocked) */
+            /* (no locks needed; executed while signals blocked) */
+            /* refresh table of persistent reserved addresses */
             bindsocket_resvaddr_config();
+            /* refresh table of authorized username/address/port */
+            bindsocket_authz_config();
             break;
           case SIGINT: case SIGQUIT: case SIGTERM:
             (void)pthread_sigmask(SIG_UNBLOCK, sigs, NULL);
