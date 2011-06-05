@@ -36,11 +36,11 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 

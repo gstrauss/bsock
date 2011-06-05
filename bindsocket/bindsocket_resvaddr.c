@@ -33,12 +33,12 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <poll.h>
 #include <pthread.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
