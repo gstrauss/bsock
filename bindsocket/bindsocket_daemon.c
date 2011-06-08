@@ -54,9 +54,13 @@ bindsocket_daemon_setuid_stdinit (void)
 {
     /* Note: not retrying upon interruption; any fail to init means exit fail */
 
-    /* Clear the environment */
-    static char *empty_env[] = { NULL };
-    environ = empty_env;
+    /* Clear the environment
+     * (set LANG=C for performance)
+     * (set PATH since some systems add current dir to implicit PATH if empty)*/
+    static char default_path[] = "PATH=/usr/bin:/bin";
+    static char default_lang[] = "LANG=C";
+    static char *basic_env[] = { default_path, default_lang, NULL };
+    environ = basic_env;
 
     /* Unblock all signals (regardless of what was inherited from parent) */
     sigset_t sigset_empty;
@@ -80,8 +84,8 @@ bindsocket_daemon_signal_init (void)
 {
     /* configure signal handlers for bindsocket desired behaviors
      *   SIGALRM: default handler
+     *   SIGCLD:  default handler
      *   SIGPIPE: ignore
-     *   SIGCLD:  ignore
      *   SIGHUP:  clean up and exit (for now)
      *   SIGINT:  clean up and exit
      *   SIGQUIT: clean up and exit
@@ -104,16 +108,16 @@ bindsocket_daemon_signal_init (void)
         return false;
     }
 
-    act.sa_handler = SIG_IGN;
-    act.sa_flags = 0;  /* omit SA_RESTART */
-    if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0) {
+    act.sa_handler = SIG_DFL;
+    act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
         bindsocket_syslog(errno, "sigaction");
         return false;
     }
 
     act.sa_handler = SIG_IGN;
-    act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-    if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
+    act.sa_flags = 0;  /* omit SA_RESTART */
+    if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0) {
         bindsocket_syslog(errno, "sigaction");
         return false;
     }
@@ -148,6 +152,10 @@ bindsocket_daemon_init (const int supervised)
         return false;
     }
 
+    /* Configure signal handlers for bindsocket desired behaviors */
+    if (!bindsocket_daemon_signal_init())
+        return false;
+
     /* Detach from parent (process to be inherited by init) unless supervised */
     if (supervised) {
         if (getpgrp() != getpid() && setsid() == (pid_t)-1) {
@@ -157,17 +165,6 @@ bindsocket_daemon_init (const int supervised)
     }
     else {
         pid_t pid;
-
-        /* Ensure that SIGCHLD is not ignored (might be inherited from caller)*/
-        struct sigaction act;
-        (void) sigemptyset(&act.sa_mask);
-        act.sa_handler = SIG_DFL;
-        act.sa_flags = SA_RESTART;
-        if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
-            bindsocket_syslog(errno, "sigaction");
-            return false;
-        }
-
         if ((pid = fork()) != 0) {   /* parent */
             int status = EXIT_FAILURE;
             if (pid > 0 && waitpid(pid, &status, 0) != pid)
@@ -182,7 +179,7 @@ bindsocket_daemon_init (const int supervised)
 
     /* Close unneeded file descriptors */
     /* (not closing all fds > STDERR_FILENO; lazy and we check root is caller)
-     * (if closing all fds, must then closelog(); bindsocket_syslog_openlog())*/
+     * (if closing all fds, must then closelog(), bindsocket_syslog_openlog())*/
     if (0 != nointr_close(STDIN_FILENO))  return false;
     if (0 != nointr_close(STDOUT_FILENO)) return false;
     if (!supervised) {
@@ -197,10 +194,6 @@ bindsocket_daemon_init (const int supervised)
             return false;
         }
     }
-
-    /* Configure signal handlers for bindsocket desired behaviors */
-    if (!bindsocket_daemon_signal_init())
-        return false;
 
     /* Sanity check system socket option max memory for ancillary data
      * (see bindsocket_unixdomain.h for more details) */
@@ -280,6 +273,7 @@ bindsocket_daemon_init_socket (const char * const restrict dir,
         bindsocket_syslog(errno, "socket,bind,listen");
         return -1;
     }
+    fcntl(sfd, F_SETFD, fcntl(sfd, F_GETFD, 0) | FD_CLOEXEC);
 
     if (0 == chown(sockpath, uid, gid) && 0 == chmod(sockpath, mode))
         return sfd;

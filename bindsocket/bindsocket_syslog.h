@@ -43,7 +43,11 @@ void
 bindsocket_syslog_setlevel (const int level);
 
 void
-bindsocket_syslog_openlog (void);
+bindsocket_syslog_setlogfd (const int fd);
+
+void
+bindsocket_syslog_openlog (const char * const ident,
+                           const int option, const int facility);
 
 void  __attribute__((cold))  __attribute__((format(printf,2,3)))
 bindsocket_syslog (const int errnum, const char * const restrict fmt, ...);

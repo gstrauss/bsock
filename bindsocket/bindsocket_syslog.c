@@ -28,20 +28,19 @@
 
 #include <bindsocket_syslog.h>
 
+#include <sys/types.h>
+#include <sys/uio.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
-
-#ifndef BINDSOCKET_SYSLOG_IDENT
-#define BINDSOCKET_SYSLOG_IDENT "bindsocket"
-#endif
-
-#ifndef BINDSOCKET_SYSLOG_FACILITY
-#define BINDSOCKET_SYSLOG_FACILITY LOG_DAEMON
-#endif
+#include <unistd.h>
 
 static int bindsocket_syslog_level = BINDSOCKET_SYSLOG_PERROR;
+static int bindsocket_syslog_logfd = STDERR_FILENO;
+static const char *bindsocket_syslog_ident;
+static size_t bindsocket_syslog_identlen = 0;
 
 void
 bindsocket_syslog_setlevel (const int level)
@@ -50,28 +49,44 @@ bindsocket_syslog_setlevel (const int level)
 }
 
 void
-bindsocket_syslog_openlog (void)
+bindsocket_syslog_setlogfd (const int fd)
 {
-    openlog(BINDSOCKET_SYSLOG_IDENT, LOG_NOWAIT, BINDSOCKET_SYSLOG_FACILITY);
+    bindsocket_syslog_logfd = fd;
+}
+
+void
+bindsocket_syslog_openlog (const char * const ident,
+                           const int option, const int facility)
+{
+    openlog(ident, option, facility);
+    bindsocket_syslog_ident = ident; /*store passed string; see 'man openlog'*/
+    bindsocket_syslog_identlen = (NULL != ident) ? strlen(ident) : 0;
 }
 
 void  __attribute__((cold))  __attribute__((format(printf,2,3))) 
 bindsocket_syslog (const int errnum, const char * const restrict fmt, ...)
 {
     va_list ap;
+    int len;
     char str[1024] = "";
     char buf[256] = ": ";
     if (0 == errnum || 0 != strerror_r(errnum, buf+2, sizeof(buf)-2))
         buf[0] = '\0';
 
     va_start(ap, fmt);
-    (void)vsnprintf(str, sizeof(str), fmt, ap);/* str is truncated, as needed */
+    len = vsnprintf(str, sizeof(str), fmt, ap);/* str is truncated, as needed */
     va_end(ap);
 
     if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_PERROR_NOSYSLOG)
         syslog(LOG_ERR, "%s%s", str, buf);
 
     /*(stderr closed when daemon; skip stderr)*/
-    if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_DAEMON)
-        fprintf(stderr, BINDSOCKET_SYSLOG_IDENT": %s%s\n", str, buf);
+    if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_DAEMON) {
+        struct iovec iov[4] = { { (void *)(uintptr_t)bindsocket_syslog_ident,
+                                  bindsocket_syslog_identlen },
+                                { str, len < sizeof(str) ? len : sizeof(str) },
+                                { buf, strlen(buf) },
+                                { "\n", 1 } };
+        writev(bindsocket_syslog_logfd, iov, sizeof(iov)/sizeof(struct iovec));
+    }
 }

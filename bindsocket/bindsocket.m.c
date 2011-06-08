@@ -54,6 +54,14 @@
 #include <bindsocket_syslog.h>
 #include <bindsocket_unixdomain.h>
 
+#ifndef BINDSOCKET_SYSLOG_IDENT
+#define BINDSOCKET_SYSLOG_IDENT "bindsocket"
+#endif
+
+#ifndef BINDSOCKET_SYSLOG_FACILITY
+#define BINDSOCKET_SYSLOG_FACILITY LOG_DAEMON
+#endif
+
 #ifndef BINDSOCKET_CONFIG
 #error "BINDSOCKET_CONFIG must be defined"
 #endif
@@ -547,7 +555,8 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
 
     /* openlog() for syslog() */
-    bindsocket_syslog_openlog();
+    bindsocket_syslog_openlog(BINDSOCKET_SYSLOG_IDENT, LOG_NDELAY | LOG_NOWAIT,
+                              BINDSOCKET_SYSLOG_FACILITY);
 
     /* parse arguments */
     while ((sfd = getopt(argc, argv, "dhF")) != -1
