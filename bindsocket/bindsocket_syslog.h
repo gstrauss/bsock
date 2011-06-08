@@ -49,8 +49,9 @@ void
 bindsocket_syslog_openlog (const char * const ident,
                            const int option, const int facility);
 
-void  __attribute__((cold))  __attribute__((format(printf,2,3)))
-bindsocket_syslog (const int errnum, const char * const restrict fmt, ...);
+void  __attribute__((cold))  __attribute__((format(printf,3,4)))
+bindsocket_syslog (const int errnum, const int priority,
+                   const char * const restrict fmt, ...);
 
 #ifdef __cplusplus
 }

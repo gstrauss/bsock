@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
 
 #include <bindsocket_addrinfo.h>
@@ -156,7 +157,7 @@ bindsocket_resvaddr_rebind (const struct addrinfo * restrict ai,
         *tfd = fd[0]; fd[0] = -1;
     }
     else {
-        bindsocket_syslog(errno, "socket,setsockopt,bind");
+        bindsocket_syslog(errno, LOG_ERR, "socket,setsockopt,bind");
         bindsocket_resvaddr_cleanup_close(&fd);
     }
     pthread_cleanup_pop(0);
@@ -243,14 +244,14 @@ bindsocket_resvaddr_config (void)
 
         if (NULL == (cleanup.fp = fopen(BINDSOCKET_RESVADDR_CONFIG, "r"))) {
             if (errno != ENOENT) /*(not error: resvaddr config does not exist)*/
-                bindsocket_syslog(errno, BINDSOCKET_RESVADDR_CONFIG);
+                bindsocket_syslog(errno, LOG_ERR, BINDSOCKET_RESVADDR_CONFIG);
             break;
         }
         cfg = cleanup.fp;
 
         if (0 != fstat(fileno(cfg), &st)
             || st.st_uid != geteuid() || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-            bindsocket_syslog((errno = EPERM),
+            bindsocket_syslog((errno = EPERM), LOG_ERR,
                               "ownership/permissions incorrect on %s",
                               BINDSOCKET_RESVADDR_CONFIG);
             break;
@@ -262,7 +263,7 @@ bindsocket_resvaddr_config (void)
                 continue;  /* skip # comments, blank lines */
             if (   !bindsocket_addrinfo_split_str(&aistr, line)
                 || !bindsocket_addrinfo_from_strs(&ai, &aistr)   ) {
-                bindsocket_syslog((errno = EINVAL),
+                bindsocket_syslog((errno = EINVAL), LOG_ERR,
                                  "error parsing line %u in %s",
                                   lineno, BINDSOCKET_RESVADDR_CONFIG);
                 rc = false;
@@ -277,21 +278,21 @@ bindsocket_resvaddr_config (void)
         if (!rc)
             break;  /* parse error occurred */
         if (ferror(cfg) || !feof(cfg)) {
-            bindsocket_syslog(errno, "file read error in %s",
+            bindsocket_syslog(errno, LOG_ERR, "file read error in %s",
                               BINDSOCKET_RESVADDR_CONFIG);
             break;  /* parse error occurred */
         }
         if (!addr_added && bindsocket_resvaddr_count() == addr_count)
             break;  /* no change in reserved addr list */
         if (0 != fseek(cfg, 0L, SEEK_SET)) {
-            bindsocket_syslog(errno, "fseek");
+            bindsocket_syslog(errno, LOG_ERR, "fseek");
             break;  /* rewind to beginning of file failed; unlikely */
         }
         clearerr(cfg);
 
         /* sanity-check number of addr, calculate power 2 size of hash table */
         if (sysconf(_SC_OPEN_MAX) < (long)addr_count) {
-            bindsocket_syslog((errno = EINVAL),
+            bindsocket_syslog((errno = EINVAL), LOG_ERR,
                               "too many entries (> _SC_OPEN_MAX) in %s",
                               BINDSOCKET_RESVADDR_CONFIG);
             break;
@@ -305,7 +306,7 @@ bindsocket_resvaddr_config (void)
                     + sizeof(struct bindsocket_resvaddr) * addr_count
                     + sizeof(struct addrinfo) * addr_count + addr_sz);
         if (NULL == ar) {
-            bindsocket_syslog(errno, "malloc");
+            bindsocket_syslog(errno, LOG_ERR, "malloc");
             break;
         }
         ar->table    = (struct bindsocket_resvaddr **)(ar+1);
@@ -327,7 +328,7 @@ bindsocket_resvaddr_config (void)
             if (   !bindsocket_addrinfo_split_str(&aistr, line)
                 || !bindsocket_addrinfo_from_strs(&ai, &aistr)
                 || lineno >= ar->elt_count || ai.ai_addrlen > ar->buf_sz   ) {
-                bindsocket_syslog((errno = EINVAL),
+                bindsocket_syslog((errno = EINVAL), LOG_ERR,
                                   "error parsing config (modified?) in %s",
                                   BINDSOCKET_RESVADDR_CONFIG);
                 rc = false;
@@ -349,8 +350,9 @@ bindsocket_resvaddr_config (void)
                     flag = 1;
                 else {
                     flag = errno;
-                    bindsocket_syslog(flag, "socket,setsockopt,bind");
-                    bindsocket_syslog(flag, "skipping addr: %s %s %s %s %s",
+                    bindsocket_syslog(flag, LOG_ERR, "socket,setsockopt,bind");
+                    bindsocket_syslog(flag, LOG_ERR,
+                                      "skipping addr: %s %s %s %s %s",
                                       aistr.family,aistr.socktype,
                                       aistr.protocol,aistr.service,aistr.addr);
                     if (-1 != t->fd) {
@@ -379,7 +381,7 @@ bindsocket_resvaddr_config (void)
             ++lineno;
         }
         if (!rc || ferror(cfg) || !feof(cfg)) {
-            bindsocket_syslog(errno, "file read error in %s",
+            bindsocket_syslog(errno, LOG_ERR, "file read error in %s",
                               BINDSOCKET_RESVADDR_CONFIG);
             break;  /* parse error occurred */
         }

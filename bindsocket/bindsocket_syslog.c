@@ -63,8 +63,9 @@ bindsocket_syslog_openlog (const char * const ident,
     bindsocket_syslog_identlen = (NULL != ident) ? strlen(ident) : 0;
 }
 
-void  __attribute__((cold))  __attribute__((format(printf,2,3))) 
-bindsocket_syslog (const int errnum, const char * const restrict fmt, ...)
+void  __attribute__((cold))  __attribute__((format(printf,3,4))) 
+bindsocket_syslog (const int errnum, const int priority,
+                   const char * const restrict fmt, ...)
 {
     va_list ap;
     int len;
@@ -78,7 +79,7 @@ bindsocket_syslog (const int errnum, const char * const restrict fmt, ...)
     va_end(ap);
 
     if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_PERROR_NOSYSLOG)
-        syslog(LOG_ERR, "%s%s", str, buf);
+        syslog(priority, "%s%s", str, buf);
 
     /*(stderr closed when daemon; skip stderr)*/
     if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_DAEMON) {

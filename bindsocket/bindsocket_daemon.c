@@ -37,6 +37,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <unistd.h>
 
 extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
@@ -66,7 +67,7 @@ bindsocket_daemon_setuid_stdinit (void)
     sigset_t sigset_empty;
     if (0 != sigemptyset(&sigset_empty)
         || 0 != sigprocmask(SIG_SETMASK, &sigset_empty, (sigset_t *) NULL)) {
-        bindsocket_syslog(errno, "sigprocmask");
+        bindsocket_syslog(errno, LOG_ERR, "sigprocmask");
         return false;
     }
 
@@ -97,35 +98,35 @@ bindsocket_daemon_signal_init (void)
     /* Unblock all signals (regardless of what was inherited from parent)
      * (repeated from bindsocket_daemon_setuid_stdinit() in case that not run)*/
     if (0 != sigprocmask(SIG_SETMASK, &act.sa_mask, (sigset_t *) NULL)) {
-        bindsocket_syslog(errno, "sigprocmask");
+        bindsocket_syslog(errno, LOG_ERR, "sigprocmask");
         return false;
     }
 
     act.sa_handler = SIG_DFL;
     act.sa_flags = 0;  /* omit SA_RESTART */
     if (sigaction(SIGALRM, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
+        bindsocket_syslog(errno, LOG_ERR, "sigaction");
         return false;
     }
 
     act.sa_handler = SIG_DFL;
     act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
     if (sigaction(SIGCHLD, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
+        bindsocket_syslog(errno, LOG_ERR, "sigaction");
         return false;
     }
 
     act.sa_handler = SIG_IGN;
     act.sa_flags = 0;  /* omit SA_RESTART */
     if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
+        bindsocket_syslog(errno, LOG_ERR, "sigaction");
         return false;
     }
 
     act.sa_handler = bindsocket_daemon_sa_handler;
     act.sa_flags = SA_RESTART;
     if (sigaction(SIGHUP, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
+        bindsocket_syslog(errno, LOG_ERR, "sigaction");
         return false;
     }
 
@@ -134,7 +135,7 @@ bindsocket_daemon_signal_init (void)
     if (   sigaction(SIGINT,  &act, (struct sigaction *) NULL) != 0
         || sigaction(SIGQUIT, &act, (struct sigaction *) NULL) != 0
         || sigaction(SIGTERM, &act, (struct sigaction *) NULL) != 0) {
-        bindsocket_syslog(errno, "sigaction");
+        bindsocket_syslog(errno, LOG_ERR, "sigaction");
         return false;
     }
 
@@ -148,7 +149,7 @@ bindsocket_daemon_init (const int supervised)
 
     /* Change current working dir to / for sane cwd and to limit mounts in use*/
     if (0 != chdir("/")) {
-        bindsocket_syslog(errno, "chdir /");
+        bindsocket_syslog(errno, LOG_ERR, "chdir /");
         return false;
     }
 
@@ -159,7 +160,7 @@ bindsocket_daemon_init (const int supervised)
     /* Detach from parent (process to be inherited by init) unless supervised */
     if (supervised) {
         if (getpgrp() != getpid() && setsid() == (pid_t)-1) {
-            bindsocket_syslog(errno, "setsid");
+            bindsocket_syslog(errno, LOG_ERR, "setsid");
             return false;
         }
     }
@@ -172,7 +173,7 @@ bindsocket_daemon_init (const int supervised)
             _exit(status);
         }                            /* child */
         else if ((pid = setsid()) == (pid_t)-1 || (pid = fork()) != 0) {
-            if ((pid_t)-1 == pid) bindsocket_syslog(errno, "setsid,fork");
+            if ((pid_t)-1==pid) bindsocket_syslog(errno,LOG_ERR,"setsid,fork");
             _exit((pid_t)-1 == pid);
         }                            /* grandchild falls through */
     }
@@ -190,7 +191,7 @@ bindsocket_daemon_init (const int supervised)
         /* STDERR_FILENO must be open so it is not reused for sockets */
         struct stat st;
         if (0 != fstat(STDERR_FILENO, &st)) {
-            bindsocket_syslog(errno, "stat STDERR_FILENO");
+            bindsocket_syslog(errno, LOG_ERR, "stat STDERR_FILENO");
             return false;
         }
     }
@@ -209,9 +210,9 @@ bindsocket_daemon_init (const int supervised)
                 errno = 0;
                 optmem_max = strtol(buf, NULL, 10);
                 if (0 == errno && optmem_max > BINDSOCKET_ANCILLARY_DATA_MAX)
-                    bindsocket_syslog(errno, "max ancillary data very large "
-                      "(%ld > %d); consider recompiling bindsocket with larger "
-                      "BINDSOCKET_ANCILLARY_DATA_MAX", optmem_max,
+                    bindsocket_syslog(errno, LOG_ERR, "max ancillary data very "
+                      "large (%ld > %d); consider recompiling bindsocket with "
+                      "larger BINDSOCKET_ANCILLARY_DATA_MAX", optmem_max,
                       BINDSOCKET_ANCILLARY_DATA_MAX);
             }
             nointr_close(fd);
@@ -249,11 +250,11 @@ bindsocket_daemon_init_socket (const char * const restrict dir,
     /* (other ownership and permissions can be safe; this enforces one option)*/
     /* (note: not checking entire tree above socket dir; TOC-TOU) */
     if (0 != stat(dir, &st)) {
-        bindsocket_syslog(errno, dir);
+        bindsocket_syslog(errno, LOG_ERR, dir);
         return -1;
     }
     if (st.st_uid != uid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-        bindsocket_syslog((errno = EPERM),
+        bindsocket_syslog((errno = EPERM), LOG_ERR,
                           "ownership/permissions incorrect on %s", dir);
         return -1;
     }
@@ -270,7 +271,7 @@ bindsocket_daemon_init_socket (const char * const restrict dir,
                                                &bindsocket_daemon_socket_bound);
     umask(mask);        /* restore prior umask */
     if (-1 == sfd) {
-        bindsocket_syslog(errno, "socket,bind,listen");
+        bindsocket_syslog(errno, LOG_ERR, "socket,bind,listen");
         return -1;
     }
     fcntl(sfd, F_SETFD, fcntl(sfd, F_GETFD, 0) | FD_CLOEXEC);
@@ -278,6 +279,6 @@ bindsocket_daemon_init_socket (const char * const restrict dir,
     if (0 == chown(sockpath, uid, gid) && 0 == chmod(sockpath, mode))
         return sfd;
 
-    bindsocket_syslog(errno, "chown,chmod");
+    bindsocket_syslog(errno, LOG_ERR, "chown,chmod");
     return -1;
 }

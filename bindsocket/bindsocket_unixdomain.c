@@ -179,8 +179,9 @@ bindsocket_unixdomain_recv_fds (const int fd,
 
     /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
     /*(MSG_CTRUNC should not happen if ctrlbuf >= socket max ancillary data)*/
+    /*(syslog() here; no dependency on bindsocket_syslog.h)*/
     if (msg.msg_flags & MSG_CTRUNC)
-        syslog(LOG_ERR, "recvmsg msg_flags MSG_CTRUNC unexpected");
+        syslog(LOG_CRIT, "recvmsg msg_flags MSG_CTRUNC unexpected");
 
     bindsocket_unixdomain_recv_ancillary(&msg, rfds, nrfds);
 

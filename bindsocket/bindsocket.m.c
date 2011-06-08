@@ -193,20 +193,20 @@ bindsocket_authz_config (void)
     do {
 
         if (-1 == (fd = open(BINDSOCKET_CONFIG, O_RDONLY, 0))) {
-            bindsocket_syslog(errno, BINDSOCKET_CONFIG);
+            bindsocket_syslog(errno, LOG_ERR, BINDSOCKET_CONFIG);
             break;
         }
 
         if (0 != fstat(fd, &st)
             || st.st_uid != geteuid() || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-            bindsocket_syslog((errno = EPERM),
+            bindsocket_syslog((errno = EPERM), LOG_ERR,
                               "ownership/permissions incorrect on %s",
                               BINDSOCKET_CONFIG);
             break;
         }
 
         if (NULL == (buf = malloc(st.st_size+2))) {
-            bindsocket_syslog(errno, "malloc");
+            bindsocket_syslog(errno, LOG_ERR, "malloc");
             break;
         }
         buf[0] = '\n';
@@ -259,7 +259,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         return false;
 
     if (ai->ai_family != ai->ai_addr->sa_family) {
-        bindsocket_syslog((errno = EINVAL), "addrinfo inconsistent");
+        bindsocket_syslog((errno = EINVAL), LOG_ERR, "addrinfo inconsistent");
         return false;
     }
 
@@ -267,7 +267,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
      * (validate and canonicalize user input)
      * (user input converted to addrinfo and back to str to canonicalize str) */
     if (!bindsocket_addrinfo_to_strs(ai, &aistr, bufstr, sizeof(bufstr))) {
-        bindsocket_syslog((errno = ENOSPC),
+        bindsocket_syslog((errno = ENOSPC), LOG_ERR,
                           "addrinfo string expansion is too long");
         return false;
     }
@@ -276,7 +276,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                       pw.pw_name, aistr.family, aistr.socktype, aistr.protocol,
                       aistr.service, aistr.addr);
     if (cmplen >= sizeof(cmpstr)) {
-            bindsocket_syslog((errno = ENOSPC),
+            bindsocket_syslog((errno = ENOSPC), LOG_ERR,
                               "addrinfo string expansion is too long");
             return false;
     }
@@ -294,7 +294,7 @@ bindsocket_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         || (*(p-1) = ' ',
             NULL==(p=memccpy(p,aistr.addr,    '\0',sizeof(cmpstr)-(p-cmpstr))))
         || sizeof(cmpstr) == p-cmpstr   ) {
-        bindsocket_syslog((errno = ENOSPC),
+        bindsocket_syslog((errno = ENOSPC), LOG_ERR,
                           "addrinfo string expansion is too long");
         return false;
     }
@@ -335,14 +335,14 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
                 c->gid = getgid();
             }
             else {
-                bindsocket_syslog(errno, "getpeername");
+                bindsocket_syslog(errno, LOG_ERR, "getpeername");
                 return EXIT_FAILURE;
             }
         }
         ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
         if (-1 == c->uid) {
             if (0 != bindsocket_unixdomain_getpeereid(c->fd, &c->uid, &c->gid)){
-                bindsocket_syslog(errno, "getpeereid");
+                bindsocket_syslog(errno, LOG_ERR, "getpeereid");
                 return EXIT_FAILURE;
             }
         }
@@ -359,7 +359,8 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
               ? 1 == retry_poll_fd(c->fd, POLLIN, 2000)
                 && bindsocket_addrinfo_recv(c->fd, &ai, &fd)
               : bindsocket_addrinfo_from_strs(&ai, aistr))) {
-            bindsocket_syslog(errno, "recv addrinfo error or invalid addrinfo");
+            bindsocket_syslog(errno, LOG_ERR,
+                              "recv addrinfo error or invalid addrinfo");
             break;
         }
 
@@ -381,7 +382,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
         if (-1 == fd) {
             fd = nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
             if (-1 == fd) {
-                bindsocket_syslog(errno, "socket");
+                bindsocket_syslog(errno, LOG_ERR, "socket");
                 break;
             }
         }
@@ -394,7 +395,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
                 if (0 == bindsocket_bindresvport_sa(fd, ai.ai_addr))
                     rc = EXIT_SUCCESS;
                 else
-                    bindsocket_syslog(errno, "bindresvport_sa");
+                    bindsocket_syslog(errno, LOG_ERR, "bindresvport_sa");
                 break;  /* break out of while(0) on either success or failure */
             }
             else {
@@ -402,7 +403,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
                 flag = 1;
                 if (0 != setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
                                     &flag, sizeof(flag))) {
-                    bindsocket_syslog(errno, "setsockopt");
+                    bindsocket_syslog(errno, LOG_ERR, "setsockopt");
                     break;
                 }
             }
@@ -412,7 +413,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
         if (0 == bind(fd, ai.ai_addr, ai.ai_addrlen))
             rc = EXIT_SUCCESS;
         else
-            bindsocket_syslog(errno, "bind");
+            bindsocket_syslog(errno, LOG_ERR, "bind");
 
     } while (0);
 
@@ -439,7 +440,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
           ? EXIT_SUCCESS
           : EXIT_FAILURE;
         if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
-            bindsocket_syslog(errno, "sendmsg");
+            bindsocket_syslog(errno, LOG_ERR, "sendmsg");
     }
     else {
         rc = flag;  /* authbind: set exit value */
@@ -456,7 +457,7 @@ bindsocket_client_session (struct bindsocket_client_st * const restrict c,
      * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
      * and combine with syslog() to log pid and other info, if available.
      * <<<FUTURE: might add additional logging of request and success/failure */
-    syslog(LOG_INFO, "connect: uid:%d gid:%d", uid, c->gid);
+    bindsocket_syslog(0, LOG_INFO, "connect: uid:%d gid:%d", uid, c->gid);
 
     return rc;
 }
@@ -512,7 +513,7 @@ bindsocket_sigwait (void * const arg)
             (void)pthread_sigmask(SIG_BLOCK, sigs, NULL);
             break;
           default:
-            bindsocket_syslog(0, "caught unexpected signal: %d", signum);
+            bindsocket_syslog(0,LOG_ERR,"caught unexpected signal: %d",signum);
             break;
         }
         (void) sigwait(sigs, &signum);
@@ -533,11 +534,11 @@ bindsocket_thread_signals (void)
     (void) sigaddset(&sigs, SIGTERM);
     /* block signals (signal mask inherited by threads subsequently created) */
     if (0 != (errnum = pthread_sigmask(SIG_BLOCK, &sigs, NULL))) {
-        bindsocket_syslog((errno = errnum), "pthread_sigmask");
+        bindsocket_syslog((errno = errnum), LOG_ERR, "pthread_sigmask");
         return;
     }
     if (0 != (errnum = pthread_create(&thread,NULL,&bindsocket_sigwait,&sigs)))
-        bindsocket_syslog((errno = errnum), "pthread_create");
+        bindsocket_syslog((errno = errnum), LOG_ERR, "pthread_create");
 }
 
 int
@@ -555,7 +556,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
 
     /* openlog() for syslog() */
-    bindsocket_syslog_openlog(BINDSOCKET_SYSLOG_IDENT, LOG_NDELAY | LOG_NOWAIT,
+    bindsocket_syslog_openlog(BINDSOCKET_SYSLOG_IDENT, LOG_NDELAY,
                               BINDSOCKET_SYSLOG_FACILITY);
 
     /* parse arguments */
@@ -564,7 +565,8 @@ main (int argc, char *argv[])
         switch (sfd) {
           case 'd': daemon = true; break;
           case 'F': supervised = true; break;
-          default:  syslog(LOG_ERR, "bad arguments sent by uid %d", getuid());
+          default:  if (0 != getuid()) /*(syslog here; not bindsocket_syslog)*/
+                        syslog(LOG_ERR,"bad arguments sent by uid %d",getuid());
                     fprintf(stderr, "\nerror: invalid arguments\n");/*fallthru*/
           case 'h': fprintf((sfd == 'h' ? stdout : stderr), "\n"
                             "  bindsocket -h\n"
@@ -584,11 +586,11 @@ main (int argc, char *argv[])
         struct bindsocket_addrinfo_strs *aistrptr = &aistr;
         struct stat st;
         if (0 != fstat(STDIN_FILENO, &st)) {
-            bindsocket_syslog(errno, "fstat stdin");
+            bindsocket_syslog(errno, LOG_ERR, "fstat stdin");
             return EXIT_FAILURE;
         }
         if (!S_ISSOCK(st.st_mode)) {
-            bindsocket_syslog((errno = ENOTSOCK),
+            bindsocket_syslog((errno = ENOTSOCK), LOG_ERR,
                               "invalid socket on bindsocket stdin");
             return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
         }
@@ -598,7 +600,8 @@ main (int argc, char *argv[])
                   break;
           case 1: if (bindsocket_addrinfo_split_str(&aistr, argv[0]))
                       break;
-                  bindsocket_syslog(errno, "invalid address info arguments");
+                  bindsocket_syslog(errno, LOG_ERR,
+                                    "invalid address info arguments");
                   return EXIT_FAILURE;
           case 5: aistr.family   = argv[0];
                   aistr.socktype = argv[1];
@@ -606,7 +609,7 @@ main (int argc, char *argv[])
                   aistr.service  = argv[3];
                   aistr.addr     = argv[4];
                   break;
-          default: bindsocket_syslog((errno = EINVAL),
+          default: bindsocket_syslog((errno = EINVAL), LOG_ERR,
                                      "invalid number of arguments");
                    return EXIT_FAILURE;
         }
@@ -623,13 +626,13 @@ main (int argc, char *argv[])
 
     if (getuid() != geteuid()) {
         /* do not permit setuid privileges to initiate daemon mode */
-        bindsocket_syslog((errno = EACCES),
+        bindsocket_syslog((errno = EACCES), LOG_ERR,
                           "daemon can not be started via setuid");
         return EXIT_FAILURE;
     }
 
     if (NULL == (gr = getgrnam(BINDSOCKET_GROUP))) {/*ok; no other threads yet*/
-        bindsocket_syslog(errno, "getgrnam");
+        bindsocket_syslog(errno, LOG_ERR, "getgrnam");
         return EXIT_FAILURE;
     }
 
@@ -646,7 +649,7 @@ main (int argc, char *argv[])
     if (   0 != pthread_attr_init(&attr)
         || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
         || 0 != pthread_attr_setstacksize(&attr, 32768)) {/*(should be plenty)*/
-        bindsocket_syslog(errno, "pthread_attr_*");
+        bindsocket_syslog(errno, LOG_ERR, "pthread_attr_*");
         return EXIT_FAILURE;
     }
     bindsocket_thread_table_init();
@@ -675,7 +678,7 @@ main (int argc, char *argv[])
                           pthread_attr_destroy(&attr);
                           return EXIT_SUCCESS;
               default:    /* temporary process/system resource issue */
-                          bindsocket_syslog(errno, "accept");
+                          bindsocket_syslog(errno, LOG_ERR, "accept");
                           poll(NULL, 0, 10); /* pause 10ms and continue */
                           continue;
             }
@@ -683,7 +686,7 @@ main (int argc, char *argv[])
 
         /* get client credentials */
         if (0 != bindsocket_unixdomain_getpeereid(m.fd, &m.uid, &m.gid)) {
-            bindsocket_syslog(errno, "getpeereid");
+            bindsocket_syslog(errno, LOG_ERR, "getpeereid");
             nointr_close(m.fd);
             continue;
         }
