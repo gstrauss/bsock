@@ -1,5 +1,5 @@
 /*
- * bindsocket.t.c - sample client code to obtain sockets from bindsocket daemon
+ * bsock.t.c - sample client code to obtain sockets from bsock daemon
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -31,8 +31,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 
-#include <bindsocket_addrinfo.h>
-#include <bindsocket_bind.h>
+#include <bsock_addrinfo.h>
+#include <bsock_bind.h>
 
 int
 main (int argc, char *argv[])
@@ -41,7 +41,7 @@ main (int argc, char *argv[])
     int addr[28];
     struct addrinfo ai = { .ai_addr = (struct sockaddr *)addr,
                            .ai_addrlen = sizeof(addr) };
-    struct bindsocket_addrinfo_strs aistr;
+    struct bsock_addrinfo_strs aistr;
 
     if (6 != argc) {
         fprintf(stderr, "invalid args\n");
@@ -55,18 +55,18 @@ main (int argc, char *argv[])
     aistr.addr     = argv[5];
 
   #if 1
-    if (        bindsocket_addrinfo_from_strs(&ai, &aistr)
+    if (        bsock_addrinfo_from_strs(&ai, &aistr)
         &&-1 != (nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol))
-        && 0 == bindsocket_bind_addrinfo(nfd, &ai))
+        && 0 == bsock_bind_addrinfo(nfd, &ai))
         return EXIT_SUCCESS;
   #else  /* load test (serial requests) */
     int i;
     struct timeval tva, tvb;
-    bindsocket_addrinfo_from_strs(&ai, &aistr);
+    bsock_addrinfo_from_strs(&ai, &aistr);
     gettimeofday(&tva, NULL);
     for (i=0; i<10000; ++i) {
         if (-1 == (nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol))
-            || 0 != bindsocket_bind_addrinfo(nfd, &ai))
+            || 0 != bsock_bind_addrinfo(nfd, &ai))
             break;
         close(nfd);
     }
@@ -82,6 +82,6 @@ main (int argc, char *argv[])
         return EXIT_SUCCESS;
   #endif
 
-    perror("bindsocket");
+    perror("bsock");
     return EXIT_FAILURE;
 }

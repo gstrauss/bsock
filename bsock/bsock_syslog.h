@@ -1,5 +1,5 @@
 /*
- * bindsocket_addrinfo - struct addrinfo string manipulation
+ * bsock_syslog - syslog() wrapper for error messages
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,51 +26,32 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef INCLUDED_BINDSOCKET_ADDRINFO_H
-#define INCLUDED_BINDSOCKET_ADDRINFO_H
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <stdbool.h>
+#ifndef INCLUDED_BSOCK_SYSLOG_H
+#define INCLUDED_BSOCK_SYSLOG_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct bindsocket_addrinfo_strs {
-    const char *family;
-    const char *socktype;
-    const char *protocol;
-    const char *service;
-    const char *addr;
+enum {
+  BSOCK_SYSLOG_DAEMON = 0,
+  BSOCK_SYSLOG_PERROR = 1,
+  BSOCK_SYSLOG_PERROR_NOSYSLOG = 2
 };
 
-/* ai->ai_addr must be provided containing usage storage of len ai->ai_addrlen
- * (recommend: int addr[28]; ai->ai_addr=addr; ai->ai_addrlen=sizeof(addr); )*/
-bool
-bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
-                              const struct bindsocket_addrinfo_strs *
-                                const restrict aistr);
+void
+bsock_syslog_setlevel (const int level);
 
-bool
-bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
-                            struct bindsocket_addrinfo_strs * const aistr,
-                            char * const restrict buf, const size_t bufsz);
+void
+bsock_syslog_setlogfd (const int fd);
 
-bool
-bindsocket_addrinfo_split_str(struct bindsocket_addrinfo_strs * const aistr,
-                              char * const restrict str);
+void
+bsock_syslog_openlog (const char * const ident,
+                      const int option, const int facility);
 
-bool
-bindsocket_addrinfo_recv (const int fd,
-                          struct addrinfo * const restrict ai,
-                          int * const restrict rfd);
-
-bool
-bindsocket_addrinfo_send (const int fd,
-                          const struct addrinfo * const restrict ai,
-                          const int sfd);
+void  __attribute__((cold))  __attribute__((format(printf,3,4)))
+bsock_syslog (const int errnum, const int priority,
+              const char * const restrict fmt, ...);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 /*
- * bindsocket_bindresvport - bind socket to random low port (privileged IP port)
+ * bsock_resvaddr - maintain persistent reserved address
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,18 +26,25 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef INCLUDED_BINDSOCKET_BINDRESVPORT_H
-#define INCLUDED_BINDSOCKET_BINDRESVPORT_H
+#ifndef INCLUDED_BSOCK_RESVADDR_H
+#define INCLUDED_BSOCK_RESVADDR_H
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* use ai->ai_flags for bsock flags since otherwise unused by bsock */
+#define BSOCK_FLAGS_REBIND AI_PASSIVE  /* close() and re-bind() resv addr */
+
 int
-bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa);
+bsock_resvaddr_fd (const struct addrinfo * const restrict ai);
+
+void
+bsock_resvaddr_config (void);
 
 #ifdef __cplusplus
 }

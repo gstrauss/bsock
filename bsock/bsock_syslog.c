@@ -1,5 +1,5 @@
 /*
- * bindsocket_syslog - syslog() wrapper for error messages
+ * bsock_syslog - syslog() wrapper for error messages
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,7 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <bindsocket_syslog.h>
+#include <bsock_syslog.h>
 
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -37,35 +37,35 @@
 #include <syslog.h>
 #include <unistd.h>
 
-static int bindsocket_syslog_level = BINDSOCKET_SYSLOG_PERROR;
-static int bindsocket_syslog_logfd = STDERR_FILENO;
-static const char *bindsocket_syslog_ident;
-static size_t bindsocket_syslog_identlen = 0;
+static int bsock_syslog_level = BSOCK_SYSLOG_PERROR;
+static int bsock_syslog_logfd = STDERR_FILENO;
+static const char *bsock_syslog_ident;
+static size_t bsock_syslog_identlen = 0;
 
 void
-bindsocket_syslog_setlevel (const int level)
+bsock_syslog_setlevel (const int level)
 {
-    bindsocket_syslog_level = level;
+    bsock_syslog_level = level;
 }
 
 void
-bindsocket_syslog_setlogfd (const int fd)
+bsock_syslog_setlogfd (const int fd)
 {
-    bindsocket_syslog_logfd = fd;
+    bsock_syslog_logfd = fd;
 }
 
 void
-bindsocket_syslog_openlog (const char * const ident,
-                           const int option, const int facility)
+bsock_syslog_openlog (const char * const ident,
+                      const int option, const int facility)
 {
     openlog(ident, option, facility);
-    bindsocket_syslog_ident = ident; /*store passed string; see 'man openlog'*/
-    bindsocket_syslog_identlen = (NULL != ident) ? strlen(ident) : 0;
+    bsock_syslog_ident = ident; /*store passed string; see 'man openlog'*/
+    bsock_syslog_identlen = (NULL != ident) ? strlen(ident) : 0;
 }
 
 void  __attribute__((cold))  __attribute__((format(printf,3,4))) 
-bindsocket_syslog (const int errnum, const int priority,
-                   const char * const restrict fmt, ...)
+bsock_syslog (const int errnum, const int priority,
+              const char * const restrict fmt, ...)
 {
     va_list ap;
     int len;
@@ -78,16 +78,16 @@ bindsocket_syslog (const int errnum, const int priority,
     len = vsnprintf(str, sizeof(str), fmt, ap);/* str is truncated, as needed */
     va_end(ap);
 
-    if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_PERROR_NOSYSLOG)
+    if (bsock_syslog_level != BSOCK_SYSLOG_PERROR_NOSYSLOG)
         syslog(priority, "%s%s", str, buf);
 
     /*(stderr closed when daemon; skip stderr)*/
-    if (bindsocket_syslog_level != BINDSOCKET_SYSLOG_DAEMON) {
-        struct iovec iov[4] = { { (void *)(uintptr_t)bindsocket_syslog_ident,
-                                  bindsocket_syslog_identlen },
+    if (bsock_syslog_level != BSOCK_SYSLOG_DAEMON) {
+        struct iovec iov[4] = { { (void *)(uintptr_t)bsock_syslog_ident,
+                                  bsock_syslog_identlen },
                                 { str, len < sizeof(str) ? len : sizeof(str) },
                                 { buf, strlen(buf) },
                                 { "\n", 1 } };
-        writev(bindsocket_syslog_logfd, iov, sizeof(iov)/sizeof(struct iovec));
+        writev(bsock_syslog_logfd, iov, sizeof(iov)/sizeof(struct iovec));
     }
 }

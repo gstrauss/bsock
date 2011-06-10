@@ -1,5 +1,5 @@
 /*
- * bindsocket_bind - interfaces to bind to reserved ports
+ * bsock_bindresvport - bind socket to random low port (privileged IP port)
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,24 +26,18 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef INCLUDED_BINDSOCKET_BIND_H
-#define INCLUDED_BINDSOCKET_BIND_H
+#ifndef INCLUDED_BSOCK_BINDRESVPORT_H
+#define INCLUDED_BSOCK_BINDRESVPORT_H
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 int
-bindsocket_bind_addrinfo (const int fd,
-                          const struct addrinfo * const restrict ai);
-
-int
-bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
-                           socklen_t addrlen);
+bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa);
 
 #ifdef __cplusplus
 }

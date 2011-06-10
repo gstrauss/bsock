@@ -1,5 +1,5 @@
 /*
- * bindsocket_preload.c - interpose bind() to call bindsocket_bind_intercept()
+ * bsock_bind - interfaces to bind to reserved ports
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,29 +26,26 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <bindsocket_bind.h>
+#ifndef INCLUDED_BSOCK_BIND_H
+#define INCLUDED_BSOCK_BIND_H
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
+#include <netdb.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int
-bind (const int sockfd, const struct sockaddr * const restrict addr,
-      const socklen_t addrlen)
-{
-    return bindsocket_bind_intercept(sockfd, addr, addrlen);
-}
+bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai);
 
 int
-bindresvport (const int sockfd, const struct sockaddr_in * const restrict sin)
-{
-    return bindsocket_bind_intercept(sockfd, (struct sockaddr *)sin,
-                                     sizeof(struct sockaddr_in));
-}
+bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
+                      socklen_t addrlen);
 
-int
-bindresvport6 (const int sockfd,const struct sockaddr_in6 * const restrict sin6)
-{
-    return bindsocket_bind_intercept(sockfd, (struct sockaddr *)sin6,
-                                     sizeof(struct sockaddr_in6));
+#ifdef __cplusplus
 }
+#endif
+
+#endif

@@ -1,5 +1,5 @@
 /*
- * bindsocket_daemon - daemon initialization and signal setup
+ * bsock_daemon - daemon initialization and signal setup
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,8 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef INCLUDED_BINDSOCKET_DAEMON_H
-#define INCLUDED_BINDSOCKET_DAEMON_H
+#ifndef INCLUDED_BSOCK_DAEMON_H
+#define INCLUDED_BSOCK_DAEMON_H
 
 #include <sys/types.h>
 #include <stdbool.h>
@@ -37,16 +37,16 @@ extern "C" {
 #endif
 
 bool
-bindsocket_daemon_setuid_stdinit (void);
+bsock_daemon_setuid_stdinit (void);
 
 bool
-bindsocket_daemon_init (const int supervised);
+bsock_daemon_init (const int supervised);
 
 int
-bindsocket_daemon_init_socket (const char * const restrict dir,
-                               const char * const restrict sockpath,
-                               const uid_t uid, const gid_t gid,
-                               const mode_t mode);
+bsock_daemon_init_socket (const char * const restrict dir,
+                          const char * const restrict sockpath,
+                          const uid_t uid, const gid_t gid,
+                          const mode_t mode);
 
 #ifdef __cplusplus
 }

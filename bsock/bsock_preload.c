@@ -1,5 +1,5 @@
 /*
- * bindsocket_syslog - syslog() wrapper for error messages
+ * bsock_preload.c - interpose bind() to call bsock_bind_intercept()
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,35 +26,29 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef INCLUDED_BINDSOCKET_SYSLOG_H
-#define INCLUDED_BINDSOCKET_SYSLOG_H
+#include <bsock_bind.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
-enum {
-  BINDSOCKET_SYSLOG_DAEMON = 0,
-  BINDSOCKET_SYSLOG_PERROR = 1,
-  BINDSOCKET_SYSLOG_PERROR_NOSYSLOG = 2
-};
-
-void
-bindsocket_syslog_setlevel (const int level);
-
-void
-bindsocket_syslog_setlogfd (const int fd);
-
-void
-bindsocket_syslog_openlog (const char * const ident,
-                           const int option, const int facility);
-
-void  __attribute__((cold))  __attribute__((format(printf,3,4)))
-bindsocket_syslog (const int errnum, const int priority,
-                   const char * const restrict fmt, ...);
-
-#ifdef __cplusplus
+int
+bind (const int sockfd, const struct sockaddr * const restrict addr,
+      const socklen_t addrlen)
+{
+    return bsock_bind_intercept(sockfd, addr, addrlen);
 }
-#endif
 
-#endif
+int
+bindresvport (const int sockfd, const struct sockaddr_in * const restrict sin)
+{
+    return bsock_bind_intercept(sockfd, (struct sockaddr *)sin,
+                                sizeof(struct sockaddr_in));
+}
+
+int
+bindresvport6 (const int sockfd,const struct sockaddr_in6 * const restrict sin6)
+{
+    return bsock_bind_intercept(sockfd, (struct sockaddr *)sin6,
+                                sizeof(struct sockaddr_in6));
+}

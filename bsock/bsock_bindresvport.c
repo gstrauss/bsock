@@ -1,5 +1,5 @@
 /*
- * bindsocket_bindresvport - bind socket to random low port (privileged IP port)
+ * bsock_bindresvport - bind socket to random low port (privileged IP port)
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,14 +26,14 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* bindsocket_bindresvport_sa() originally intended to be portable routine
+/* bsock_bindresvport_sa() originally intended to be portable routine
  * implemented to man page spec without dependency on openssl, though the
  * code is now nearly identical to openssh/openbsd-compat/bindresvport.c
- * The main difference is that bindsocket_bindresvport.c DOES NOT use a
+ * The main difference is that bsock_bindresvport.c DOES NOT use a
  * crytographically secure mechanism for generating random start port, and
  * is therfore more susceptible to random spoofing attacks than is openbsd
- * bindresvport_sa().  bindsocket_bindresvport_sa() is also tailored for
- * use by bindsocket application, requiring pthread mutex around device open.
+ * bindresvport_sa().  bsock_bindresvport_sa() is also tailored for use by
+ * bsock application, requiring pthread mutex around device open.
  *
  * opessh/openbsd-compat/bindresvport.c contains the following license:
  */
@@ -72,7 +72,7 @@
 /* OPENBSD ORIGINAL: lib/libc/rpc/bindresvport.c */
 /* ---------- */
 
-#include <bindsocket_bindresvport.h>
+#include <bsock_bindresvport.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -89,8 +89,8 @@
 #define IPPORT_RESERVEDSTART 600
 #endif
 
-#ifndef BINDSOCKET_BINDRESVPORT_SKIP
-#define BINDSOCKET_BINDRESVPORT_SKIP \
+#ifndef BSOCK_BINDRESVPORT_SKIP
+#define BSOCK_BINDRESVPORT_SKIP \
   623,631,636,664,749,750,783,873,992,993,994,995
 /*
  * (collected from https://bugzilla.redhat.com/show_bug.cgi?id=103401)
@@ -111,27 +111,27 @@
  */
 #endif
 
-#ifdef BINDSOCKET_BINDRESVPORT_SKIP  /* comma-separated list of ports to skip */
+#ifdef BSOCK_BINDRESVPORT_SKIP  /* comma-separated list of ports to skip */
 static int
-bindsocket_bindresvport_skip (const unsigned int port)
+bsock_bindresvport_skip (const unsigned int port)
 {
     /*(FUTURE: use bsearch() if list is long)*/
-    static const unsigned int skiplist[] = { BINDSOCKET_BINDRESVPORT_SKIP };
+    static const unsigned int skiplist[] = { BSOCK_BINDRESVPORT_SKIP };
     size_t i;
     for (i = 0; i < sizeof(skiplist)/sizeof(int) && skiplist[i] != port; ++i) ;
     return (i != sizeof(skiplist)/sizeof(int)); /* port is on skiplist */
 }
 #else
-#define bindsocket_bindresvport_skip(port) 0
+#define bsock_bindresvport_skip(port) 0
 #endif
 
-static void bindsocket_bindresvport_cleanup_mutex (void * const restrict mutex)
+static void bsock_bindresvport_cleanup_mutex (void * const restrict mutex)
 {
     pthread_mutex_unlock((pthread_mutex_t *)mutex);
 }
 
 static int
-bindsocket_bindresvport_random_port (void)
+bsock_bindresvport_random_port (void)
 {
     /* Choosing pseudo-random starting port to which to attempt to bind().
      * /dev/urandom provides decent randomness (unless entropy runs out).
@@ -147,7 +147,7 @@ bindsocket_bindresvport_random_port (void)
     if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
         int cancel_type;
         pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &cancel_type);
-        pthread_cleanup_push(bindsocket_bindresvport_cleanup_mutex,
+        pthread_cleanup_push(bsock_bindresvport_cleanup_mutex,
                              &devurandom_mutex);
         r = -1;
         if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
@@ -178,7 +178,7 @@ bindsocket_bindresvport_random_port (void)
 }
 
 int
-bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
+bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa)
 {
     /* (code below honors sin_addr or sin6_addr, if specified) */
     /* (code below honors sin_port or sin6_port as pstart if in valid range) */
@@ -210,11 +210,11 @@ bindsocket_bindresvport_sa (const int sockfd, struct sockaddr *sa)
 
     pstart = ntohs(*portptr);  /* 0 == pstart trips port range check below */
     if (pstart < IPPORT_RESERVEDSTART || pstart >= IPPORT_RESERVED)
-        pstart = (in_port_t) bindsocket_bindresvport_random_port();
+        pstart = (in_port_t) bsock_bindresvport_random_port();
 
     port = pstart;
     do {
-        if (!bindsocket_bindresvport_skip(port)) {
+        if (!bsock_bindresvport_skip(port)) {
             *portptr = htons(port);
             if (0 == bind(sockfd, sa, addrlen))
                 return 0;

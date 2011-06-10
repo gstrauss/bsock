@@ -1,5 +1,5 @@
 /*
- * bindsocket_bind.c - interfaces to bind to reserved ports
+ * bsock_bind.c - interfaces to bind to reserved ports
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,7 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <bindsocket_bind.h>
+#include <bsock_bind.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -46,20 +46,20 @@
 
 extern char **environ;
 
-#include <bindsocket_addrinfo.h>
-#include <bindsocket_unixdomain.h>
+#include <bsock_addrinfo.h>
+#include <bsock_unixdomain.h>
 
-#ifndef BINDSOCKET_POLL_TIMEOUT
-#define BINDSOCKET_POLL_TIMEOUT 5000  /*(poll timeout in millisecs)*/
+#ifndef BSOCK_POLL_TIMEOUT
+#define BSOCK_POLL_TIMEOUT 5000  /*(poll timeout in millisecs)*/
 #endif
 
-#ifndef BINDSOCKET_EXE
-#error "BINDSOCKET_EXE must be defined"
+#ifndef BSOCK_EXE
+#error "BSOCK_EXE must be defined"
 #endif
-#ifndef BINDSOCKET_SOCKET_DIR
-#error "BINDSOCKET_SOCKET_DIR must be defined"
+#ifndef BSOCK_SOCKET_DIR
+#error "BSOCK_SOCKET_DIR must be defined"
 #endif
-#define BINDSOCKET_SOCKET BINDSOCKET_SOCKET_DIR "/socket"
+#define BSOCK_SOCKET BSOCK_SOCKET_DIR "/socket"
 
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
@@ -72,16 +72,16 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
     int n; /*EINTR results in retrying poll with same timeout again and again*/
     do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
-    if (0 == n) errno = ETIME; /* specific for bindsocket; not generic */
+    if (0 == n) errno = ETIME; /* specific for bsock; not generic */
     return n;
 }
 
 static int
-bindsocket_bind_send_addr_and_recv (const int fd,
-                                    const struct addrinfo * const restrict ai,
-                                    const int sfd)
+bsock_bind_send_addr_and_recv (const int fd,
+                               const struct addrinfo * const restrict ai,
+                               const int sfd)
 {
-    /* bindsocket_unixdomain_recv_fds()
+    /* bsock_unixdomain_recv_fds()
      *   fills errnum to indicate remote success/failure
      * (no poll before sending addrinfo since this is first write to socket)
      * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port) */
@@ -89,9 +89,9 @@ bindsocket_bind_send_addr_and_recv (const int fd,
     unsigned int nrfd = 1;
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
-    if (bindsocket_addrinfo_send(sfd, ai, fd)
-        &&  1 == retry_poll_fd(sfd, POLLIN, BINDSOCKET_POLL_TIMEOUT)
-        && -1 != bindsocket_unixdomain_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
+    if (bsock_addrinfo_send(sfd, ai, fd)
+        &&  1 == retry_poll_fd(sfd, POLLIN, BSOCK_POLL_TIMEOUT)
+        && -1 != bsock_unixdomain_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
         if (-1 != rfd) {
             /* assert(rfd != fd); *//*(should not happen)*/
             if (0 == errnum) {
@@ -106,7 +106,7 @@ bindsocket_bind_send_addr_and_recv (const int fd,
         errnum = errno;
         /* server might have responded and closed socket before client sendmsg*/
         if (EPIPE == errnum
-            && -1 == bindsocket_unixdomain_recv_fds(sfd, NULL, NULL, &iov, 1))
+            && -1 == bsock_unixdomain_recv_fds(sfd, NULL, NULL, &iov, 1))
             errnum = EPIPE;
     }
 
@@ -114,8 +114,7 @@ bindsocket_bind_send_addr_and_recv (const int fd,
 }
 
 static bool
-bindsocket_bind_viafork (const int fd,
-                         const struct addrinfo * const restrict ai)
+bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
 {
     /* (ai->ai_next is ignored) */
     int sv[2];
@@ -123,7 +122,7 @@ bindsocket_bind_viafork (const int fd,
     pid_t pid;
     struct stat st;
 
-    if (0 != stat(BINDSOCKET_EXE, &st))
+    if (0 != stat(BSOCK_EXE, &st))
         return false;
     if (!(st.st_mode & S_ISUID))
         return (errno = EPERM, false);
@@ -131,9 +130,9 @@ bindsocket_bind_viafork (const int fd,
     if (0 != socketpair(AF_UNIX, SOCK_STREAM, 0, sv))
         return false;
 
-    pid = fork();         /*(bindsocket_bind_resvaddr() retries on EAGAIN)*/
+    pid = fork();         /*(bsock_bind_resvaddr() retries on EAGAIN)*/
     if (0 == pid) {       /* child; no retry if child signalled, errno==EINTR */
-        static char *args[] = { BINDSOCKET_EXE, NULL };
+        static char *args[] = { BSOCK_EXE, NULL };
         if (   dup2(sv[0], STDIN_FILENO) != STDIN_FILENO
             || (sv[0] != STDIN_FILENO && 0 != close(sv[0]))
             || (sv[1] != STDIN_FILENO && 0 != close(sv[1])))
@@ -144,7 +143,7 @@ bindsocket_bind_viafork (const int fd,
     }
     else if (-1 != pid) { /* parent */
         nointr_close(sv[0]);
-        errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sv[1]);
+        errnum = bsock_bind_send_addr_and_recv(fd, ai, sv[1]);
         while (pid != waitpid(pid,NULL,0) && errno == EINTR) ;
         /* reap child process but ignore exit status; program might be ignoring
          * SIGCHLD or might have custom SIGCHLD handler, either of which would
@@ -161,23 +160,22 @@ bindsocket_bind_viafork (const int fd,
 }
 
 static bool
-bindsocket_bind_viasock (const int fd,
-                         const struct addrinfo * const restrict ai)
+bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
 {
     int errnum;
     int sfd;
 
     do {
-        sfd = bindsocket_unixdomain_socket_connect(BINDSOCKET_SOCKET);
+        sfd = bsock_unixdomain_socket_connect(BSOCK_SOCKET);
         if (-1 == sfd)
             return false;
-        errnum = bindsocket_bind_send_addr_and_recv(fd, ai, sfd);
+        errnum = bsock_bind_send_addr_and_recv(fd, ai, sfd);
         nointr_close(sfd);
 
         if (errnum == EAGAIN) {
             /*(sched_yield() results in non-productive spin on my uniprocessor
              * during performance tests sending lots of requests by same uid,
-             * since bindsocket defers if uid already has request in progress)*/
+             * since bsock defers if uid already has request in progress)*/
             static const struct timespec ts = { 0, 10L };
             nanosleep(&ts, NULL);
         }
@@ -187,13 +185,12 @@ bindsocket_bind_viasock (const int fd,
 }
 
 int
-bindsocket_bind_addrinfo (const int fd,
-                          const struct addrinfo * const restrict ai)
+bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai)
 {
     /* (return value 0 for success, -1 upon error; match return value of bind())
      * (ai->ai_next is ignored) */
 
-    if (bindsocket_bind_viasock(fd, ai) || bindsocket_bind_viafork(fd, ai))
+    if (bsock_bind_viasock(fd, ai) || bsock_bind_viafork(fd, ai))
         return 0;
 
     switch (errno) {
@@ -217,8 +214,8 @@ static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t) =
   bind_rtld_findnext;
 
 int
-bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
-                           socklen_t addrlen)
+bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
+                      socklen_t addrlen)
 {
     struct addrinfo ai = {
       .ai_flags    = 0,
@@ -232,7 +229,7 @@ bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
     };
     socklen_t optlen;
 
-    /* bindsocket supports only AF_INET, AF_INET6, AF_UNIX;
+    /* bsock supports only AF_INET, AF_INET6, AF_UNIX;
      * simply bind if address family is otherwise */
     if (ai.ai_family == AF_INET || ai.ai_family == AF_INET6) {
         /* simply bind if port < IPPORT_RESERVED; no root privileges needed */
@@ -272,8 +269,8 @@ bindsocket_bind_intercept (int sockfd, const struct sockaddr *addr,
         return -1;
   #else
     /* else pass ai_protocol == 0, which will typically work as expected (tcp)
-     * since bindsocket calls getaddrinfo() and uses first entry returned */
+     * since bsock calls getaddrinfo() and uses first entry returned */
   #endif
 
-    return bindsocket_bind_addrinfo(sockfd, &ai);
+    return bsock_bind_addrinfo(sockfd, &ai);
 }

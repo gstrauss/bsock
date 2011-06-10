@@ -1,0 +1,8 @@
+bsock FAQ
+
+Q. bsock: permission denied
+A. The owner of the process attempting to connect to the bsock daemon is not
+   part of group 'daemon' (or the group to which bsock is configured to
+   restrict access to the socket).  Alternatively, this might indicate that the
+   daemon is not running and bsock was not installed setuid root.  (Installing
+   bsock setuid root with 'install-setuid' Makefile target is not the default.)

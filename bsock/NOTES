@@ -1,0 +1,274 @@
+bsock - bind() sockets to restricted ports for lower-privilege daemons
+
+Historically, ports 1-1023 are restricted and only root can bind to them.
+  (IPPORT_RESERVED = 1024)
+Traditionally, there have been two ways to run non-root daemons on low ports:
+a) inetd  (root daemon listens on low port and for each connection accept()s,
+   fork()s, drop privileges, exec()s non-root daemon for single connection)
+b) daemon starts up as root, bind()s to low port, and drops root privileges
+
+For performance, many daemons use the method in b), but that means that
+potentially complex programs are starting up as root, following instructions
+in configuration files, and potentially creating exposures.
+
+bsock aims to provide a third method to bind to low ports, with all the
+benefits of b), but without having to start up the target daemon as root.
+
+bsock is a simple root daemon that listens for requests on a local unix domain
+socket.  Connections to the socket are authenticated using credentials supplied
+by the operating system (and can be trusted).  The configuration file for
+bsock specifies which users can request sockets on which addresses and ports.
+bsock authorizes the socket request, binds to the address and port, and then
+passes the bound socket back to the client over the unix domain socket.  The
+client can set socket options such as SO_KEEPALIVE, SO_SNDBUF, SO_RCVBUF, etc,
+as well as file descriptor flags (e.g. FD_CLOEXEC), and then listen()/accept()
+on the socket as if the client process had called bind() itself.  If the client
+(optionally) passes an unbound socket to the bsock daemon along with the
+addrinfo request, then bsock will authorize and bind the address to the socket
+provided (or will dup2() to the socket if the address requested is an address
+that is persistently reserved in the daemon).  Client should therefore set
+options on socket after the call to bsock.
+
+Another option for using bsock is to install it as setuid root program. This
+is not required if running bsock as daemon.  However, if installed setuid root,
+then a lower-privilege daemon can create a socketpair() of unix domain sockets
+and can start up bsock with one of the sockets on the STDIN_FILENO of bsock.
+bsock will then operate as described above, but only for a single request to
+bind to an address and port.
+
+As a special-case, if zero (0) is the requested port for AF_INET or AF_INET6,
+then bsock will bind to a reserved port < IPPORT_RESERVED (1024).  This could
+e.g. be used by rsh and ssh if these client programs were setuid 'rsh' or
+setuid 'ssh', where 'rsh' and 'ssh' were not 'root', and the bsock config
+file permitted these users to request addrinfo specifying port 0.
+(Better recommendation is to delete rsh and rlogin, and to remove the setid
+bit from ssh since the setuid root of client ssh program is not required for
+typical use.)  Note that specifying port 0 traditionally means that the
+operating system should bind to an ephemeral port, an unprivileged high port,
+but is used here to indicate a request to bind to a privileged low port.
+After all, one need not call bsock to bind to a privileged port if explicitly
+calling bind and requesting that the operating system choose an unprivileged
+port.  Most outbound connections simply call connect() and do not call bind().
+Returning to reserved port < IPPORT_RESERVED, there are some systems on which
+it is desirable to avoid allocating a specific port or set of ports within the
+reserved range.  If BSOCK_BINDRESVPORT_SKIP is defined as a comma-separate
+list of port numbers during compilation of bsock_bindresvport.c, then
+bsock_bindresvport will not assign a port on that list.  (This might be turned
+into a runtime configuration option for bsock daemon.)  A default set of ports
+have been reserved based on https://bugzilla.redhat.com/show_bug.cgi?id=103401.
+See comments at the top of bsock_bindresvport.c.  An alternate approach is
+to reserve the port(s) using bsock.resvaddr config to reserve address/port
+combinations.
+
+At startup, bsock will attempt to bind to addresses listed in the file
+bsock.resvaddr.  These sockets are persistently held open in the daemon and
+a copy of the same socket is returned to authorized clients requesting a
+persistent reserved address.  This feature can be used to protect ports that
+are >= IPPORT_RESERVED as it can prevent race conditions during the restarts
+of other daemons in which a rogue process can grab the designated port used
+by the daemon.  Persistent reserved addresses in bsock subsume the service
+provided by the portreserve/portrelease program (see References).  Persistent
+reserved addresses in bsock also eliminate race conditions during program
+restart during which pending client connections in the listen backlog queue
+are dropped when the socket is closed and reopened.
+
+
+bsock config file line format:
+    username address_family socket_type protocol service_or_port address
+    e.g. apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
+- specify separate lines for each difference, since exact match is performed
+  (and use single space character between fields; no leading or trailing space)
+- strings are case-sensitive
+    use uppercase addr family, socktype constants (e.g. AF_INET, SOCK_STREAM)
+    use lowercase for protocol (e.g. tcp) or alias in /etc/protocols
+- use port 0 if service_or_port does not apply to addr family (e.g. AF_UNIX)
+- blank lines and comments (lines beginning with #) are skipped
+- address must be an address string not a constant, e.g.
+   0.0.0.0            (for INADDR_ANY)
+   127.0.0.1          (for INADDR_LOOPBACK)
+   255.255.255.255    (for INADDR_BROADCAST)
+   ::                 (for IN6ADDR_ANY_INIT)
+   ::1                (for IN6ADDR_LOOPBACK_INIT)
+- config file updates should be made atomically with mv; config files
+  should not be updated in-place (prevent corruption during processing).
+
+
+bsock setup
+  make
+  make install   # 'install-suid' to install bsock setuid root)
+  # populate config file, e.g. /usr/local/etc/bsock
+    apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
+    nagios AF_INET SOCK_STREAM tcp 5666 0.0.0.0
+    postgres AF_INET SOCK_STREAM tcp 5432 0.0.0.0
+    mysql AF_INET SOCK_STREAM tcp 3306 0.0.0.0
+  # (optional) resvaddr file, e.g. /usr/local/etc/bsock.resvaddr
+    # nagios
+    AF_INET SOCK_STREAM tcp 5666 0.0.0.0
+    # postgres
+    AF_INET SOCK_STREAM tcp 5432 0.0.0.0
+    # mysql
+    AF_INET SOCK_STREAM tcp 3306 0.0.0.0
+
+Files  (default PREFIX=/usr/local)
+  /usr/local/etc/bsock               # bsock authorization (config)
+  /usr/local/etc/bsock.resvaddr      # bsock persistent reserved addrs
+  /usr/local/lib/libbsock.so         # bsock library for client/daemon
+  /usr/local/lib/libbsock_preload.so # bsock library for LD_PRELOAD
+  /usr/local/sbin/bsock              # bsock executable (daemon)
+  /usr/local/var/run/bsock/          # dir containing unix domain socket
+  /usr/local/var/run/bsock/socket    # bsock daemon unix domain socket
+
+bsock logs to LOG_DAEMON syslog facility, by default.
+Be sure to configure /etc/syslog.conf (or /etc/rsyslog.conf) for daemon.info
+Compile with -DBSOCK_SYSLOG_FACILITY=<LOG_xxxxx> to modify.
+See /usr/include/sys/syslog.h (or similar) for LOG_xxxxx values.
+
+bsock is installed with ownership root:daemon, permissions 0550 with
+'make install' target.  Permissions 4550 are used with 'make install-suid'.
+Compile with -DBSOCK_GROUP=xxxxx to modify the group ownership.
+By default, this restricts only those users part of group 'daemon' to run
+bsock.  It is recommended that you use a custom group, e.g. bindsock, and
+to add to this custom group those specialized role accounts (e.g. apache)
+under which your daemons run.  This group is also used to permission the
+bsock unix domain socket (e.g. /usr/local/var/run/bsock/socket) to restrict
+which accounts can connect to bsock daemon through socket.  Permission modes
+can be modified with gmake command line overrides to BSOCK_MODE and/or
+BSOCK_SOCKET_MODE.  The BSOCK_CONFIG file is created 0644 so that others can
+see the config for troubleshooting.  Change this after install if other
+permssions are preferred.
+
+
+bsock is by no means the end-all-be-all of security.  Defense-in-depth is
+encouraged.  On Linux, iptables can additionally be used to augment security,
+as can firewalls external to the host.  SELinux policies or grsecurity might
+also be used, but bsock subverts some of the targetted policies that restrict
+the ports to which a specific executable can bind since bsock performs the
+bind() as root if bsock config permits.
+
+
+References:
+  Secure interprocess communication
+    http://cr.yp.to/docs/secureipc.html
+  Unix socket magic
+    http://www.lst.de/~okir/blackhats/node121.html
+  Linux Socket Programming by Example - Warren Gay
+    "17. Passing Credentials and File Descriptors"
+  authbind  (Ian Jackson, 1998)
+    http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind
+  portreserve  (Tim Waugh, 2003)
+    http://cyberelk.net/tim/software/portreserve/
+
+
+Alternative ideas:
+Another approach (code not written here) might be to have a small setuid root
+program that bind()s to socket, dup2() to STDIN_FILENO, and then fork()s and
+exec()s a daemon, which inherits the socket and can listen().  This method
+would provide only for a single listen() socket, which can meet the needs
+of some daemons.  Additional descriptors could be opened fds > STDERR_FILENO
+and would be inherited by the child daemon and child daemon could determine
+which addresses to which each fd was bound by calling getsockname().  In any
+case, the root program would need to maintain configuration information about
+which addresses and ports to bind to and how to exec each program.  It would
+have an advantage over bsock in that a particular program could be associated
+with a particular address and port.  bsock is limited to uid privileging
+(although it could be extended to get process info on the pid connecting to the
+unix domain socket).  However, bsock is simpler in that it allows the client
+to request specific addresses as the client desires the socket, rather than
+possibly opening too many.  Also, bsock does not get in the way of programs
+which supervise daemons, as the program described here might.
+
+authbind was created circa 1999 and is similar to some bsock functions.
+authbind allows a program which does not or should not run as root to bind
+a socket to low-numbered ports in a controlled way.  It uses LD_LIBRARY_PATH
+and interposes a custom bind() to catch and redirect bind() to a privileged
+subprocess.  [Ed: bsock daemon using unix domain sockets to transfer file
+descriptor was developed prior to the author becoming aware of authbind,
+and bsock use of unix domain sockets provides better error detection.]
+bsock supports IPv4, IPv6, and unix domain sockets.
+authbind supports only IPv4, though there is a patch for IPv6 support
+  (http://toroid.org/ams/etc/authbind-ipv6-support)
+authbind configuration supports multiple ways to authorize bind request
+including specific IP and port, CIDR prefix matching, and port ranges.
+bsock is intentionally less flexible, supporting only exact matches for IP and
+port.  authbind distributes the configs in filesystem paths to avoid reading
+and parsing the entire config for each request, whereas bsock currently has
+a monolithic config file.  (If bsock config parsing becomes a performance
+bottleneck, this will be revisited.)
+authbind disallows port >= IPPORT_RESERVED/2 and < IPPORT_RESERVED since
+those are used by bindresvport() for, e.g. rsh outbound connections.
+authbind presumably must reject these ports because one authbind config file
+authorization mode just looks at IP address and will bind to any port
+requested if the IP address matches.  On the other hand, bsock requires
+explicit specification of port, so sysadmin can explicitly configure
+bsock to allow a port in the range [IPPORT_RESERVED/2, IPPORT_RESERVED).
+
+Similar to authbind, bsock provides a simple .so to interpose the bind() used
+by unmodified executables so that the bsock daemon is called when the
+executable calls bind().
+  LD_PRELOAD=/usr/local/lib/libbsock_preload.so
+Implementation consideration when using LD_PRELOAD:
+If the executable calls bind() with an AF_INET or AF_INET6 addr with port 0,
+and expects a high port, then bsock_preload.c might be modified to detect
+port 0 and call bind() from libc instead of the bsock daemon, which will bind()
+to a low (privileged) port, if the caller is authorized.  Outbound connections
+from many executables omit the call to bind(), so this is unlikely to be a
+problem for most usage.
+
+Example on RedHat/Fedora:
+  /etc/rc.d/init.d/rpcbind
+    modify: daemon $prog $RPCBIND_ARGS $1
+    to be:  LD_PRELOAD=/usr/local/lib/libbsock_preload.so \
+            daemon $prog $RPCBIND_ARGS $1
+  /etc/rc.d/init.d/ypbind
+    modify: daemon $exec $OTHER_YPBIND_OPTS
+    to be:  LD_PRELOAD=/usr/local/lib/libbsock_preload.so \
+            daemon $exec $OTHER_YPBIND_OPTS
+
+
+sysctl can prevent accidental usage of specific non-privileged ports
+http://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
+  /proc/sys/net/ipv4/ip_local_port_range
+  /proc/sys/net/ipv4/ip_local_reserved_ports
+FreeBSD has even more flexible sysctl settings.  However, it is not a good
+idea to modify traditional reserved port range where IPPORT_RESERVED=1024,
+so bsock.resvaddr is recommended instead of changing FreeBSD defaults for
+for net.inet.ip.portrange.reserved* or net.inet.ip.portrange.low*.
+bsock does not query for and therefore does not honor changing these.
+  net.inet.ip.portrange.reservedlow: 0
+  net.inet.ip.portrange.reservedhigh: 1023
+  net.inet.ip.portrange.hilast: 65535
+  net.inet.ip.portrange.hifirst: 49152
+  net.inet.ip.portrange.last: 65535
+  net.inet.ip.portrange.first: 10000
+  net.inet.ip.portrange.lowlast: 600
+  net.inet.ip.portrange.lowfirst: 1023
+
+
+FUTURE:
+- prepare patches for popular programs to attempt to connect to bsock as
+  fallback if traditional bind() fails (link against libbsock.so or attempt
+  dlopen()?).
+- create small program that checks for canonicalized strings in config file
+  and provides more detailed error messages for config file errors
+  (might do at daemon startup or add command line config check flag)
+  might create mcdb with hash of canonicalized username + addrinfo strings
+- provide example client code that interfaces with bsock for popular programs
+  such as Apache.  (Also: graceful Apache restart via transferring
+  the listening socket(s)).
+- bsock_bind is not pthread cancel-safe in order to avoid dependency on
+  -lpthread.  Create a version of the code that is pthread cancel-safe.
+  (at least for bsock_bind_viasock(); bsock_bind_viafork() harder)
+  (no -lpthread for perf for short-lived programs not loading extra lib)
+- create test target that compiles with overrides and config file
+  so that test can occur without root privilege
+  (create directory with config file 700 for test)
+  (build with outputs going elsewhere using VPATH and add -I.. so that
+   developer can not accidentally 'install' test executables)
+- run programs with memory leak generators and stuff
+- port and test bsock on additional platforms (FreeBSD, OpenBSD, ...)
+- explore replacing bsock handler threads with poll()-based solution
+  and single, coarse timer for connection expiration.  (would need to call
+  time() in struct bsock_client_st and scan pollset at intervals if
+  open connections -- use much longer poll if no open connections)
+- run-time configurable reserved ports; might modify bsock_resvaddr.c to
+  create reserved port table that can be queried by bsock_bindresvport.c

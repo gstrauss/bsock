@@ -1,26 +1,26 @@
-bindsocket installation
+bsock installation
 
   $ make
   $ make install
 
-  # Edit and add entries to /usr/local/etc/bindsocket
-  # Edit and add entries to /usr/local/etc/bindsocket.resvaddr (optional)
+  # Edit and add entries to /usr/local/etc/bsock
+  # Edit and add entries to /usr/local/etc/bsock.resvaddr (optional)
 
-  # Add bindsocket to your favorite set of system init scripts:
-  #   /usr/local/sbin/bindsocket -d
-  # (Hint: start bindsocket after networking interfaces are configured)
+  # Add bsock to your favorite set of system init scripts:
+  #   /usr/local/sbin/bsock -d
+  # (Hint: start bsock after networking interfaces are configured)
 
   # Configure syslog to log daemon.info (optional, but recommended)
 
-  # Configure privileged daemons to use bindsocket without running as root
+  # Configure privileged daemons to use bsock without running as root
   #   Add the role account running the daemon to group 'daemon'
   #     (or change secure-by-default permissions on socket -- see NOTES file)
-  #   LD_PRELOAD=/usr/local/lib/libbindsocket_preload.so daemon_program
+  #   LD_PRELOAD=/usr/local/lib/libbsock_preload.so daemon_program
 
 See NOTES for more technical (and probably less readable) details and features.
 See Makefile for various overrides, such as alternate installation location.
 
-bindsocket config file line format:
+bsock config file line format:
     username address_family socket_type protocol service_or_port address
     e.g. apache AF_INET SOCK_STREAM tcp 80 0.0.0.0
 - specify separate lines for each difference, since exact match is performed
@@ -39,6 +39,6 @@ bindsocket config file line format:
 - config file updates should be made atomically with mv; config files
   should not be updated in-place (prevent corruption during processing).
 
-bindsocket.resvaddr config file line format:
-- same as bindsocket config, except omit 'username' field
+bsock.resvaddr config file line format:
+- same as bsock config, except omit 'username' field
   e.g. AF_INET SOCK_STREAM tcp 80 0.0.0.0

@@ -1,5 +1,5 @@
 /*
- * bindsocket_addrinfo - struct addrinfo string manipulation
+ * bsock_addrinfo - struct addrinfo string manipulation
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -29,7 +29,7 @@
 /* define _BSD_SOURCE for getprotobyname_r(), getprotobynumber_r() */
 #define _BSD_SOURCE
 
-#include <bindsocket_addrinfo.h>
+#include <bsock_addrinfo.h>
 
 #include <sys/types.h>
 #include <ctype.h>
@@ -44,7 +44,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 
-#include <bindsocket_unixdomain.h>
+#include <bsock_unixdomain.h>
 
 /* Note: routines here are simple sequences of short lists of string comparisons
  * A more performant approach might be table-driven sorted tables and bsearch().
@@ -52,7 +52,7 @@
  * less string traversals could be achieved through additional coding */
 
 static int
-bindsocket_addrinfo_family_from_str (const char * const restrict family)
+bsock_addrinfo_family_from_str (const char * const restrict family)
 {
     /* list of protocol families below is not complete */
     if (        0 == strcmp(family, "AF_INET")
@@ -78,7 +78,7 @@ bindsocket_addrinfo_family_from_str (const char * const restrict family)
 }
 
 static const char *
-bindsocket_addrinfo_family_to_str (const int family)
+bsock_addrinfo_family_to_str (const int family)
 {
     /* list of protocol families below is not complete */
     switch (family) {
@@ -92,7 +92,7 @@ bindsocket_addrinfo_family_to_str (const int family)
 }
 
 static int
-bindsocket_addrinfo_socktype_from_str (const char * const restrict socktype)
+bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
 {
     if (     0 == strcmp(socktype, "SOCK_STREAM"))
         return SOCK_STREAM;
@@ -115,7 +115,7 @@ bindsocket_addrinfo_socktype_from_str (const char * const restrict socktype)
 }
 
 static const char *
-bindsocket_addrinfo_socktype_to_str (const int socktype)
+bsock_addrinfo_socktype_to_str (const int socktype)
 {
     switch (socktype) {
       case SOCK_STREAM:    return "SOCK_STREAM";
@@ -131,7 +131,7 @@ bindsocket_addrinfo_socktype_to_str (const int socktype)
 }
 
 static int
-bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol)
+bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
     if (!isdigit(protocol[0])) {
         struct protoent pe;
@@ -158,8 +158,8 @@ bindsocket_addrinfo_protocol_from_str (const char * const restrict protocol)
 }
 
 static char *
-bindsocket_addrinfo_protocol_to_str (const int proto,
-                                     char * const buf, const size_t bufsz)
+bsock_addrinfo_protocol_to_str (const int proto,
+                                char * const buf, const size_t bufsz)
 {
     struct protoent pe;
     struct protoent *peres;
@@ -171,9 +171,9 @@ bindsocket_addrinfo_protocol_to_str (const int proto,
 }
 
 bool
-bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
-                              const struct bindsocket_addrinfo_strs *
-                                const restrict aistr)
+bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
+                         const struct bsock_addrinfo_strs *
+                           const restrict aistr)
 {
     struct addrinfo hints = {
       .ai_flags     = AI_V4MAPPED | AI_ADDRCONFIG,
@@ -182,9 +182,9 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
       .ai_canonname = NULL,
       .ai_next      = NULL
     };
-    hints.ai_family   = bindsocket_addrinfo_family_from_str(aistr->family);
-    hints.ai_socktype = bindsocket_addrinfo_socktype_from_str(aistr->socktype);
-    hints.ai_protocol = bindsocket_addrinfo_protocol_from_str(aistr->protocol);
+    hints.ai_family   = bsock_addrinfo_family_from_str(aistr->family);
+    hints.ai_socktype = bsock_addrinfo_socktype_from_str(aistr->socktype);
+    hints.ai_protocol = bsock_addrinfo_protocol_from_str(aistr->protocol);
     if (-1==hints.ai_family || -1==hints.ai_socktype || -1==hints.ai_protocol)
         return false;  /* invalid strings */
 
@@ -240,17 +240,17 @@ bindsocket_addrinfo_from_strs(struct addrinfo * const restrict ai,
 }
 
 bool
-bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
-                            struct bindsocket_addrinfo_strs * const aistr,
-                            char * const restrict buf, const size_t bufsz)
+bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
+                       struct bsock_addrinfo_strs * const aistr,
+                       char * const restrict buf, const size_t bufsz)
 {
     /* (Note: buf should be at least 56 bytes for IPv6 tcp + port + address)
      * (Recommended bufsz is >= 68 for 15 char protocol, and 80 for safety)
      * (Recommended bufsz is 128 if code changed to copy AF_UNIX sun_path) */
     size_t protolen;
-    aistr->family   = bindsocket_addrinfo_family_to_str(ai->ai_family);
-    aistr->socktype = bindsocket_addrinfo_socktype_to_str(ai->ai_socktype);
-    aistr->protocol = bindsocket_addrinfo_protocol_to_str(ai->ai_protocol,
+    aistr->family   = bsock_addrinfo_family_to_str(ai->ai_family);
+    aistr->socktype = bsock_addrinfo_socktype_to_str(ai->ai_socktype);
+    aistr->protocol = bsock_addrinfo_protocol_to_str(ai->ai_protocol,
                                                           buf, bufsz);
     if (NULL==aistr->family || NULL==aistr->socktype || NULL==aistr->protocol)
         return false;
@@ -283,8 +283,8 @@ bindsocket_addrinfo_to_strs(const struct addrinfo * const restrict ai,
 }
 
 bool
-bindsocket_addrinfo_split_str(struct bindsocket_addrinfo_strs * const aistr,
-                              char * const restrict str)
+bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
+                         char * const restrict str)
 {
     return (   NULL != (aistr->family   = strtok(str,  " "))
             && NULL != (aistr->socktype = strtok(NULL, " "))
@@ -296,9 +296,9 @@ bindsocket_addrinfo_split_str(struct bindsocket_addrinfo_strs * const aistr,
 }
 
 bool
-bindsocket_addrinfo_recv (const int fd,
-                          struct addrinfo * const restrict ai,
-                          int * const restrict rfd)
+bsock_addrinfo_recv (const int fd,
+                     struct addrinfo * const restrict ai,
+                     int * const restrict rfd)
 {
     /* receive addrinfo request */
     /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
@@ -307,27 +307,27 @@ bindsocket_addrinfo_recv (const int fd,
     /* N.B. data received from client is untrustworthy; validate well */
     /* N.B. partial write from client results in error;
      *      client will have to open new connection to retry */
-    uint64_t protover = 0; /* bindsocket v0 and space for flags */
+    uint64_t protover = 0; /* bsock v0 and space for flags */
     struct iovec iov[] = {
       { .iov_base = &protover,   .iov_len = sizeof(protover) },
       { .iov_base = ai,          .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
     unsigned int nrfds = 1;
-    ssize_t r =bindsocket_unixdomain_recv_fds(fd, rfd, &nrfds, iov,
+    ssize_t r =bsock_unixdomain_recv_fds(fd, rfd, &nrfds, iov,
                                               sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
     if (r < sizeof(protover))
         return false;  /* truncated msg */
 
-    if (0 == protover) {  /* bindsocket protocol version */
+    if (0 == protover) {  /* bsock protocol version */
         if (r >= sizeof(protover)+sizeof(struct addrinfo) && ai->ai_addrlen > 0
             && r == sizeof(protover)+sizeof(struct addrinfo)+ai->ai_addrlen) {
             ai->ai_addr      = iov[2].iov_base; /* assign pointer values */
             ai->ai_canonname = NULL;
             ai->ai_next      = NULL;
-            /*ai->ai_flags = 0;*//* ai_flags are used for bindsocket flags */
+            /*ai->ai_flags = 0;*//* ai_flags are used for bsock flags */
             return true;
         }
         return false;  /* truncated msg or invalid ai->ai_addrlen */
@@ -335,7 +335,7 @@ bindsocket_addrinfo_recv (const int fd,
     else if ('F' == ((char *)&protover)[1] && '_' == ((char *)&protover)[2]) {
         /* protover taken as char string beginning "AF_" or "PF_" */
         /* collapse iovec array into string, parse into tokens, fill addrinfo */
-        struct bindsocket_addrinfo_strs aistr;
+        struct bsock_addrinfo_strs aistr;
         char line[256];
         if (r >= sizeof(line)) return false; /* should not happen */
         /*(sizeof(protover)+sizeof(struct addrinfo) == 40; fits in line[256])*/
@@ -350,8 +350,8 @@ bindsocket_addrinfo_recv (const int fd,
         ai->ai_addrlen = iov[2].iov_len;
         ai->ai_addr    = (struct sockaddr *)iov[2].iov_base;
 
-        return bindsocket_addrinfo_split_str(&aistr, line)
-          ? bindsocket_addrinfo_from_strs(ai, &aistr)
+        return bsock_addrinfo_split_str(&aistr, line)
+          ? bsock_addrinfo_from_strs(ai, &aistr)
           : false;  /* invalid client request; truncated msg */
     }
 
@@ -359,22 +359,21 @@ bindsocket_addrinfo_recv (const int fd,
 }
 
 bool
-bindsocket_addrinfo_send (const int fd,
-                          const struct addrinfo * const restrict ai,
-                          const int sfd)
+bsock_addrinfo_send (const int fd,
+                     const struct addrinfo * const restrict ai, const int sfd)
 {
     /* msg sent atomically, or else not transmitted: error w/ errno==EMSGSIZE */
     /* Note: struct addrinfo contains pointers.  These are not valid on other
      * side of socket, but do expose client pointer addresses to server.
      * Could avoid by copying struct addrinfo, setting pointers zero in copy */
-    uint64_t protover = 0; /* bindsocket v0 and space for flags */
+    uint64_t protover = 0; /* bsock v0 and space for flags */
     struct iovec iov[] = {
       { .iov_base = &protover,             .iov_len = sizeof(protover) },
       { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
     };
-    ssize_t w =bindsocket_unixdomain_send_fds(fd, &sfd, (sfd >= 0), iov,
-                                              sizeof(iov)/sizeof(struct iovec));
+    ssize_t w = bsock_unixdomain_send_fds(fd, &sfd, (sfd >= 0), iov,
+                                          sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
