@@ -16,13 +16,13 @@ CFLAGS+=-O2
 
 RPATH= -Wl,-rpath=$(PREFIX)/lib
 
-bsock.m.o:    CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
-bsock.m.o:    CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
-bsock.m.o:    CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
-bsock.m.o:    CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
-bsock.t.o:    CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
-bsock_bind.o: CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
-bsock_bind.o: CFLAGS+=-DBSOCK_EXE='"$(BSOCK_EXE)"'
+bsock.m.o:        CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
+bsock.m.o:        CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
+bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
+bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
+bsock.t.o:        CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
+bsock_bind.o:     CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
+bsock_bind.o:     CFLAGS+=-DBSOCK_EXE='"$(BSOCK_EXE)"'
 bsock_resvaddr.o: CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
 
 bsock_sobjs=  bsock_unixdomain.o \

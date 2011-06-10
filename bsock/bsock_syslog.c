@@ -30,6 +30,7 @@
 
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -90,4 +91,6 @@ bsock_syslog (const int errnum, const int priority,
                                 { "\n", 1 } };
         writev(bsock_syslog_logfd, iov, sizeof(iov)/sizeof(struct iovec));
     }
+
+    errno = errnum;
 }

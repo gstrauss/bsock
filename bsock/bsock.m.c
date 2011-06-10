@@ -297,7 +297,9 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     /*cmplen = (size_t)(p - cmpstr);*/
   #endif
 
-    return (NULL != strstr(bsock_authz_lines, cmpstr));
+    return (NULL != strstr(bsock_authz_lines, cmpstr)
+      ? true
+      : ((errno=EACCES), false));
 }
 
 static int
@@ -410,7 +412,10 @@ bsock_client_session (struct bsock_client_st * const restrict c,
 
     } while (0);
 
-    flag = (rc == EXIT_SUCCESS) ? 0 : errno;  /*(iov.iov_base = &flag)*/
+    if (rc == EXIT_SUCCESS)
+        flag = 0;       /*(iov.iov_base = &flag)*/
+    else if (0 == (flag = errno))
+        flag = EACCES;  /*(iov.iov_base = &flag)*/
 
     /* (remove from thread table prior to send due to observed process and 
      *  thread execution order where a sequence of bind requests from same
