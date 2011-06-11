@@ -1,5 +1,5 @@
 /*
- * bsock_unixdomain - unix domain socket sendmsg and recvmsg wrappers
+ * bsock_unix - unix domain socket sendmsg and recvmsg wrappers
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -26,8 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef INCLUDED_BSOCK_UNIXDOMAIN_H
-#define INCLUDED_BSOCK_UNIXDOMAIN_H
+#ifndef INCLUDED_BSOCK_UNIX_H
+#define INCLUDED_BSOCK_UNIX_H
 
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -68,30 +68,30 @@ extern "C" {
 #endif
 
 int
-bsock_unixdomain_socket_connect (const char * const restrict sockpath);
+bsock_unix_socket_connect (const char * const restrict sockpath);
 
 int
-bsock_unixdomain_socket_bind_listen (const char * const restrict sockpath,
-                                     int * const restrict bound);
+bsock_unix_socket_bind_listen (const char * const restrict sockpath,
+                               int * const restrict bound);
 
 ssize_t
-bsock_unixdomain_recv_fds (const int fd,
-                           int * const restrict rfds,
-                           unsigned int * const restrict nrfds,
-                           struct iovec * const restrict iov,
-                           const size_t iovlen);
+bsock_unix_recv_fds (const int fd,
+                     int * const restrict rfds,
+                     unsigned int * const restrict nrfds,
+                     struct iovec * const restrict iov,
+                     const size_t iovlen);
 
 ssize_t
-bsock_unixdomain_send_fds (const int fd,
-                           const int * const restrict sfds,
-                           unsigned int nsfds,
-                           struct iovec * const restrict iov,
-                           const size_t iovlen);
+bsock_unix_send_fds (const int fd,
+                     const int * const restrict sfds,
+                     unsigned int nsfds,
+                     struct iovec * const restrict iov,
+                     const size_t iovlen);
 
 int
-bsock_unixdomain_getpeereid (const int s,
-                             uid_t * const restrict euid,
-                             gid_t * const restrict egid);
+bsock_unix_getpeereid (const int s,
+                       uid_t * const restrict euid,
+                       gid_t * const restrict egid);
 
 #ifdef __cplusplus
 }

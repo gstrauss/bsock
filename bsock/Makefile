@@ -25,11 +25,11 @@ bsock_bind.o:     CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
 bsock_bind.o:     CFLAGS+=-DBSOCK_EXE='"$(BSOCK_EXE)"'
 bsock_resvaddr.o: CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
 
-bsock_sobjs=  bsock_unixdomain.o \
-                   bsock_addrinfo.o \
-                   bsock_bind.o \
-                   bsock_daemon.o \
-                   bsock_syslog.o
+bsock_sobjs=  bsock_unix.o \
+              bsock_addrinfo.o \
+              bsock_bind.o \
+              bsock_daemon.o \
+              bsock_syslog.o
 $(bsock_sobjs):  CFLAGS+=-fPIC
 bsock_preload.o: CFLAGS+=-fPIC
 
@@ -67,7 +67,7 @@ install:
 	/usr/bin/install -m 0555 -p libbsock_preload.so $(PREFIX)/lib/
 	[ -f $(BSOCK_CONFIG) ] || \
           (/bin/touch $(BSOCK_CONFIG) && /bin/chmod 0644 $(BSOCK_CONFIG))
-install-headers: bsock_addrinfo.h bsock_bind.h bsock_unixdomain.h
+install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock
 	/usr/bin/install -m 0555 -p $^ $(PREFIX)/include/bsock/
 
@@ -77,14 +77,14 @@ clean-bsock:
 	$(RM) $(TARGETS) *.o
 
 bsock.m.o: bsock_addrinfo.h bsock_bindresvport.h bsock_daemon.h \
-           bsock_resvaddr.h bsock_syslog.h bsock_unixdomain.h
-bsock.t.o: bsock_unixdomain.h
-bsock_addrinfo.o: bsock_addrinfo.h bsock_unixdomain.h
-bsock_bind.o: bsock_bind.h bsock_unixdomain.h
+           bsock_resvaddr.h bsock_syslog.h bsock_unix.h
+bsock.t.o: bsock_unix.h
+bsock_addrinfo.o: bsock_addrinfo.h bsock_unix.h
+bsock_bind.o: bsock_bind.h bsock_unix.h
 bsock_bindresvport.o: bsock_bindresvport.h
-bsock_daemon.o: bsock_daemon.h bsock_syslog.h bsock_unixdomain.h
+bsock_daemon.o: bsock_daemon.h bsock_syslog.h bsock_unix.h
 bsock_resvaddr.o: bsock_resvaddr.h bsock_syslog.h
-bsock_unixdomain.o: bsock_unixdomain.h
+bsock_unix.o: bsock_unix.h
 bsock_syslog.o: bsock_syslog.h
 
 OSNAME:=$(shell /bin/uname -s)

@@ -44,7 +44,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 
-#include <bsock_unixdomain.h>
+#include <bsock_unix.h>
 
 /* Note: routines here are simple sequences of short lists of string comparisons
  * A more performant approach might be table-driven sorted tables and bsearch().
@@ -314,8 +314,8 @@ bsock_addrinfo_recv (const int fd,
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
     unsigned int nrfds = 1;
-    ssize_t r =bsock_unixdomain_recv_fds(fd, rfd, &nrfds, iov,
-                                              sizeof(iov)/sizeof(struct iovec));
+    ssize_t r = bsock_unix_recv_fds(fd, rfd, &nrfds, iov,
+                                    sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
     if (r < sizeof(protover))
@@ -372,8 +372,8 @@ bsock_addrinfo_send (const int fd,
       { .iov_base = (void *)(uintptr_t)ai, .iov_len = sizeof(struct addrinfo) },
       { .iov_base = ai->ai_addr,           .iov_len = ai->ai_addrlen }
     };
-    ssize_t w = bsock_unixdomain_send_fds(fd, &sfd, (sfd >= 0), iov,
-                                          sizeof(iov)/sizeof(struct iovec));
+    ssize_t w = bsock_unix_send_fds(fd, &sfd, (sfd >= 0), iov,
+                                    sizeof(iov)/sizeof(struct iovec));
     return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }

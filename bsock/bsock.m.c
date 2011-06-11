@@ -52,7 +52,7 @@
 #include <bsock_daemon.h>
 #include <bsock_resvaddr.h>
 #include <bsock_syslog.h>
-#include <bsock_unixdomain.h>
+#include <bsock_unix.h>
 
 #ifndef BSOCK_SYSLOG_IDENT
 #define BSOCK_SYSLOG_IDENT "bsock"
@@ -336,7 +336,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
         }
         ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
         if (-1 == c->uid) {
-            if (0 != bsock_unixdomain_getpeereid(c->fd, &c->uid, &c->gid)){
+            if (0 != bsock_unix_getpeereid(c->fd, &c->uid, &c->gid)){
                 bsock_syslog(errno, LOG_ERR, "getpeereid");
                 return EXIT_FAILURE;
             }
@@ -433,7 +433,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
     if (c->fd != fd) {
-        rc = (bsock_unixdomain_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
+        rc = (bsock_unix_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
               == iov.iov_len)
           ? EXIT_SUCCESS
           : EXIT_FAILURE;
@@ -679,7 +679,7 @@ main (int argc, char *argv[])
         }
 
         /* get client credentials */
-        if (0 != bsock_unixdomain_getpeereid(m.fd, &m.uid, &m.gid)) {
+        if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
             bsock_syslog(errno, LOG_ERR, "getpeereid");
             nointr_close(m.fd);
             continue;
@@ -699,7 +699,7 @@ main (int argc, char *argv[])
         pthread_mutex_unlock(&bsock_thread_table_mutex);
         if (NULL == c) {
             /* sendmsg with EAGAIN; permit only one request at a time per uid */
-            bsock_unixdomain_send_fds(m.fd, NULL, 0, &iov, 1);
+            bsock_unix_send_fds(m.fd, NULL, 0, &iov, 1);
             nointr_close(m.fd);
             continue;
         }

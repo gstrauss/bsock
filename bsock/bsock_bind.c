@@ -47,7 +47,7 @@
 extern char **environ;
 
 #include <bsock_addrinfo.h>
-#include <bsock_unixdomain.h>
+#include <bsock_unix.h>
 
 #ifndef BSOCK_POLL_TIMEOUT
 #define BSOCK_POLL_TIMEOUT 5000  /*(poll timeout in millisecs)*/
@@ -81,8 +81,7 @@ bsock_bind_send_addr_and_recv (const int fd,
                                const struct addrinfo * const restrict ai,
                                const int sfd)
 {
-    /* bsock_unixdomain_recv_fds()
-     *   fills errnum to indicate remote success/failure
+    /* bsock_unix_recv_fds() fills errnum to indicate remote success/failure
      * (no poll before sending addrinfo since this is first write to socket)
      * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port) */
     int rfd = -1;
@@ -91,7 +90,7 @@ bsock_bind_send_addr_and_recv (const int fd,
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
     if (bsock_addrinfo_send(sfd, ai, fd)
         &&  1 == retry_poll_fd(sfd, POLLIN, BSOCK_POLL_TIMEOUT)
-        && -1 != bsock_unixdomain_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
+        && -1 != bsock_unix_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
         if (-1 != rfd) {
             /* assert(rfd != fd); *//*(should not happen)*/
             if (0 == errnum) {
@@ -105,8 +104,7 @@ bsock_bind_send_addr_and_recv (const int fd,
     else {
         errnum = errno;
         /* server might have responded and closed socket before client sendmsg*/
-        if (EPIPE == errnum
-            && -1 == bsock_unixdomain_recv_fds(sfd, NULL, NULL, &iov, 1))
+        if (EPIPE == errnum && -1 == bsock_unix_recv_fds(sfd,NULL,NULL,&iov,1))
             errnum = EPIPE;
     }
 
@@ -166,7 +164,7 @@ bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
     int sfd;
 
     do {
-        sfd = bsock_unixdomain_socket_connect(BSOCK_SOCKET);
+        sfd = bsock_unix_socket_connect(BSOCK_SOCKET);
         if (-1 == sfd)
             return false;
         errnum = bsock_bind_send_addr_and_recv(fd, ai, sfd);

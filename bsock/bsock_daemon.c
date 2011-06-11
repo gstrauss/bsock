@@ -43,7 +43,7 @@
 extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
 #include <bsock_syslog.h>
-#include <bsock_unixdomain.h>
+#include <bsock_unix.h>
 
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
@@ -197,7 +197,7 @@ bsock_daemon_init (const int supervised)
     }
 
     /* Sanity check system socket option max memory for ancillary data
-     * (see bsock_unixdomain.h for more details) */
+     * (see bsock_unix.h for more details) */
   #ifdef __linux__
     {
         ssize_t r;
@@ -265,8 +265,7 @@ bsock_daemon_init_socket (const char * const restrict dir,
     atexit(bsock_daemon_atexit);
 
     mask = umask(0177); /* create socket with very restricted permissions */
-    sfd = bsock_unixdomain_socket_bind_listen(sockpath,
-                                              &bsock_daemon_socket_bound);
+    sfd = bsock_unix_socket_bind_listen(sockpath, &bsock_daemon_socket_bound);
     umask(mask);        /* restore prior umask */
     if (-1 == sfd) {
         bsock_syslog(errno, LOG_ERR, "socket,bind,listen");

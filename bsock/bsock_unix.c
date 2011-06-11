@@ -1,5 +1,5 @@
 /*
- * bsock_unixdomain - unix domain socket sendmsg and recvmsg wrappers
+ * bsock_unix - unix domain socket sendmsg and recvmsg wrappers
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -29,7 +29,7 @@
 /* (module contains both client and server code)
  * (code could be split into separate .c files, but keep together for brevity)*/
 
-#include <bsock_unixdomain.h>
+#include <bsock_unix.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -46,7 +46,7 @@ nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
 int
-bsock_unixdomain_socket_connect (const char * const restrict sockpath)
+bsock_unix_socket_connect (const char * const restrict sockpath)
 {
     /* connect to unix domain socket */
     /* (not bothering to retry socket() and connect(); lazy) */
@@ -74,8 +74,8 @@ bsock_unixdomain_socket_connect (const char * const restrict sockpath)
 }
 
 int
-bsock_unixdomain_socket_bind_listen (const char * const restrict sockpath,
-                                     int * const restrict bound)
+bsock_unix_socket_bind_listen (const char * const restrict sockpath,
+                               int * const restrict bound)
 {
     /* bind and listen to unix domain socket */
     /* (not bothering to retry bind() and listen(); lazy) */
@@ -118,9 +118,9 @@ bsock_unixdomain_socket_bind_listen (const char * const restrict sockpath,
 }
 
 static void
-bsock_unixdomain_recv_ancillary (struct msghdr * const restrict msg,
-                                 int * const restrict rfds,
-                                 unsigned int * const restrict nrfdsp)
+bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
+                           int * const restrict rfds,
+                           unsigned int * const restrict nrfdsp)
 {
     struct cmsghdr *cmsg;
     unsigned int nrfd = 0;
@@ -152,11 +152,11 @@ bsock_unixdomain_recv_ancillary (struct msghdr * const restrict msg,
 }
 
 ssize_t
-bsock_unixdomain_recv_fds (const int fd,
-                           int * const restrict rfds,
-                           unsigned int * const restrict nrfds,
-                           struct iovec * const restrict iov,
-                           const size_t iovlen)
+bsock_unix_recv_fds (const int fd,
+                     int * const restrict rfds,
+                     unsigned int * const restrict nrfds,
+                     struct iovec * const restrict iov,
+                     const size_t iovlen)
 {
     /* receive and return file descriptor(s) sent over unix domain socket */
     /* 'man cmsg' provides example code */
@@ -183,17 +183,17 @@ bsock_unixdomain_recv_fds (const int fd,
     if (msg.msg_flags & MSG_CTRUNC)
         syslog(LOG_CRIT, "recvmsg msg_flags MSG_CTRUNC unexpected");
 
-    bsock_unixdomain_recv_ancillary(&msg, rfds, nrfds);
+    bsock_unix_recv_ancillary(&msg, rfds, nrfds);
 
     return r;
 }
 
 ssize_t
-bsock_unixdomain_send_fds (const int fd,
-                           const int * const restrict sfds,
-                           unsigned int nsfds,
-                           struct iovec * const restrict iov,
-                           const size_t iovlen)
+bsock_unix_send_fds (const int fd,
+                     const int * const restrict sfds,
+                     unsigned int nsfds,
+                     struct iovec * const restrict iov,
+                     const size_t iovlen)
 {
     /* send iov msg and (optional) file descriptor(s) over unix domain socket */
     /* pass any non-zero-length data so client can distinguish msg from EOF
@@ -264,9 +264,9 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 #endif
 
 int
-bsock_unixdomain_getpeereid (const int s,
-                             uid_t * const restrict euid,
-                             gid_t * const restrict egid)
+bsock_unix_getpeereid (const int s,
+                       uid_t * const restrict euid,
+                       gid_t * const restrict egid)
 {
     return getpeereid(s, euid, egid);
 }
@@ -274,20 +274,20 @@ bsock_unixdomain_getpeereid (const int s,
 
 #if 0 /* sample code */
 ssize_t
-bsock_unixdomain_recvmsg (const int fd,
-                          struct iovec * const restrict iov,
-                          const size_t iovlen)
+bsock_unix_recvmsg (const int fd,
+                    struct iovec * const restrict iov,
+                    const size_t iovlen)
 {
     /* (nonblocking recvmsg(); caller might poll() before call to here)*/
-    return bsock_unixdomain_recv_fds(fd, NULL, NULL, iov, iovlen);
+    return bsock_unix_recv_fds(fd, NULL, NULL, iov, iovlen);
 }
 
 ssize_t
-bsock_unixdomain_sendmsg (const int fd,
-                          struct iovec * const restrict iov,
-                          const size_t iovlen)
+bsock_unix_sendmsg (const int fd,
+                    struct iovec * const restrict iov,
+                    const size_t iovlen)
 {
     /* (nonblocking sendmsg(); caller might poll() before call to here)*/
-    return bsock_unixdomain_send_fds(fd, NULL, 0, iov, iovlen);
+    return bsock_unix_send_fds(fd, NULL, 0, iov, iovlen);
 }
 #endif
