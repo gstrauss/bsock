@@ -630,8 +630,8 @@ main (int argc, char *argv[])
     if (!bsock_daemon_init(supervised))
         return EXIT_FAILURE;
 
-    sfd = bsock_daemon_init_socket(BSOCK_SOCKET_DIR, BSOCK_SOCKET, geteuid(),
-                                   gr->gr_gid, BSOCK_SOCKET_MODE);
+    sfd = bsock_daemon_init_socket(BSOCK_SOCKET, geteuid(), gr->gr_gid,
+                                   BSOCK_SOCKET_MODE);
     if (-1 == sfd)
         return EXIT_FAILURE;
 

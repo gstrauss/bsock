@@ -43,8 +43,7 @@ bool
 bsock_daemon_init (const int supervised);
 
 int
-bsock_daemon_init_socket (const char * const restrict dir,
-                          const char * const restrict sockpath,
+bsock_daemon_init_socket (const char * const restrict sockpath, /*(persistent)*/
                           const uid_t uid, const gid_t gid,
                           const mode_t mode);
 

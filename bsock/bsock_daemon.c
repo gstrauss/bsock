@@ -235,24 +235,33 @@ bsock_daemon_atexit (void)
 }
 
 int
-bsock_daemon_init_socket (const char * const restrict dir,
-                          const char * const restrict sockpath,
+bsock_daemon_init_socket (const char * const restrict sockpath,
                           const uid_t uid, const gid_t gid, const mode_t mode)
 {
     /* N.B.: this routine supports a single (one) socket per program */
-    struct stat st;
     int sfd;
     mode_t mask;
-
     /* sanity check ownership and permissions on dir that will contain socket */
     /* (other ownership and permissions can be safe; this enforces one option)*/
     /* (note: not checking entire tree above socket dir; TOC-TOU) */
-    if (0 != stat(dir, &st)) {
-        bsock_syslog(errno, LOG_ERR, dir);
-        return -1;
+    char * const slash = strrchr(sockpath,'/');
+    if (NULL != slash && '/' == *sockpath) {
+        struct stat st;
+        char dir[slash-sockpath+2];
+        memcpy(dir, sockpath, slash-sockpath+1);
+        dir[slash != sockpath ? slash-sockpath : 1] = '\0';
+        if (0 != stat(dir, &st)) {
+            bsock_syslog(errno, LOG_ERR, dir);
+            return -1;
+        }
+        if (st.st_uid != uid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
+            bsock_syslog(EPERM, LOG_ERR,
+                         "ownership/permissions incorrect on %s", dir);
+            return -1;
+        }
     }
-    if (st.st_uid != uid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-        bsock_syslog(EPERM,LOG_ERR,"ownership/permissions incorrect on %s",dir);
+    else {
+        bsock_syslog(EINVAL, LOG_ERR, "socket path must be absolute path");
         return -1;
     }
 

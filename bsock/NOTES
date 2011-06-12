@@ -244,6 +244,10 @@ bsock does not query for and therefore does not honor changing these.
   net.inet.ip.portrange.lowfirst: 1023
 
 
+bsock transfers binary data over unix domain sockets and assumes that
+endianness will not be different between processes on the same machine.
+
+
 FUTURE:
 - prepare patches for popular programs to attempt to connect to bsock as
   fallback if traditional bind() fails (link against libbsock.so or attempt
