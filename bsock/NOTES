@@ -255,8 +255,8 @@ FUTURE:
 - provide example client code that interfaces with bsock for popular programs
   such as Apache.  (Also: graceful Apache restart via transferring
   the listening socket(s)).
-- bsock_bind is not pthread cancel-safe in order to avoid dependency on
-  -lpthread.  Create a version of the code that is pthread cancel-safe.
+- libbsock.so is thread-safe, but not pthread cancel-safe and might leak fds
+  if cancelled.  Create a version of the code that is pthread cancel-safe.
   (at least for bsock_bind_viasock(); bsock_bind_viafork() harder)
   (no -lpthread for perf for short-lived programs not loading extra lib)
 - create test target that compiles with overrides and config file

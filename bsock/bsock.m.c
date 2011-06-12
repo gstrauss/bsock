@@ -195,7 +195,7 @@ bsock_authz_config (void)
 
         if (0 != fstat(fd, &st)
             || st.st_uid != geteuid() || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-            bsock_syslog((errno = EPERM), LOG_ERR,
+            bsock_syslog(EPERM, LOG_ERR,
                          "ownership/permissions incorrect on %s", BSOCK_CONFIG);
             break;
         }
@@ -253,7 +253,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         return false;
 
     if (ai->ai_family != ai->ai_addr->sa_family) {
-        bsock_syslog((errno = EINVAL), LOG_ERR, "addrinfo inconsistent");
+        bsock_syslog(EINVAL, LOG_ERR, "addrinfo inconsistent");
         return false;
     }
 
@@ -261,8 +261,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
      * (validate and canonicalize user input)
      * (user input converted to addrinfo and back to str to canonicalize str) */
     if (!bsock_addrinfo_to_strs(ai, &aistr, bufstr, sizeof(bufstr))) {
-        bsock_syslog((errno = ENOSPC), LOG_ERR,
-                     "addrinfo string expansion is too long");
+        bsock_syslog(ENOSPC, LOG_ERR, "addrinfo string expansion is too long");
         return false;
     }
   #if 0
@@ -270,7 +269,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                       pw.pw_name, aistr.family, aistr.socktype, aistr.protocol,
                       aistr.service, aistr.addr);
     if (cmplen >= sizeof(cmpstr)) {
-            bsock_syslog((errno = ENOSPC), LOG_ERR,
+            bsock_syslog(ENOSPC, LOG_ERR,
                          "addrinfo string expansion is too long");
             return false;
     }
@@ -288,8 +287,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
         || (*(p-1) = ' ',
             NULL==(p=memccpy(p,aistr.addr,    '\0',sizeof(cmpstr)-(p-cmpstr))))
         || sizeof(cmpstr) == p-cmpstr   ) {
-        bsock_syslog((errno = ENOSPC), LOG_ERR,
-                     "addrinfo string expansion is too long");
+        bsock_syslog(ENOSPC, LOG_ERR, "addrinfo string expansion is too long");
         return false;
     }
     *(p-1) = '\n';
@@ -532,11 +530,11 @@ bsock_thread_signals (void)
     (void) sigaddset(&sigs, SIGTERM);
     /* block signals (signal mask inherited by threads subsequently created) */
     if (0 != (errnum = pthread_sigmask(SIG_BLOCK, &sigs, NULL))) {
-        bsock_syslog((errno = errnum), LOG_ERR, "pthread_sigmask");
+        bsock_syslog(errnum, LOG_ERR, "pthread_sigmask");
         return;
     }
     if (0 != (errnum = pthread_create(&thread, NULL, &bsock_sigwait, &sigs)))
-        bsock_syslog((errno = errnum), LOG_ERR, "pthread_create");
+        bsock_syslog(errnum, LOG_ERR, "pthread_create");
 }
 
 int
@@ -587,8 +585,7 @@ main (int argc, char *argv[])
             return EXIT_FAILURE;
         }
         if (!S_ISSOCK(st.st_mode)) {
-            bsock_syslog((errno = ENOTSOCK), LOG_ERR,
-                         "invalid socket on bsock stdin");
+            bsock_syslog(ENOTSOCK, LOG_ERR, "invalid socket on bsock stdin");
             return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
         }
         argv += optind;
@@ -605,8 +602,7 @@ main (int argc, char *argv[])
                   aistr.service  = argv[3];
                   aistr.addr     = argv[4];
                   break;
-          default: bsock_syslog((errno = EINVAL), LOG_ERR,
-                                "invalid number of arguments");
+          default: bsock_syslog(EINVAL, LOG_ERR, "invalid number of arguments");
                    return EXIT_FAILURE;
         }
 
@@ -622,8 +618,7 @@ main (int argc, char *argv[])
 
     if (getuid() != geteuid()) {
         /* do not permit setuid privileges to initiate daemon mode */
-        bsock_syslog((errno = EACCES), LOG_ERR,
-                     "daemon can not be started via setuid");
+        bsock_syslog(EACCES, LOG_ERR, "daemon can not be started via setuid");
         return EXIT_FAILURE;
     }
 

@@ -248,8 +248,7 @@ bsock_resvaddr_config (void)
 
         if (0 != fstat(fileno(cfg), &st)
             || st.st_uid != geteuid() || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-            bsock_syslog((errno = EPERM), LOG_ERR,
-                         "ownership/permissions incorrect on %s",
+            bsock_syslog(EPERM,LOG_ERR,"ownership/permissions incorrect on %s",
                          BSOCK_RESVADDR_CONFIG);
             break;
         }
@@ -260,8 +259,7 @@ bsock_resvaddr_config (void)
                 continue;  /* skip # comments, blank lines */
             if (   !bsock_addrinfo_split_str(&aistr, line)
                 || !bsock_addrinfo_from_strs(&ai, &aistr)   ) {
-                bsock_syslog((errno = EINVAL), LOG_ERR,
-                             "error parsing line %u in %s",
+                bsock_syslog(EINVAL, LOG_ERR, "error parsing line %u in %s",
                              lineno, BSOCK_RESVADDR_CONFIG);
                 rc = false;
             }
@@ -289,7 +287,7 @@ bsock_resvaddr_config (void)
 
         /* sanity-check number of addr, calculate power 2 size of hash table */
         if (sysconf(_SC_OPEN_MAX) < (long)addr_count) {
-            bsock_syslog((errno = EINVAL), LOG_ERR,
+            bsock_syslog(EINVAL, LOG_ERR,
                          "too many entries (> _SC_OPEN_MAX) in %s",
                          BSOCK_RESVADDR_CONFIG);
             break;
@@ -325,7 +323,7 @@ bsock_resvaddr_config (void)
             if (   !bsock_addrinfo_split_str(&aistr, line)
                 || !bsock_addrinfo_from_strs(&ai, &aistr)
                 || lineno >= ar->elt_count || ai.ai_addrlen > ar->buf_sz   ) {
-                bsock_syslog((errno = EINVAL), LOG_ERR,
+                bsock_syslog(EINVAL, LOG_ERR,
                              "error parsing config (modified?) in %s",
                              BSOCK_RESVADDR_CONFIG);
                 rc = false;

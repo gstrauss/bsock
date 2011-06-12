@@ -252,8 +252,7 @@ bsock_daemon_init_socket (const char * const restrict dir,
         return -1;
     }
     if (st.st_uid != uid || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-        bsock_syslog((errno = EPERM), LOG_ERR,
-                     "ownership/permissions incorrect on %s", dir);
+        bsock_syslog(EPERM,LOG_ERR,"ownership/permissions incorrect on %s",dir);
         return -1;
     }
 
