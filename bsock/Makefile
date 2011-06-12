@@ -66,7 +66,8 @@ install:
 	/usr/bin/install -m 0555 -p libbsock.so $(PREFIX)/lib/
 	/usr/bin/install -m 0555 -p libbsock_preload.so $(PREFIX)/lib/
 	[ -f $(BSOCK_CONFIG) ] || \
-          (/bin/touch $(BSOCK_CONFIG) && /bin/chmod 0644 $(BSOCK_CONFIG))
+          (/bin/touch $(BSOCK_CONFIG) && \
+           /bin/chmod 0644 $(BSOCK_CONFIG))
 install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock
 	/usr/bin/install -m 0555 -p $^ $(PREFIX)/include/bsock/

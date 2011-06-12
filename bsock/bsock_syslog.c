@@ -59,7 +59,8 @@ void
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility)
 {
-    openlog(ident, option, facility);
+    if (bsock_syslog_level != BSOCK_SYSLOG_PERROR_NOSYSLOG)
+        openlog(ident, option, facility);
     bsock_syslog_ident = ident; /*store passed string; see 'man openlog'*/
     bsock_syslog_identlen = (NULL != ident) ? strlen(ident) : 0;
 }
