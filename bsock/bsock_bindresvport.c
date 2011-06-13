@@ -125,7 +125,7 @@ bsock_bindresvport_skip (const unsigned int port)
 #define bsock_bindresvport_skip(port) 0
 #endif
 
-static void  __attribute__((nonnull))
+static void  __attribute__((nonnull))  __attribute__((cold))
 bsock_bindresvport_cleanup_mutex (void * const restrict mutex)
 {
     pthread_mutex_unlock((pthread_mutex_t *)mutex);

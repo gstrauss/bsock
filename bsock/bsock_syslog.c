@@ -43,19 +43,19 @@ static int bsock_syslog_logfd = STDERR_FILENO;
 static const char *bsock_syslog_ident;
 static size_t bsock_syslog_identlen = 0;
 
-void
+void  __attribute__((cold))
 bsock_syslog_setlevel (const int level)
 {
     bsock_syslog_level = level;
 }
 
-void
+void  __attribute__((cold))
 bsock_syslog_setlogfd (const int fd)
 {
     bsock_syslog_logfd = fd;
 }
 
-void
+void  __attribute__((cold))
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility)
 {

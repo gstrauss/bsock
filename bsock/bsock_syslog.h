@@ -39,13 +39,13 @@ enum {
   BSOCK_SYSLOG_PERROR_NOSYSLOG = 2
 };
 
-void
+void  __attribute__((cold))
 bsock_syslog_setlevel (const int level);
 
-void
+void  __attribute__((cold))
 bsock_syslog_setlogfd (const int fd);
 
-void
+void  __attribute__((cold))
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility);
 
