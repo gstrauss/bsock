@@ -45,7 +45,7 @@ static int
 nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
-int
+int  __attribute__((nonnull))
 bsock_unix_socket_connect (const char * const restrict sockpath)
 {
     /* connect to unix domain socket */
@@ -73,7 +73,7 @@ bsock_unix_socket_connect (const char * const restrict sockpath)
     return -1;
 }
 
-int
+int  __attribute__((nonnull))
 bsock_unix_socket_bind_listen (const char * const restrict sockpath,
                                int * const restrict bound)
 {
@@ -117,7 +117,7 @@ bsock_unix_socket_bind_listen (const char * const restrict sockpath,
     return -1;
 }
 
-static void
+static void  __attribute__((nonnull (1)))
 bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
                            int * const restrict rfds,
                            unsigned int * const restrict nrfdsp)
@@ -151,7 +151,7 @@ bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
         *nrfdsp = nrfd;
 }
 
-ssize_t
+ssize_t  __attribute__((nonnull (4)))
 bsock_unix_recv_fds (const int fd,
                      int * const restrict rfds,
                      unsigned int * const restrict nrfds,
@@ -188,7 +188,7 @@ bsock_unix_recv_fds (const int fd,
     return r;
 }
 
-ssize_t
+ssize_t  __attribute__((nonnull (4)))
 bsock_unix_send_fds (const int fd,
                      const int * const restrict sfds,
                      unsigned int nsfds,
@@ -233,7 +233,7 @@ bsock_unix_send_fds (const int fd,
 #ifdef __linux__
 /* obtain peer credentials
  * (requires Linux getsockopt SO_PEERCRED or BSD-style getpeereid() support) */
-static int
+static int  __attribute__((nonnull))
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
     struct ucred { pid_t pid; uid_t uid; gid_t gid; }; /*or define _GNU_SOURCE*/
@@ -250,7 +250,7 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 #ifdef __sun__
 /* obtain peer credentials using getpeerucred() (Solaris 10) */
 #include <ucred.h>
-static int
+static int  __attribute__((nonnull))
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
     struct ucred_t *ucred;
@@ -263,7 +263,7 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 }
 #endif
 
-int
+int  __attribute__((nonnull))
 bsock_unix_getpeereid (const int s,
                        uid_t * const restrict euid,
                        gid_t * const restrict egid)
@@ -273,7 +273,7 @@ bsock_unix_getpeereid (const int s,
 
 
 #if 0 /* sample code */
-ssize_t
+ssize_t  __attribute__((nonnull))
 bsock_unix_recvmsg (const int fd,
                     struct iovec * const restrict iov,
                     const size_t iovlen)
@@ -282,7 +282,7 @@ bsock_unix_recvmsg (const int fd,
     return bsock_unix_recv_fds(fd, NULL, NULL, iov, iovlen);
 }
 
-ssize_t
+ssize_t  __attribute__((nonnull))
 bsock_unix_sendmsg (const int fd,
                     struct iovec * const restrict iov,
                     const size_t iovlen)

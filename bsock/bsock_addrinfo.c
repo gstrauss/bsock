@@ -51,7 +51,7 @@
  * Similarly, simple string parsing routines like strtok() are used, even though
  * less string traversals could be achieved through additional coding */
 
-static int
+static int  __attribute__((nonnull))
 bsock_addrinfo_family_from_str (const char * const restrict family)
 {
     /* list of protocol families below is not complete */
@@ -77,7 +77,7 @@ bsock_addrinfo_family_from_str (const char * const restrict family)
     }
 }
 
-static const char *
+static const char *  __attribute__((nonnull))
 bsock_addrinfo_family_to_str (const int family)
 {
     /* list of protocol families below is not complete */
@@ -91,7 +91,7 @@ bsock_addrinfo_family_to_str (const int family)
     }
 }
 
-static int
+static int  __attribute__((nonnull))
 bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
 {
     if (     0 == strcmp(socktype, "SOCK_STREAM"))
@@ -114,7 +114,7 @@ bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
     }
 }
 
-static const char *
+static const char *  __attribute__((nonnull))
 bsock_addrinfo_socktype_to_str (const int socktype)
 {
     switch (socktype) {
@@ -130,7 +130,7 @@ bsock_addrinfo_socktype_to_str (const int socktype)
     }
 }
 
-static int
+static int  __attribute__((nonnull))
 bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
     if (!isdigit(protocol[0])) {
@@ -157,7 +157,7 @@ bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
     return -1;
 }
 
-static char *
+static char *  __attribute__((nonnull))
 bsock_addrinfo_protocol_to_str (const int proto,
                                 char * const buf, const size_t bufsz)
 {
@@ -170,7 +170,7 @@ bsock_addrinfo_protocol_to_str (const int proto,
         /* (treating all other errors as EPROTONOSUPPORT) */
 }
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
                          const struct bsock_addrinfo_strs *
                            const restrict aistr)
@@ -239,7 +239,7 @@ bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
     }
 }
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
                        struct bsock_addrinfo_strs * const aistr,
                        char * const restrict buf, const size_t bufsz)
@@ -250,8 +250,7 @@ bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
     size_t protolen;
     aistr->family   = bsock_addrinfo_family_to_str(ai->ai_family);
     aistr->socktype = bsock_addrinfo_socktype_to_str(ai->ai_socktype);
-    aistr->protocol = bsock_addrinfo_protocol_to_str(ai->ai_protocol,
-                                                          buf, bufsz);
+    aistr->protocol = bsock_addrinfo_protocol_to_str(ai->ai_protocol,buf,bufsz);
     if (NULL==aistr->family || NULL==aistr->socktype || NULL==aistr->protocol)
         return false;
     protolen = strlen(aistr->protocol) + 1; /* +1 for '\0' */
@@ -282,7 +281,7 @@ bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
     return false;
 }
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str)
 {
@@ -295,7 +294,7 @@ bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
            ) || (errno = EINVAL, false);
 }
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_recv (const int fd,
                      struct addrinfo * const restrict ai,
                      int * const restrict rfd)
@@ -358,7 +357,7 @@ bsock_addrinfo_recv (const int fd,
     return false;   /* invalid client request; undecipherable format */
 }
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_send (const int fd,
                      const struct addrinfo * const restrict ai, const int sfd)
 {

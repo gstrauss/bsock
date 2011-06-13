@@ -67,28 +67,28 @@ extern "C" {
 #define BSOCK_ANCILLARY_DATA_MAX 10240
 #endif
 
-int
+int  __attribute__((nonnull))
 bsock_unix_socket_connect (const char * const restrict sockpath);
 
-int
+int  __attribute__((nonnull))
 bsock_unix_socket_bind_listen (const char * const restrict sockpath,
                                int * const restrict bound);
 
-ssize_t
+ssize_t  __attribute__((nonnull (4)))
 bsock_unix_recv_fds (const int fd,
                      int * const restrict rfds,
                      unsigned int * const restrict nrfds,
                      struct iovec * const restrict iov,
                      const size_t iovlen);
 
-ssize_t
+ssize_t  __attribute__((nonnull (4)))
 bsock_unix_send_fds (const int fd,
                      const int * const restrict sfds,
                      unsigned int nsfds,
                      struct iovec * const restrict iov,
                      const size_t iovlen);
 
-int
+int  __attribute__((nonnull))
 bsock_unix_getpeereid (const int s,
                        uid_t * const restrict euid,
                        gid_t * const restrict egid);

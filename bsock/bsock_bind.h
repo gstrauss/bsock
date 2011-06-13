@@ -37,10 +37,10 @@
 extern "C" {
 #endif
 
-int
+int  __attribute__((nonnull))
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai);
 
-int
+int  __attribute__((nonnull))
 bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
                       socklen_t addrlen);
 

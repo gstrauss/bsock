@@ -48,26 +48,26 @@ struct bsock_addrinfo_strs {
 
 /* ai->ai_addr must be provided containing usage storage of len ai->ai_addrlen
  * (recommend: int addr[28]; ai->ai_addr=addr; ai->ai_addrlen=sizeof(addr); )*/
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
                          const struct bsock_addrinfo_strs *
                            const restrict aistr);
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
                        struct bsock_addrinfo_strs * const aistr,
                        char * const restrict buf, const size_t bufsz);
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str);
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_recv (const int fd,
                      struct addrinfo * const restrict ai,
                      int * const restrict rfd);
 
-bool
+bool  __attribute__((nonnull))
 bsock_addrinfo_send (const int fd,
                      const struct addrinfo * const restrict ai, const int sfd);
 

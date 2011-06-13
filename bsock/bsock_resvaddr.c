@@ -90,7 +90,7 @@ bsock_resvaddr_count (void)
     return (NULL != bsock_resvaddr_alloc) ? bsock_resvaddr_alloc->elt_count : 0;
 }
 
-static uint32_t
+static uint32_t  __attribute__((nonnull))
 bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 {
     const char * const restrict addr = (char *)ai->ai_addr;
@@ -102,11 +102,12 @@ bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
     return h;
 }
 
-static int  __attribute__((noinline))  __attribute__((cold))
+static int
+  __attribute__((noinline))  __attribute__((cold))  __attribute__((nonnull))
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd);
 
-int
+int  __attribute__((nonnull))
 bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
 {
     const uint32_t h = bsock_resvaddr_hash(ai);
@@ -127,7 +128,7 @@ bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
     return -1;
 }
 
-static void  __attribute__((cold))
+static void  __attribute__((nonnull))  __attribute__((cold))
 bsock_resvaddr_cleanup_close (void * const arg)
 {
     const int * const restrict fd = (int *)arg;
@@ -137,7 +138,8 @@ bsock_resvaddr_cleanup_close (void * const arg)
         nointr_close(fd[1]);
 }
 
-static int  __attribute__((noinline))  __attribute__((cold))
+static int
+  __attribute__((noinline))  __attribute__((cold))  __attribute__((nonnull))
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd)
 {
@@ -166,7 +168,7 @@ struct bsock_resvaddr_cleanup {
     struct bsock_resvaddr_alloc *ar;
 };
 
-static void
+static void  __attribute__((nonnull))
 bsock_resvaddr_cleanup (void * const arg)
 {
     struct bsock_resvaddr_cleanup * const cleanup =

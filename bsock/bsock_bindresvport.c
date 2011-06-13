@@ -125,7 +125,8 @@ bsock_bindresvport_skip (const unsigned int port)
 #define bsock_bindresvport_skip(port) 0
 #endif
 
-static void bsock_bindresvport_cleanup_mutex (void * const restrict mutex)
+static void  __attribute__((nonnull))
+bsock_bindresvport_cleanup_mutex (void * const restrict mutex)
 {
     pthread_mutex_unlock((pthread_mutex_t *)mutex);
 }
@@ -177,7 +178,7 @@ bsock_bindresvport_random_port (void)
     return(IPPORT_RESERVEDSTART + (r % (IPPORT_RESERVED-IPPORT_RESERVEDSTART)));
 }
 
-int
+int  __attribute__((nonnull))
 bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa)
 {
     /* (code below honors sin_addr or sin6_addr, if specified) */

@@ -34,7 +34,7 @@
 #include <bsock_addrinfo.h>
 #include <bsock_bind.h>
 
-int
+int  __attribute__((nonnull))
 main (int argc, char *argv[])
 {
     int nfd;

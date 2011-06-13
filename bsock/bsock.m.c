@@ -96,7 +96,7 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     return n;
 }
 
-static void
+static void  __attribute__((nonnull))
 bsock_cleanup_close (void * const arg)
 {
     const int fd = *(int *)arg;
@@ -131,7 +131,7 @@ bsock_thread_table_init (void)
     bsock_thread_elts[BSOCK_THREAD_MAX-1].next = NULL;
 }
 
-static struct bsock_client_st *
+static struct bsock_client_st *  __attribute__((nonnull))
 bsock_thread_table_query (const struct bsock_client_st * const c)
 {
     const uid_t uid = c->uid;
@@ -142,7 +142,7 @@ bsock_thread_table_query (const struct bsock_client_st * const c)
     return t;
 }
 
-static struct bsock_client_st *
+static struct bsock_client_st *  __attribute__((nonnull))
 bsock_thread_table_add (struct bsock_client_st * const c)
 {
     /* (not checking for multiple-add of same uid (do not do that)) */
@@ -157,7 +157,7 @@ bsock_thread_table_add (struct bsock_client_st * const c)
     return (*next = t);
 }
 
-static struct bsock_client_st *
+static struct bsock_client_st *  __attribute__((nonnull))
 bsock_thread_table_remove (struct bsock_client_st * const c)
 {
     /* (removes only first uid found if multiple (should not happen)) */
@@ -230,7 +230,7 @@ bsock_authz_config (void)
     }
 }
 
-static bool
+static bool  __attribute__((nonnull))
 bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
                               const uid_t uid, const gid_t gid)
 {
@@ -300,7 +300,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
       : ((errno=EACCES), false));
 }
 
-static int
+static int  __attribute__((nonnull (1)))
 bsock_client_session (struct bsock_client_st * const restrict c,
                       struct bsock_addrinfo_strs * const restrict aistr)
 {
@@ -458,7 +458,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     return rc;
 }
 
-static void
+static void  __attribute__((nonnull))
 bsock_cleanup_client (void * const arg)
 {
     struct bsock_client_st * const c = (struct bsock_client_st *)arg;
@@ -473,7 +473,7 @@ bsock_cleanup_client (void * const arg)
     }
 }
 
-static void *
+static void *  __attribute__((nonnull))
 bsock_client_thread (void * const arg)
 {
     struct bsock_client_st c; /* copy so that not referencing hash entry */
@@ -484,7 +484,7 @@ bsock_client_thread (void * const arg)
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
-static void *
+static void *  __attribute__((nonnull))
 bsock_sigwait (void * const arg)
 {
     sigset_t * const sigs = (sigset_t *)arg;
@@ -537,7 +537,7 @@ bsock_thread_signals (void)
         bsock_syslog(errnum, LOG_ERR, "pthread_create");
 }
 
-int
+int  __attribute__((nonnull))
 main (int argc, char *argv[])
 {
     int sfd, daemon = false, supervised = false, errnum = EAGAIN;

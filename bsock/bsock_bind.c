@@ -76,7 +76,7 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     return n;
 }
 
-static int
+static int  __attribute__((nonnull))
 bsock_bind_send_addr_and_recv (const int fd,
                                const struct addrinfo * const restrict ai,
                                const int sfd)
@@ -111,7 +111,7 @@ bsock_bind_send_addr_and_recv (const int fd,
     return errnum;
 }
 
-static bool
+static bool  __attribute__((nonnull))
 bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
 {
     /* (ai->ai_next is ignored) */
@@ -157,7 +157,7 @@ bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
     return (0 == errnum);
 }
 
-static bool
+static bool  __attribute__((nonnull))
 bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
 {
     int errnum;
@@ -182,7 +182,7 @@ bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
     return (0 == errnum);
 }
 
-int
+int  __attribute__((nonnull))
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai)
 {
     /* (return value 0 for success, -1 upon error; match return value of bind())
@@ -199,7 +199,7 @@ bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai)
 }
 
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t);
-static int
+static int  __attribute__((nonnull))
 bind_rtld_findnext (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
     bind_rtld_next = (int(*)(int,const struct sockaddr *,socklen_t))(uintptr_t)
@@ -211,7 +211,7 @@ bind_rtld_findnext (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t) =
   bind_rtld_findnext;
 
-int
+int  __attribute__((nonnull))
 bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
                       socklen_t addrlen)
 {

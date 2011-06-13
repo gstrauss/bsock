@@ -234,7 +234,7 @@ bsock_daemon_atexit (void)
         unlink(bsock_daemon_socket_path);
 }
 
-int
+int  __attribute__((nonnull))
 bsock_daemon_init_socket (const char * const restrict sockpath,
                           const uid_t uid, const gid_t gid, const mode_t mode)
 {

@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-int
+int  __attribute__((nonnull))
 bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa);
 
 #ifdef __cplusplus
