@@ -93,7 +93,7 @@ bsock_resvaddr_count (void)
 static uint32_t  __attribute__((nonnull))
 bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 {
-    const char * const restrict addr = (char *)ai->ai_addr;
+    const unsigned char * const restrict addr = (unsigned char *)ai->ai_addr;
     const size_t addrlen = ai->ai_addrlen;
     size_t i = SIZE_MAX;/* (size_t)-1; will wrap around to 0 with first ++i */
     uint32_t h = 5381;  /* djb cdb hash function: http://cr.yp.to/cdb/cdb.txt */
@@ -268,7 +268,7 @@ bsock_resvaddr_config (void)
             if (!rc)
                 continue; /* parse to end of file to report all syntax errors */
             ++addr_count;
-            addr_sz += (ai.ai_addrlen + 3) & ~0x3; /* align to 4 bytes */
+            addr_sz += (ai.ai_addrlen + 3) & (size_t)~0x3;/* align to 4 bytes */
             if (-1 == bsock_resvaddr_fd(&ai))
                 addr_added = true;
         }
@@ -367,8 +367,8 @@ bsock_resvaddr_config (void)
             t->ai->ai_addrlen  = ai.ai_addrlen;
             t->ai->ai_addr     = (struct sockaddr *)ar->buf;
             memcpy(t->ai->ai_addr, ai.ai_addr, ai.ai_addrlen);
-            ar->buf    += (ai.ai_addrlen + 3) & ~0x3;  /* align to 4 */
-            ar->buf_sz -= (ai.ai_addrlen + 3) & ~0x3;  /* align to 4 */
+            ar->buf    += (ai.ai_addrlen + 3) & (size_t)~0x3;  /* align to 4 */
+            ar->buf_sz -= (ai.ai_addrlen + 3) & (size_t)~0x3;  /* align to 4 */
 
             /* insert into table */
             tp = &ar->table[bsock_resvaddr_hash(t->ai) & (ar->table_sz-1)];

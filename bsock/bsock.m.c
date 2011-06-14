@@ -177,6 +177,25 @@ bsock_thread_table_remove (struct bsock_client_st * const c)
 
 static const char * restrict bsock_authz_lines;
 
+static char *
+bsock_authz_config_read (const int fd, const size_t sz)
+{
+    char * restrict buf = NULL;
+    pthread_cleanup_push(free, buf);
+    if (NULL != (buf = malloc(sz+2))) {
+        buf[0] = '\n';
+        buf[sz+1] = '\0';
+        if (read(fd, buf+1, sz) != (ssize_t)sz) {
+            free(buf);
+            buf = NULL;
+        }
+    }
+    else
+        bsock_syslog(errno, LOG_ERR, "malloc");
+    pthread_cleanup_pop(0);
+    return buf;
+}
+
 static void
 bsock_authz_config (void)
 {
@@ -200,33 +219,27 @@ bsock_authz_config (void)
             break;
         }
 
-        if (NULL == (buf = malloc(st.st_size+2))) {
-            bsock_syslog(errno, LOG_ERR, "malloc");
-            break;
-        }
-        buf[0] = '\n';
-        buf[st.st_size+1] = '\0';
-
-        pthread_cleanup_push(free, buf);
-        if (read(fd, buf+1, st.st_size) != st.st_size) {
-            free(buf);
-            buf = NULL;
-        }
-        pthread_cleanup_pop(0);
+        buf = bsock_authz_config_read(fd, (size_t)st.st_size);
 
     } while (0);
 
     pthread_cleanup_pop(1);  /* close(fd)  */
 
-    if (NULL != buf) {
+    if (NULL == buf)
+        return;
+
+    if (NULL == bsock_authz_lines)
+        bsock_authz_lines = buf;
+    else {
         const char * const restrict p = bsock_authz_lines;
         bsock_authz_lines = buf; /* (might do atomic swap in future) */
         /* pause 1 sec for simple and coarse (not perfect) mechanism to give
          * other threads running strstr() time to finish, else might crash.
          * (could grab mutex around all bsock_authz_lines access, if desired) */
+        pthread_cleanup_push(free, (void *)(uintptr_t)p);
         poll(NULL, 0, 1000);
-        if (NULL != p)
-            free((void *)(uintptr_t)p);
+        free((void *)(uintptr_t)p);
+        pthread_cleanup_pop(0);
     }
 }
 
@@ -275,17 +288,17 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
     }
   #else
     cmpstr[0] = '\n';
-    if (    NULL==(p=memccpy(cmpstr+1,pw.pw_name,'\0',sizeof(cmpstr)-1))
-        || (*(p-1) = ' ',
-            NULL==(p=memccpy(p,aistr.family,  '\0',sizeof(cmpstr)-(p-cmpstr))))
-        || (*(p-1) = ' ',
-            NULL==(p=memccpy(p,aistr.socktype,'\0',sizeof(cmpstr)-(p-cmpstr))))
-        || (*(p-1) = ' ',
-            NULL==(p=memccpy(p,aistr.protocol,'\0',sizeof(cmpstr)-(p-cmpstr))))
-        || (*(p-1) = ' ',
-            NULL==(p=memccpy(p,aistr.service, '\0',sizeof(cmpstr)-(p-cmpstr))))
-        || (*(p-1) = ' ',
-            NULL==(p=memccpy(p,aistr.addr,    '\0',sizeof(cmpstr)-(p-cmpstr))))
+    if (    NULL == (p = memccpy(cmpstr+1, pw.pw_name, '\0', sizeof(cmpstr)-1))
+        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.family,  '\0',
+                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
+        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.socktype,'\0',
+                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
+        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.protocol,'\0',
+                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
+        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.service, '\0',
+                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
+        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.addr,    '\0',
+                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
         || sizeof(cmpstr) == p-cmpstr   ) {
         bsock_syslog(ENOSPC, LOG_ERR, "addrinfo string expansion is too long");
         return false;
@@ -484,7 +497,7 @@ bsock_client_thread (void * const arg)
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
-static void *  __attribute__((nonnull))
+static void *  __attribute__((nonnull))  __attribute__((noreturn))
 bsock_sigwait (void * const arg)
 {
     sigset_t * const sigs = (sigset_t *)arg;
@@ -514,7 +527,6 @@ bsock_sigwait (void * const arg)
         }
         (void) sigwait(sigs, &signum);
     }
-    return NULL;
 }
 
 static void

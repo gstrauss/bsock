@@ -74,7 +74,7 @@ bsock_daemon_setuid_stdinit (void)
     return true;
 }
 
-static void
+static void  __attribute__((noreturn))
 bsock_daemon_sa_handler (int signum __attribute__((unused)))
 {
     exit(EXIT_SUCCESS);  /* executes atexit() handlers */
@@ -248,10 +248,10 @@ bsock_daemon_init_socket (const char * const restrict sockpath,
     if (NULL != slash && '/' == *sockpath) {
         struct stat st;
         char dir[slash-sockpath+2];
-        memcpy(dir, sockpath, slash-sockpath+1);
+        memcpy(dir, sockpath, (size_t)(slash-sockpath+1));
         dir[slash != sockpath ? slash-sockpath : 1] = '\0';
         if (0 != stat(dir, &st)) {
-            bsock_syslog(errno, LOG_ERR, dir);
+            bsock_syslog(errno, LOG_ERR, "%s", dir);
             return -1;
         }
         if (st.st_uid != uid || (st.st_mode & (S_IWGRP|S_IWOTH))) {

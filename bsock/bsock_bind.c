@@ -130,7 +130,8 @@ bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
 
     pid = fork();         /*(bsock_bind_resvaddr() retries on EAGAIN)*/
     if (0 == pid) {       /* child; no retry if child signalled, errno==EINTR */
-        static char *args[] = { BSOCK_EXE, NULL };
+        static char bsock_exe[] = BSOCK_EXE;
+        static char *args[] = { bsock_exe, NULL };
         if (   dup2(sv[0], STDIN_FILENO) != STDIN_FILENO
             || (sv[0] != STDIN_FILENO && 0 != close(sv[0]))
             || (sv[1] != STDIN_FILENO && 0 != close(sv[1])))
@@ -213,7 +214,7 @@ static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t) =
 
 int  __attribute__((nonnull))
 bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
-                      socklen_t addrlen)
+                      const socklen_t addrlen)
 {
     struct addrinfo ai = {
       .ai_flags    = 0,
@@ -231,7 +232,7 @@ bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
      * simply bind if address family is otherwise */
     if (ai.ai_family == AF_INET || ai.ai_family == AF_INET6) {
         /* simply bind if port < IPPORT_RESERVED; no root privileges needed */
-        const short int port = (ai.ai_family == AF_INET)
+        const int port = (ai.ai_family == AF_INET)
           ? ntohs(((struct sockaddr_in  *)ai.ai_addr)->sin_port)
           : ntohs(((struct sockaddr_in6 *)ai.ai_addr)->sin6_port);
         if (port >= IPPORT_RESERVED

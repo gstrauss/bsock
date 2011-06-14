@@ -343,9 +343,9 @@ bsock_addrinfo_recv (const int fd,
         memcpy(line, &protover, sizeof(protover));
         memcpy(line + sizeof(protover), ai, sizeof(struct addrinfo));
         line[r] = '\0';
-        if ((r -= (sizeof(protover) + sizeof(struct addrinfo))) > 0)
+        if ((r -= (ssize_t)(sizeof(protover) + sizeof(struct addrinfo))) > 0)
             memcpy(line + sizeof(protover) + sizeof(struct addrinfo),
-                   iov[2].iov_base, r);
+                   iov[2].iov_base, (size_t)r);
 
         /* restore ai->ai_addrlen ai->ai_addr buffer sizes passed into routine*/
         ai->ai_addrlen = iov[2].iov_len;

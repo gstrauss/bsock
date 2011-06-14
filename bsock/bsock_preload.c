@@ -32,6 +32,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+int bindresvport  (const int, const struct sockaddr_in * restrict);
+int bindresvport6 (const int, const struct sockaddr_in6 * restrict);
+
 int
 bind (const int sockfd, const struct sockaddr * const restrict addr,
       const socklen_t addrlen)
@@ -42,13 +45,13 @@ bind (const int sockfd, const struct sockaddr * const restrict addr,
 int
 bindresvport (const int sockfd, const struct sockaddr_in * const restrict sin)
 {
-    return bsock_bind_intercept(sockfd, (struct sockaddr *)sin,
+    return bsock_bind_intercept(sockfd, (const struct sockaddr *)sin,
                                 sizeof(struct sockaddr_in));
 }
 
 int
 bindresvport6 (const int sockfd,const struct sockaddr_in6 * const restrict sin6)
 {
-    return bsock_bind_intercept(sockfd, (struct sockaddr *)sin6,
+    return bsock_bind_intercept(sockfd, (const struct sockaddr *)sin6,
                                 sizeof(struct sockaddr_in6));
 }
