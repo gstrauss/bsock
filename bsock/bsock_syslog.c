@@ -70,14 +70,14 @@ bsock_syslog (const int errnum, const int priority,
               const char * const restrict fmt, ...)
 {
     va_list ap;
-    int len;
+    size_t len;
     char str[1024] = "";
     char buf[256] = ": ";
     if (0 == errnum || 0 != strerror_r(errnum, buf+2, sizeof(buf)-2))
         buf[0] = '\0';
 
     va_start(ap, fmt);
-    len = vsnprintf(str, sizeof(str), fmt, ap);/* str is truncated, as needed */
+    len = (size_t)vsnprintf(str, sizeof(str), fmt, ap); /*str can be truncated*/
     va_end(ap);
 
     if (bsock_syslog_level != BSOCK_SYSLOG_PERROR_NOSYSLOG)

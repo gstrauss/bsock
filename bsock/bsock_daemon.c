@@ -75,7 +75,7 @@ bsock_daemon_setuid_stdinit (void)
 }
 
 static void
-bsock_daemon_sa_handler (int signum)
+bsock_daemon_sa_handler (int signum __attribute__((unused)))
 {
     exit(EXIT_SUCCESS);  /* executes atexit() handlers */
 }

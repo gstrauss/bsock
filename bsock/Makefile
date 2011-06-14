@@ -11,8 +11,10 @@ BSOCK_GROUP?=daemon
 all: $(TARGETS)
 
 CC=gcc
-CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic -Wall -Winline -Werror -I.
-CFLAGS+=-O3
+CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic-errors
+CFLAGS+=-Werror -Wall -Wextra -Winline -Wstrict-overflow=5
+CFLAGS+=-O3 -DNEBUG -fhosted
+CFLAGS+=-I.
 
 RPATH= -Wl,-rpath=$(PREFIX)/lib
 

@@ -233,7 +233,7 @@ bsock_unix_send_fds (const int fd,
 #ifdef __linux__
 /* obtain peer credentials
  * (requires Linux getsockopt SO_PEERCRED or BSD-style getpeereid() support) */
-static int  __attribute__((nonnull))  inline
+static inline int  __attribute__((nonnull))
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
     struct ucred { pid_t pid; uid_t uid; gid_t gid; }; /*or define _GNU_SOURCE*/
@@ -250,7 +250,7 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 #ifdef __sun__
 /* obtain peer credentials using getpeerucred() (Solaris 10) */
 #include <ucred.h>
-static int  __attribute__((nonnull))  inline
+static inline int  __attribute__((nonnull))
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
     struct ucred_t *ucred;

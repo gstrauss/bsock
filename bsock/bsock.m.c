@@ -316,7 +316,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     uid_t uid;
 
     /* get client credentials (if non-daemon mode) */
-    if (-1 == c->uid) {
+    if ((uid_t)-1 == c->uid) {
         if (NULL != aistr && 0 != getpeername(c->fd,ai.ai_addr,&ai.ai_addrlen)){
             /* authbind: client provided as stdin the socket to which to bind()
              *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
@@ -333,7 +333,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
             }
         }
         ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
-        if (-1 == c->uid) {
+        if ((uid_t)-1 == c->uid) {
             if (0 != bsock_unix_getpeereid(c->fd, &c->uid, &c->gid)){
                 bsock_syslog(errno, LOG_ERR, "getpeereid");
                 return EXIT_FAILURE;
@@ -426,13 +426,13 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     bsock_thread_table_remove(c);
     pthread_mutex_unlock(&bsock_thread_table_mutex);
     uid = c->uid;
-    c->uid = -1;
+    c->uid = (uid_t)-1;
 
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
     if (c->fd != fd) {
         rc = (bsock_unix_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
-              == iov.iov_len)
+              == (ssize_t)iov.iov_len)
           ? EXIT_SUCCESS
           : EXIT_FAILURE;
         if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
@@ -607,8 +607,8 @@ main (int argc, char *argv[])
         }
 
         m.fd  = STDIN_FILENO;
-        m.uid = -1;
-        m.gid = -1;
+        m.uid = (uid_t)-1;
+        m.gid = (gid_t)-1;
         return bsock_client_session(&m, aistrptr);
     }
 

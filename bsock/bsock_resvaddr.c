@@ -84,7 +84,7 @@ static struct bsock_resvaddr_alloc empty_alloc =
 static struct bsock_resvaddr_alloc *bsock_resvaddr_alloc =
   &empty_alloc;
 
-static int
+static size_t
 bsock_resvaddr_count (void)
 {
     return (NULL != bsock_resvaddr_alloc) ? bsock_resvaddr_alloc->elt_count : 0;

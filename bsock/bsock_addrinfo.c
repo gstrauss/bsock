@@ -317,12 +317,14 @@ bsock_addrinfo_recv (const int fd,
                                     sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
-    if (r < sizeof(protover))
+    if (r < (ssize_t)sizeof(protover))
         return false;  /* truncated msg */
 
     if (0 == protover) {  /* bsock protocol version */
-        if (r >= sizeof(protover)+sizeof(struct addrinfo) && ai->ai_addrlen > 0
-            && r == sizeof(protover)+sizeof(struct addrinfo)+ai->ai_addrlen) {
+        if (r >= (ssize_t)(sizeof(protover)+sizeof(struct addrinfo))
+            && ai->ai_addrlen > 0
+            && r == (ssize_t)
+                    (sizeof(protover)+sizeof(struct addrinfo)+ai->ai_addrlen)) {
             ai->ai_addr      = iov[2].iov_base; /* assign pointer values */
             ai->ai_canonname = NULL;
             ai->ai_next      = NULL;
@@ -336,7 +338,7 @@ bsock_addrinfo_recv (const int fd,
         /* collapse iovec array into string, parse into tokens, fill addrinfo */
         struct bsock_addrinfo_strs aistr;
         char line[256];
-        if (r >= sizeof(line)) return false; /* should not happen */
+        if (r >= (ssize_t)sizeof(line)) return false; /* should not happen */
         /*(sizeof(protover)+sizeof(struct addrinfo) == 40; fits in line[256])*/
         memcpy(line, &protover, sizeof(protover));
         memcpy(line + sizeof(protover), ai, sizeof(struct addrinfo));
@@ -373,7 +375,8 @@ bsock_addrinfo_send (const int fd,
     };
     ssize_t w = bsock_unix_send_fds(fd, &sfd, (sfd >= 0), iov,
                                     sizeof(iov)/sizeof(struct iovec));
-    return w == (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
+    return w == (ssize_t)
+                (sizeof(protover) + sizeof(struct addrinfo) + ai->ai_addrlen);
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
 
