@@ -85,8 +85,10 @@ bsock_syslog (const int errnum, const int priority,
 
     /*(stderr closed when daemon; skip stderr)*/
     if (bsock_syslog_level != BSOCK_SYSLOG_DAEMON) {
-        struct iovec iov[4] = { { (void *)(uintptr_t)bsock_syslog_ident,
+        struct iovec iov[5] = { { (void *)(uintptr_t)bsock_syslog_ident,
                                   bsock_syslog_identlen },
+                                { (void *)(uintptr_t)": ",
+                                  bsock_syslog_identlen ? 2 : 0 },
                                 { str, len < sizeof(str) ? len : sizeof(str) },
                                 { buf, strlen(buf) },
                                 { (void *)(uintptr_t)"\n", 1 } };

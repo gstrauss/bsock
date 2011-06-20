@@ -1,3 +1,5 @@
+# bsock
+
 TARGETS:= libbsock.so libbsock_preload.so bsock bsock.t
 
 PREFIX?=/usr/local
@@ -70,9 +72,10 @@ install:
 	[ -f $(BSOCK_CONFIG) ] || \
           (/bin/touch $(BSOCK_CONFIG) && \
            /bin/chmod 0644 $(BSOCK_CONFIG))
-install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h
+install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h \
+                 bsock_daemon.h bsock_syslog.h
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock
-	/usr/bin/install -m 0555 -p $^ $(PREFIX)/include/bsock/
+	/usr/bin/install -m 0444 -p $^ $(PREFIX)/include/bsock/
 
 .PHONY: clean clean-bsock
 clean: clean-bsock
