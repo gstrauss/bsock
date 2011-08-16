@@ -1,0 +1,20 @@
+README
+
+
+bsock - lib to bind() sockets to restricted ports for lower-privilege daemons
+
+bsock federates binding to (important) socket addresses/ports on a system and
+removes the requirement that many daemons start with root privileges in order
+to bind to assigned ports.
+
+The bsock daemon listens for requests on a local unix domain socket.
+
+
+
+proxyexec - client/server passing argv and stdin, stdout, stderr fds over
+            unix domain socket between processes owned by different users
+
+proxyexec is an executable that builds with libbsock.so and can be used
+as a login shell or as the target of an sshd_config ForceCommand to
+leverage operating system authentication to passing credentials to a
+service program running under a single account.
