@@ -7,7 +7,7 @@ all: proxyexec
 
 CC=gcc
 CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic-errors
-CFLAGS+=-Wall -Wextra -Winline
+CFLAGS+=-Werror -Wall -Wextra -Winline
 CFLAGS+=-O3 -DNEBUG -fhosted
 CFLAGS+=-I $(PREFIX)/include
 

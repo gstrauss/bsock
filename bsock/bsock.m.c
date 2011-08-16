@@ -497,7 +497,7 @@ bsock_client_thread (void * const arg)
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
-static void *  __attribute__((nonnull))  __attribute__((noreturn))
+static void  __attribute__((nonnull))  __attribute__((noreturn))
 bsock_sigwait (void * const arg)
 {
     sigset_t * const sigs = (sigset_t *)arg;
@@ -545,7 +545,8 @@ bsock_thread_signals (void)
         bsock_syslog(errnum, LOG_ERR, "pthread_sigmask");
         return;
     }
-    if (0 != (errnum = pthread_create(&thread, NULL, &bsock_sigwait, &sigs)))
+    if (0 != (errnum = pthread_create(&thread, NULL,
+                                      (void *(*)(void *))&bsock_sigwait,&sigs)))
         bsock_syslog(errnum, LOG_ERR, "pthread_create");
 }
 

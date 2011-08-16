@@ -125,7 +125,16 @@ bsock_bindresvport_skip (const unsigned int port)
 #define bsock_bindresvport_skip(port) 0
 #endif
 
-static void  __attribute__((nonnull))  __attribute__((cold))
+#if defined(__GNUC__) && __GNUC_PREREQ(4,3)
+#ifndef __attribute_cold__
+#define __attribute_cold__  __attribute__((cold))
+#endif
+#endif
+#ifndef __attribute_cold__
+#define __attribute_cold__
+#endif
+
+static void  __attribute__((nonnull))  __attribute_cold__
 bsock_bindresvport_cleanup_mutex (void * const restrict mutex)
 {
     pthread_mutex_unlock((pthread_mutex_t *)mutex);

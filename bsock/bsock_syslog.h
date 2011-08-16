@@ -29,6 +29,17 @@
 #ifndef INCLUDED_BSOCK_SYSLOG_H
 #define INCLUDED_BSOCK_SYSLOG_H
 
+#include <sys/types.h>  /*(for __GNUC_PREREQ(), if available)*/
+
+#if defined(__GNUC__) && __GNUC_PREREQ(4,3)
+#ifndef __attribute_cold__
+#define __attribute_cold__  __attribute__((cold))
+#endif
+#endif
+#ifndef __attribute_cold__
+#define __attribute_cold__
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,17 +50,17 @@ enum {
   BSOCK_SYSLOG_PERROR_NOSYSLOG = 2
 };
 
-void  __attribute__((cold))
+void  __attribute_cold__
 bsock_syslog_setlevel (const int level);
 
-void  __attribute__((cold))
+void  __attribute_cold__
 bsock_syslog_setlogfd (const int fd);
 
-void  __attribute__((cold))
+void  __attribute_cold__
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility);
 
-void  __attribute__((cold))  __attribute__((format(printf,3,4)))
+void  __attribute_cold__  __attribute__((format(printf,3,4)))
 bsock_syslog (const int errnum, const int priority,
               const char * const restrict fmt, ...);
 

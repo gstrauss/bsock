@@ -56,6 +56,15 @@
 #define BSOCK_RESVADDR_CONFIG BSOCK_CONFIG".resvaddr"
 #endif
 
+#if defined(__GNUC__) && __GNUC_PREREQ(4,3)
+#ifndef __attribute_cold__
+#define __attribute_cold__  __attribute__((cold))
+#endif
+#endif
+#ifndef __attribute_cold__
+#define __attribute_cold__
+#endif
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -103,7 +112,7 @@ bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 }
 
 static int
-  __attribute__((noinline))  __attribute__((cold))  __attribute__((nonnull))
+  __attribute__((noinline))  __attribute_cold__  __attribute__((nonnull))
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd);
 
@@ -128,7 +137,7 @@ bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
     return -1;
 }
 
-static void  __attribute__((nonnull))  __attribute__((cold))
+static void  __attribute__((nonnull))  __attribute_cold__
 bsock_resvaddr_cleanup_close (void * const arg)
 {
     const int * const restrict fd = (int *)arg;
@@ -139,7 +148,7 @@ bsock_resvaddr_cleanup_close (void * const arg)
 }
 
 static int
-  __attribute__((noinline))  __attribute__((cold))  __attribute__((nonnull))
+  __attribute__((noinline))  __attribute_cold__  __attribute__((nonnull))
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd)
 {
