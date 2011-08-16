@@ -100,14 +100,20 @@ bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
         return SOCK_DGRAM;
     else if (0 == strcmp(socktype, "SOCK_RAW"))
         return SOCK_RAW;
+  #ifdef SOCK_RDM
     else if (0 == strcmp(socktype, "SOCK_RDM"))
         return SOCK_RDM;
+  #endif
     else if (0 == strcmp(socktype, "SOCK_SEQPACKET"))
         return SOCK_SEQPACKET;
+  #ifdef SOCK_DCCP
     else if (0 == strcmp(socktype, "SOCK_DCCP"))
         return SOCK_DCCP;
+  #endif
+  #ifdef SOCK_PACKET
     else if (0 == strcmp(socktype, "SOCK_PACKET"))
         return SOCK_PACKET;
+  #endif
     else {
         errno = ESOCKTNOSUPPORT;
         return -1;
@@ -121,10 +127,16 @@ bsock_addrinfo_socktype_to_str (const int socktype)
       case SOCK_STREAM:    return "SOCK_STREAM";
       case SOCK_DGRAM:     return "SOCK_DGRAM";
       case SOCK_RAW:       return "SOCK_RAW";
+    #ifdef SOCK_RDM
       case SOCK_RDM:       return "SOCK_RDM";
+    #endif
       case SOCK_SEQPACKET: return "SOCK_SEQPACKET";
+    #ifdef SOCK_DCCP
       case SOCK_DCCP:      return "SOCK_DCCP";
+    #endif
+    #ifdef SOCK_PACKET
       case SOCK_PACKET:    return "SOCK_PACKET";
+    #endif
       default:             errno = ESOCKTNOSUPPORT;
                            return NULL;
     }
