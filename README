@@ -1,7 +1,7 @@
 README
 
 
-bsock - lib to bind() sockets to restricted ports for lower-privilege daemons
+bsock - bind() sockets to restricted ports for lower-privilege daemons
 
 bsock federates binding to (important) socket addresses/ports on a system and
 removes the requirement that many daemons start with root privileges in order
