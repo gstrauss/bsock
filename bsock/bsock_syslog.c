@@ -92,7 +92,7 @@ bsock_syslog (const int errnum, const int priority,
                                 { str, len < sizeof(str) ? len : sizeof(str) },
                                 { buf, strlen(buf) },
                                 { (void *)(uintptr_t)"\n", 1 } };
-        writev(bsock_syslog_logfd, iov, sizeof(iov)/sizeof(struct iovec));
+        if (writev(bsock_syslog_logfd, iov, sizeof(iov)/sizeof(struct iovec))){}
     }
 
     errno = errnum;
