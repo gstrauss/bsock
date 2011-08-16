@@ -43,9 +43,3 @@ OSNAME:=$(shell /bin/uname -s)
 ifeq ($(OSNAME),SunOS)
   CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
 endif
-
-
-
-
-#LDFLAGS+=/home/gs/cvs/cgiexec/contrib/hrprof/libhrprof.a -lrt
-
