@@ -31,6 +31,17 @@
 
 #include <sys/types.h>  /*(for __GNUC_PREREQ(), if available)*/
 
+#ifndef __GNUC_PREREQ
+#  ifdef __GNUC_PREREQ__
+#    define __GNUC_PREREQ __GNUC_PREREQ__
+#  elif defined __GNUC__ && defined __GNUC_MINOR__
+#    define __GNUC_PREREQ(maj, min) \
+       ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
+#  else
+#    define __GNUC_PREREQ(maj, min) 0
+#  endif
+#endif
+
 #if defined(__GNUC__) && __GNUC_PREREQ(4,3)
 #ifndef __attribute_cold__
 #define __attribute_cold__  __attribute__((cold))

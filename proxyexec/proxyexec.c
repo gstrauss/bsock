@@ -60,6 +60,22 @@
 #include <bsock/bsock_syslog.h>
 #include <bsock/bsock_unix.h>
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+
+#ifndef PATH_MAX
+#ifdef MAXPATHLEN
+#define PATH_MAX MAXPATHLEN
+#else
+#define PATH_MAX 1024
+#endif
+#endif
+
 #ifndef PROXYEXEC_SOCKET_DIR    /* must end in '/' */
 #define PROXYEXEC_SOCKET_DIR "/usr/local/var/run/proxyexec/"
 #endif
@@ -313,8 +329,8 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
      * this routine does not return after this point (see similar note above) */
     char proxyexec_uid[28] = "PROXYEXEC_UID="; /* 14 char label */
     char proxyexec_gid[28] = "PROXYEXEC_GID="; /* 14 char label */
-    snprintf(proxyexec_uid+14, sizeof(proxyexec_uid)-14, "%u", cxt->uid);
-    snprintf(proxyexec_gid+14, sizeof(proxyexec_uid)-14, "%u", cxt->gid);
+    snprintf(proxyexec_uid+14,sizeof(proxyexec_uid)-14,"%u",(uint32_t)cxt->uid);
+    snprintf(proxyexec_gid+14,sizeof(proxyexec_uid)-14,"%u",(uint32_t)cxt->gid);
     if (0 != putenv(proxyexec_uid) || 0 != putenv(proxyexec_gid)) {
         bsock_syslog(errno, LOG_ERR, "putenv");
         _exit(EXIT_FAILURE);
@@ -611,7 +627,8 @@ main (int argc, char *argv[])
         }
 
         /* log all connections to (or instantiations of) daemon */
-        bsock_syslog(0, LOG_INFO, "connect: uid:%d gid:%d", cxt.uid, cxt.gid);
+        bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u",
+                     (uint32_t)cxt.uid, (uint32_t)cxt.gid);
 
         if (0 == fork()) {
             cxt.fd = cfd;

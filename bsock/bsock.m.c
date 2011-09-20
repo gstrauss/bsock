@@ -26,6 +26,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef _AIX  /* required to get definition of struct addrinfo on AIX (!) */
+#define _ALL_SOURCE
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -466,7 +470,8 @@ bsock_client_session (struct bsock_client_st * const restrict c,
      * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
      * and combine with syslog() to log pid and other info, if available.
      * <<<FUTURE: might add additional logging of request and success/failure */
-    bsock_syslog(0, LOG_INFO, "connect: uid:%d gid:%d", uid, c->gid);
+    bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u",
+                 (uint32_t)uid, (uint32_t)c->gid);
 
     return rc;
 }

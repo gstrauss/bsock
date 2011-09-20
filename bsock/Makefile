@@ -62,7 +62,7 @@ bsock.t: bsock.t.o libbsock.so
 BSOCK_MODE=0550
 install-suid: BSOCK_MODE=4550
 install-suid: install ;
-install:
+install: bsock libbsock.so libbsock_preload.so
 	/bin/mkdir -p -m 0755 $(PREFIX)/lib $(PREFIX)/sbin \
           $(dir $(BSOCK_CONFIG)) $(BSOCK_SOCKET_DIR)
 	/usr/bin/install -m $(BSOCK_MODE) -g $(BSOCK_GROUP) -p \

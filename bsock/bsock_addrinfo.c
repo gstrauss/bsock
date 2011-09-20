@@ -28,6 +28,9 @@
 
 /* define _BSD_SOURCE for getprotobyname_r(), getprotobynumber_r() */
 #define _BSD_SOURCE
+#ifdef __sun  /* getprotobyname_r(), getprotobynumber_r(), INET6_ADDRSTRLEN */
+#define __EXTENSIONS__
+#endif
 
 #include <bsock_addrinfo.h>
 
@@ -45,6 +48,30 @@
 #include <netinet/in.h>
 
 #include <bsock_unix.h>
+
+#ifndef INET6_ADDRSTRLEN
+#define INET6_ADDRSTRLEN 46
+#endif
+
+#ifdef __hpux
+#ifndef ESOCKTNOSUPPORT /* otherwise would require -D_HPUX_SOURCE */
+#define ESOCKTNOSUPPORT 222
+#endif
+#endif
+
+#ifdef __sun  /* getprotobyname_r(), getprotobynumber_r() are not standardized*/
+#define getprotobyname_r(protocol, pe, buf, bufsz, peres) \
+  ((*(peres)=getprotobyname_r((protocol),(pe),(buf),(bufsz)))!=NULL ? 0 : errno)
+#define getprotobynumber_r(proto, pe, buf, bufsz, peres) \
+  ((*(peres)=getprotobynumber_r((proto),(pe),(buf),(bufsz)))!=NULL ? 0 : errno)
+#endif
+#ifdef __hpux /* getprotobyname(), getprotobynumber() thread-safe on HP-UX ? */
+#undef HAVE_GETPROTOBYNAME_R
+#undef HAVE_GETPROTOBYNUMBER_R
+#else
+#define HAVE_GETPROTOBYNAME_R
+#define HAVE_GETPROTOBYNUMBER_R
+#endif
 
 /* Note: routines here are simple sequences of short lists of string comparisons
  * A more performant approach might be table-driven sorted tables and bsearch().
@@ -145,12 +172,28 @@ bsock_addrinfo_socktype_to_str (const int socktype)
 static int  __attribute__((nonnull))
 bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
+  #ifdef _AIX
+    struct protoent pe;
+    struct protoent_data pedata;
+  #endif
+
     if (!isdigit(protocol[0])) {
+      #ifdef HAVE_GETPROTOBYNAME_R
+      #ifndef _AIX
         struct protoent pe;
         struct protoent *peres;
         char buf[1024];
         if (0 == getprotobyname_r(protocol, &pe, buf, sizeof(buf), &peres))
             return pe.p_proto;
+      #else  /* _AIX */
+        if (0 == getprotobyname_r(protocol, &pe, &pedata))
+            return pe.p_proto;
+      #endif /* _AIX */
+      #else
+        struct protoent * const restrict pe = getprotobyname_r(protocol);
+        if (NULL != pe)
+            return pe->p_proto;
+      #endif
         /* (treating all errors as EPROTONOSUPPORT, including ERANGE) */
     }
     else {
@@ -159,28 +202,58 @@ bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
          * (thread-safe since only checking validity of proto num) */
         char *e;
         long lproto;
+      #ifndef _AIX
         if ((errno = 0, lproto = strtol(protocol, &e, 10), 0 == errno)
             && '\0' == *e && 0 == (lproto >> 31)
             && NULL != getprotobynumber((int)lproto)) /*(check validity only)*/
             return (int)lproto;
+      #else  /* _AIX */
+        if ((errno = 0, lproto = strtol(protocol, &e, 10), 0 == errno)
+            && '\0' == *e && 0 == (lproto >> 31)
+            && 0 == getprotobynumber_r((int)lproto, &pe, &pedata))
+            return (int)lproto;
+      #endif /* _AIX */
     }
 
     errno = EPROTONOSUPPORT;
     return -1;
 }
 
+#ifdef HAVE_GETPROTOBYNUMBER_R
 static char *  __attribute__((nonnull))
 bsock_addrinfo_protocol_to_str (const int proto,
                                 char * const buf, const size_t bufsz)
 {
+  #ifndef _AIX
     struct protoent pe;
     struct protoent *peres;
     int rc;                /*(recommended bufsz is at least 1024 bytes)*/
     return (0 == (rc = getprotobynumber_r(proto, &pe, buf, bufsz, &peres)))
       ? pe.p_name
-      : (errno = (rc == ERANGE ? ENOSPC : EPROTONOSUPPORT), NULL);
-        /* (treating all other errors as EPROTONOSUPPORT) */
+      : (errno = (rc == ERANGE ? ENOSPC : EPROTONOSUPPORT), (char *)NULL);
+         /* (treating all other errors as EPROTONOSUPPORT) */
+  #else  /* _AIX */
+    struct protoent pe;
+    struct protoent_data pedata;
+    size_t len;
+    return (0 == getprotobynumber_r(proto, &pe, &pedata))
+      ? (len = strlen(pe.p_name)) < bufsz
+          ? memcpy(buf, pe.p_name, len+1)
+          : (errno = ENOSPC, (char *)NULL)
+      : (errno = EPROTONOSUPPORT, (char *)NULL);
+         /* (treating all other errors as EPROTONOSUPPORT) */
+  #endif /* _AIX */
 }
+#else /* e.g. __hpux */
+static char *
+bsock_addrinfo_protocol_to_str (const int proto)
+{
+    struct protoent * const restrict pe = getprotobynumber(proto);
+    return (NULL != pe) ? pe->p_name : NULL;
+}
+#define bsock_addrinfo_protocol_to_str(proto,buf,bufsz) \
+        bsock_addrinfo_protocol_to_str(proto)
+#endif
 
 bool  __attribute__((nonnull))
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,

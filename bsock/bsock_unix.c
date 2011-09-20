@@ -40,6 +40,14 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -253,7 +261,7 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 static inline int  __attribute__((nonnull))
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
-    struct ucred_t *ucred;
+    ucred_t *ucred;
     if (0 != getpeerucred(s, &ucred))
         return -1;
     *euid = ucred_geteuid(ucred);
@@ -263,6 +271,11 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 }
 #endif
 
+#ifdef _AIX
+int getpeereid (int, uid_t * __restrict__, gid_t * __restrict__);
+#endif
+
+#ifndef __hpux
 int  __attribute__((nonnull))
 bsock_unix_getpeereid (const int s,
                        uid_t * const restrict euid,
@@ -270,6 +283,15 @@ bsock_unix_getpeereid (const int s,
 {
     return getpeereid(s, euid, egid);
 }
+#else  /* unsupported on HP-UX */
+int  __attribute__((nonnull))
+bsock_unix_getpeereid (const int s  __attribute__((unused)),
+                       uid_t * const restrict euid  __attribute__((unused)),
+                       gid_t * const restrict egid  __attribute__((unused)))
+{
+    return -1;  /* unsupported on HP-UX */
+}
+#endif
 
 
 #if 0 /* sample code */
