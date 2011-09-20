@@ -128,8 +128,8 @@ bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
         if (   ai->ai_addrlen == tai->ai_addrlen
             && 0 == memcmp(ai->ai_addr, tai->ai_addr, ai->ai_addrlen)
             && ai->ai_family   == tai->ai_family
-            && ai->ai_socktype == tai->ai_socktype
-            && ai->ai_protocol == tai->ai_protocol)
+            && (ai->ai_socktype == tai->ai_socktype || 0 == ai->ai_socktype)
+            && (ai->ai_protocol == tai->ai_protocol || 0 == ai->ai_protocol))
             return !(ai->ai_flags & BSOCK_FLAGS_REBIND)
               ? t->fd
               : bsock_resvaddr_rebind(ai, &t->fd);

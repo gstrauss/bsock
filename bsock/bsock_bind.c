@@ -83,7 +83,8 @@ bsock_bind_send_addr_and_recv (const int fd,
 {
     /* bsock_unix_recv_fds() fills errnum to indicate remote success/failure
      * (no poll before sending addrinfo since this is first write to socket)
-     * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port) */
+     * (dup2 rfd to fd if rfd != -1; indicates persistent reserved addr,port)
+     * (persistent reserved addr does not preserve setsockopt() before bind())*/
     int rfd = -1;
     unsigned int nrfd = 1;
     int errnum = 0;
@@ -92,11 +93,16 @@ bsock_bind_send_addr_and_recv (const int fd,
         &&  1 == retry_poll_fd(sfd, POLLIN, BSOCK_POLL_TIMEOUT)
         && -1 != bsock_unix_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
         if (-1 != rfd) {
-            /* assert(rfd != fd); *//*(should not happen)*/
+            /* assert(rfd != fd); *//*(should not happen that they are same)*/
             if (0 == errnum) {
+                const int flflags = fcntl(fd, F_GETFL, 0);
+                const int fdflags = fcntl(fd, F_GETFD, 0);
                 do { errnum = dup2(rfd, fd);
                 } while (errnum == -1 && (errno == EINTR || errno == EBUSY));
-                errnum = (errnum == fd) ? 0 : errno;
+                if (0 == (errnum = (errnum == fd) ? 0 : errno)) {
+                    fcntl(fd, F_SETFL, flflags);
+                    fcntl(fd, F_SETFD, fdflags);
+                }
             }
             nointr_close(rfd);
         }
@@ -220,7 +226,7 @@ bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
       .ai_flags    = 0,
       .ai_family   = addr->sa_family,
       .ai_socktype = 0,
-      .ai_protocol = 0,
+      .ai_protocol = IPPROTO_TCP,  /*(default if no SO_PROTOCOL sockopt)*/
       .ai_addrlen  = addrlen,
       .ai_addr     = (struct sockaddr *)(uintptr_t)addr,
       .ai_canonname= NULL,
@@ -231,7 +237,7 @@ bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
     /* bsock supports only AF_INET, AF_INET6, AF_UNIX;
      * simply bind if address family is otherwise */
     if (ai.ai_family == AF_INET || ai.ai_family == AF_INET6) {
-        /* simply bind if port < IPPORT_RESERVED; no root privileges needed */
+        /* simply bind if port >= IPPORT_RESERVED; no root privileges needed */
         const int port = (ai.ai_family == AF_INET)
           ? ntohs(((struct sockaddr_in  *)ai.ai_addr)->sin_port)
           : ntohs(((struct sockaddr_in6 *)ai.ai_addr)->sin6_port);
