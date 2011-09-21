@@ -18,8 +18,6 @@ CFLAGS+=-Werror -Wall -Wextra -Winline
 CFLAGS+=-O3 -DNEBUG -fhosted
 CFLAGS+=-I.
 
-RPATH= -Wl,-rpath=$(PREFIX)/lib
-
 bsock.m.o:        CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
@@ -41,10 +39,26 @@ bsock_preload.o: CFLAGS+=-fPIC
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+OSNAME:=$(shell /bin/uname -s)
+ifeq ($(OSNAME),Linux)
+  RPATH= -Wl,-rpath,$(PREFIX)/lib
+endif
+ifeq ($(OSNAME),AIX)
+  RPATH= -Wl,-b,libpath:$(PREFIX)/lib
+endif
+ifeq ($(OSNAME),HP-UX)
+  RPATH= -Wl,+b,$(PREFIX)/lib
+endif
+ifeq ($(OSNAME),SunOS)
+  RPATH= -Wl,-R,$(PREFIX)/lib
+  CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
+  LDFLAGS+=-lsocket -lnsl -lrt
+endif
+
 libbsock.so: LDFLAGS+= -ldl
 libbsock.so: $(bsock_sobjs)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
-libbsock_preload.so: LDFLAGS+= -L. -lbsock -ldl
+libbsock_preload.so: LDFLAGS+= libbsock.so -ldl
 libbsock_preload.so: bsock_preload.o | libbsock.so
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
 
@@ -92,8 +106,3 @@ bsock_daemon.o: bsock_daemon.h bsock_syslog.h bsock_unix.h
 bsock_resvaddr.o: bsock_resvaddr.h bsock_syslog.h
 bsock_unix.o: bsock_unix.h
 bsock_syslog.o: bsock_syslog.h
-
-OSNAME:=$(shell /bin/uname -s)
-ifeq ($(OSNAME),SunOS)
-  CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
-endif

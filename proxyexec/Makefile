@@ -13,17 +13,30 @@ CFLAGS+=-Werror -Wall -Wextra -Winline
 CFLAGS+=-O3 -DNEBUG -fhosted
 CFLAGS+=-I $(BSOCK_INCLUDE)
 
-RPATH= -Wl,-rpath=$(PREFIX)/lib
-
 %.o: CFLAGS+=-pthread
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+OSNAME:=$(shell /bin/uname -s)
+ifeq ($(OSNAME),Linux)
+  RPATH= -Wl,-rpath,$(PREFIX)/lib
+endif
+ifeq ($(OSNAME),AIX)
+  RPATH= -Wl,-b,libpath:$(PREFIX)/lib
+endif
+ifeq ($(OSNAME),HP-UX)
+  RPATH= -Wl,+b,$(PREFIX)/lib
+endif
+ifeq ($(OSNAME),SunOS)
+  RPATH= -Wl,-R,$(PREFIX)/lib
+  CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
+endif
 
 # proxyexec
 # (reused from libbsock.so: bsock_daemon.o bsock_syslog.o bsock_unix.o
 # Override default socket dir by defining replacement.  Must end in '/'
 #   -DPROXYEXEC_SOCKET_DIR='"/usr/local/var/run/proxyexec/"'
-proxyexec: LDFLAGS+= -L $(BSOCK_LIBDIR) -lbsock
+proxyexec: LDFLAGS+= $(BSOCK_LIBDIR)/libbsock.so
 proxyexec: proxyexec.o
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
