@@ -74,6 +74,12 @@ bsock_daemon_setuid_stdinit (void)
     return true;
 }
 
+static void
+bsock_daemon_sa_ignore (int signum __attribute__((unused)))
+{   /*(handler gets reset to SIG_DFL by execve(); SIG_IGN would be inherited)*/
+    /* ignore signal */
+}
+
 static void  __attribute__((noreturn))
 bsock_daemon_sa_handler (int signum __attribute__((unused)))
 {
@@ -116,7 +122,8 @@ bsock_daemon_signal_init (void)
         return false;
     }
 
-    act.sa_handler = SIG_IGN;
+    /*(handler gets reset to SIG_DFL by execve(); SIG_IGN would be inherited)*/
+    act.sa_handler = bsock_daemon_sa_ignore;
     act.sa_flags = 0;  /* omit SA_RESTART */
     if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0) {
         bsock_syslog(errno, LOG_ERR, "sigaction");

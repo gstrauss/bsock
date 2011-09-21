@@ -290,6 +290,9 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
         alarm(2);  /* arbitrarily chosen limit */
         r = recv(cxt->fd, ((char *)iov[1].iov_base)+r, more, MSG_WAITALL);
         alarm(0);
+      #if MSG_DONTWAIT == 0
+        fcntl(cxt->fd, F_SETFL, (fcntl(cxt->fd, F_GETFL, 0) | O_NONBLOCK));
+      #endif
 
         if (more != (size_t)r) {
             bsock_syslog((-1 == r ? errno : EINVAL), LOG_ERR, "recv argv");
@@ -483,11 +486,25 @@ proxyexec_client (const int argc, char ** const restrict argv)
             fd = bsock_unix_socket_connect(sock);
             if (-1 == fd)
                 break;
+          #if MSG_DONTWAIT == 0
+            fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+          #endif
         }
         else {
             fputs("Invalid argument\n", stderr);
             break;
         }
+
+      #if MSG_NOSIGNAL==0 /*(ignore SIGPIPE on platforms without MSG_NOSIGNAL)*/
+        {   /*(SIGPIPE already ignored in daemon via bsock_daemon_init())*/
+            struct sigaction act;
+            (void) sigemptyset(&act.sa_mask);
+            act.sa_handler = SIG_IGN;
+            act.sa_flags = 0;  /* omit SA_RESTART */
+            if (sigaction(SIGPIPE, &act, (struct sigaction *) NULL) != 0)
+                break;
+        }
+      #endif
 
         /* send argv,env,fds over socket and wait for exit status */
         if (   !proxyexec_argv_env_send(fd, &cmd, envbuf, envsz)
@@ -637,6 +654,9 @@ main (int argc, char *argv[])
         if (0 == fork()) {
             cxt.fd = cfd;
             fcntl(cfd, F_SETFD, fcntl(cfd, F_GETFD, 0) | FD_CLOEXEC);
+          #if MSG_DONTWAIT == 0
+            fcntl(cfd, F_SETFL, fcntl(cfd, F_GETFL, 0) | O_NONBLOCK);
+          #endif
             _exit( proxyexec_child_session(&cxt) );
         }
         nointr_close(cfd);

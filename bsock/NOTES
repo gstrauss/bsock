@@ -26,8 +26,10 @@ on the socket as if the client process had called bind() itself.  If the client
 (optionally) passes an unbound socket to the bsock daemon along with the
 addrinfo request, then bsock will authorize and bind the address to the socket
 provided (or will dup2() to the socket if the address requested is an address
-that is persistently reserved in the daemon).  Client should therefore set
-options on socket after the call to bsock.
+that is persistently reserved in the daemon).  Important: client should
+therefore set options (setsockopt()) on socket after the call to bsock since
+socket options are not preserved for persistent reserved addresses.  (Flags set
+with fcntl F_SETFL or F_SETFD are preserved for persistent reserved addresses.)
 
 Another option for using bsock is to install it as setuid root program. This
 is not required if running bsock as daemon.  However, if installed setuid root,
@@ -270,6 +272,12 @@ FUTURE:
    developer can not accidentally 'install' test executables)
 - run programs with memory leak generators and stuff
 - port and test bsock on additional platforms (FreeBSD, OpenBSD, ...)
+  On some older Unix without MSG_DONTWAIT, callers of bsock library
+  might call fcntl(fd, F_SETFL, O_NONBLOCK), similar to proxyexec.
+  On some older Unix without MSG_NOSIGNAL, callers of bsock library
+  should catch or ignore SIGPIPE.  See proxyexec.c for an example.
+  (Note that libbsock_preload.so does not attempt to handle SIGPIPE;
+   it is generally not a good idea for libraries to modify signal handlers)
 - explore replacing bsock handler threads with poll()-based solution
   and single, coarse timer for connection expiration.  (would need to call
   time() in struct bsock_client_st and scan pollset at intervals if

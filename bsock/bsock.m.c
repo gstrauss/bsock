@@ -448,6 +448,10 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     /* send 4-byte value in data to indicate success or errno value
      * (send socket fd to client if new socket, no poll since only one send) */
     if (c->fd != fd) {
+      #if !defined(MSG_DONTWAIT) || MSG_DONTWAIT-0 == 0
+        /* poll()d before recv above, so can defer O_NONBLOCK to here */
+        fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
+      #endif
         rc = (bsock_unix_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
               == (ssize_t)iov.iov_len)
           ? EXIT_SUCCESS
