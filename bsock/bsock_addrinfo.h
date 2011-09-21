@@ -29,10 +29,6 @@
 #ifndef INCLUDED_BSOCK_ADDRINFO_H
 #define INCLUDED_BSOCK_ADDRINFO_H
 
-#ifdef _AIX  /* required to get definition of struct addrinfo on AIX (!) */
-#define _ALL_SOURCE
-#endif
-
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -40,6 +36,23 @@
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(_AIX) && !defined(_ALL_SOURCE)
+/* #define _ALL_SOURCE required for definition of struct addrinfo on AIX (!) */
+/* !!Differs!! from Single Unix Specification SUSv6 (from 2004!)
+ * http://pubs.opengroup.org/onlinepubs/009695399/basedefs/netdb.h.html */
+struct addrinfo
+{                         /* AIX struct addrinfo DIFFERS FROM POSIX STANDARD! */
+    int ai_flags;
+    int ai_family;
+    int ai_socktype;
+    int ai_protocol;
+    size_t ai_addrlen;         /* socklen_t in standard */
+    char *ai_canonname;        /* order swapped with ai_addr in standard */
+    struct sockaddr *ai_addr;  /* order swapped with ai_cannonname in standard*/
+    struct addrinfo *ai_next;
+};
 #endif
 
 struct bsock_addrinfo_strs {

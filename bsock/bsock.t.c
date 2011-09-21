@@ -26,10 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef _AIX  /* required to get definition of struct addrinfo on AIX (!) */
-#define _ALL_SOURCE
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>

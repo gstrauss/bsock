@@ -26,11 +26,72 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* define _BSD_SOURCE for getprotobyname_r(), getprotobynumber_r() */
-#define _BSD_SOURCE
-#ifdef __sun  /* getprotobyname_r(), getprotobynumber_r(), INET6_ADDRSTRLEN */
-#define __EXTENSIONS__
+/*
+ * getprotobyname_r() and getprotobynumber_r() are not standardized
+ */
+
+#ifdef __linux__
+/*(#define _BSD_SOURCE for getprotobyname_r(), getprotobynumber_r())*/
+#include <sys/types.h>
+struct protoent;
+extern int getprotobyname_r (__const char *__restrict __name,
+                             struct protoent *__restrict __result_buf,
+                             char *__restrict __buf, size_t __buflen,
+                             struct protoent **__restrict __result);
+
+extern int getprotobynumber_r (int __proto,
+                               struct protoent *__restrict __result_buf,
+                               char *__restrict __buf, size_t __buflen,
+                               struct protoent **__restrict __result);
 #endif
+
+#ifdef __sun
+/*(#define __EXTENSIONS__ before includes
+ * for INET6_ADDRSTRLEN, getprotobyname_r(), getprotobynumber_r()) */
+struct protoent;
+struct protoent *getprotobyname_r(const char *, struct protoent *, char *, int);
+struct protoent *getprotobynumber_r(int, struct protoent *, char *, int);
+#define getprotobyname_r(protocol, pe, buf, bufsz, peres) \
+  ((*(peres)=getprotobyname_r((protocol),(pe),(buf),(bufsz)))!=NULL ? 0 : errno)
+#define getprotobynumber_r(proto, pe, buf, bufsz, peres) \
+  ((*(peres)=getprotobynumber_r((proto),(pe),(buf),(bufsz)))!=NULL ? 0 : errno)
+#endif
+
+#ifdef _AIX
+/*(#define _ALL_SOURCE before includes
+ * for struct protoent_data, getprotobyname_r(), getprotobynumber_r())
+ * and struct addrinfo */
+#define _ALL_SOURCE  /* import IBM ugliness */
+#if 0
+#include <stdio.h>
+#define _MAXALIASES 35
+#define _MAXLINELEN 1024
+struct protoent_data {     /* should be considered opaque */
+    FILE *proto_fp;
+    int _proto_stayopen;
+    char line[_MAXLINELEN];
+    char *proto_aliases[_MAXALIASES];
+    int  currentlen;
+    char *current;
+    void *_proto_reserv1;  /* reserved for future use */
+    void *_proto_reserv2;  /* reserved for future use */
+};
+extern int getprotobyname_r(const char *name, struct protoent *protoptr,
+        struct protoent_data *proto_data);
+extern int getprotobynumber_r(int proto, struct protoent *protoptr,
+        struct protoent_data *proto_data);
+#endif /* #if 0 */
+#endif
+
+#ifdef __hpux /* getprotobyname(), getprotobynumber() thread-safe on HP-UX ? */
+#undef HAVE_GETPROTOBYNAME_R
+#undef HAVE_GETPROTOBYNUMBER_R
+#else
+#define HAVE_GETPROTOBYNAME_R
+#define HAVE_GETPROTOBYNUMBER_R
+#endif
+
+
 
 #include <bsock_addrinfo.h>
 
@@ -57,20 +118,6 @@
 #ifndef ESOCKTNOSUPPORT /* otherwise would require -D_HPUX_SOURCE */
 #define ESOCKTNOSUPPORT 222
 #endif
-#endif
-
-#ifdef __sun  /* getprotobyname_r(), getprotobynumber_r() are not standardized*/
-#define getprotobyname_r(protocol, pe, buf, bufsz, peres) \
-  ((*(peres)=getprotobyname_r((protocol),(pe),(buf),(bufsz)))!=NULL ? 0 : errno)
-#define getprotobynumber_r(proto, pe, buf, bufsz, peres) \
-  ((*(peres)=getprotobynumber_r((proto),(pe),(buf),(bufsz)))!=NULL ? 0 : errno)
-#endif
-#ifdef __hpux /* getprotobyname(), getprotobynumber() thread-safe on HP-UX ? */
-#undef HAVE_GETPROTOBYNAME_R
-#undef HAVE_GETPROTOBYNUMBER_R
-#else
-#define HAVE_GETPROTOBYNAME_R
-#define HAVE_GETPROTOBYNUMBER_R
 #endif
 
 /* Note: routines here are simple sequences of short lists of string comparisons
