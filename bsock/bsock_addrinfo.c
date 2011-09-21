@@ -190,7 +190,7 @@ bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
             return pe.p_proto;
       #endif /* _AIX */
       #else
-        struct protoent * const restrict pe = getprotobyname_r(protocol);
+        struct protoent * const restrict pe = getprotobyname(protocol);
         if (NULL != pe)
             return pe->p_proto;
       #endif

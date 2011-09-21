@@ -339,6 +339,10 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
     const int status = proxyexec_fork_exec(argv);
     _exit( send(cxt->fd, &status, sizeof(status), MSG_DONTWAIT|MSG_NOSIGNAL)
            == sizeof(status) ? EXIT_SUCCESS : EXIT_FAILURE );
+
+  #if defined(_AIX) || defined(__hpux)
+    return EXIT_FAILURE; /*@NOTREACHED@*/
+  #endif
 }
 
 /*
