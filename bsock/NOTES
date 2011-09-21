@@ -207,7 +207,7 @@ bsock to allow a port in the range [IPPORT_RESERVED/2, IPPORT_RESERVED).
 Similar to authbind, bsock provides a simple .so to interpose the bind() used
 by unmodified executables so that the bsock daemon is called when the
 executable calls bind().
-  LD_PRELOAD=/usr/local/lib/libbsock_preload.so
+  LD_PRELOAD=/usr/local/lib/libbsock_preload.so:/usr/local/lib/libbsock.so
 Implementation consideration when using LD_PRELOAD:
 If the executable calls bind() with an AF_INET or AF_INET6 addr with port 0,
 and expects a high port, then bsock_preload.c might be modified to detect
@@ -219,11 +219,13 @@ problem for most usage.
 Example on RedHat/Fedora:
   /etc/rc.d/init.d/rpcbind
     modify: daemon $prog $RPCBIND_ARGS $1
-    to be:  LD_PRELOAD=/usr/local/lib/libbsock_preload.so \
+    to be:
+      LD_PRELOAD=/usr/local/lib/libbsock_preload.so:/usr/local/lib/libbsock.so \
             daemon $prog $RPCBIND_ARGS $1
   /etc/rc.d/init.d/ypbind
     modify: daemon $exec $OTHER_YPBIND_OPTS
-    to be:  LD_PRELOAD=/usr/local/lib/libbsock_preload.so \
+    to be:
+      LD_PRELOAD=/usr/local/lib/libbsock_preload.so:/usr/local/lib/libbsock.so \
             daemon $exec $OTHER_YPBIND_OPTS
 
 
