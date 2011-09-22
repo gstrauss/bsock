@@ -1,6 +1,8 @@
 .PHONY: bsock proxyexec
 all: bsock proxyexec
-bsock proxyexec:
+bsock:
+	$(MAKE) -C $@ --no-print-directory
+proxyexec: bsock
 	$(MAKE) -C $@ --no-print-directory
 
 .PHONY: clean clean-all

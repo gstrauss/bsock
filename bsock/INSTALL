@@ -15,8 +15,7 @@ bsock installation
   # Configure privileged daemons to use bsock without running as root
   #   Add the role account running the daemon to group 'daemon'
   #     (or change secure-by-default permissions on socket -- see NOTES file)
-  #   LD_PRELOAD=/usr/local/lib/libbsock_preload.so:/usr/local/lib/libbsock.so \
-  #     daemon_program
+  #   LD_PRELOAD=/usr/local/lib/libbsock_preload.so <daemon_program>
 
 See NOTES for more technical (and probably less readable) details and features.
 See Makefile for various overrides, such as alternate installation location.

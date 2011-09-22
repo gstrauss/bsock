@@ -44,10 +44,6 @@ extern "C" {
 int  __attribute__((nonnull))
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai);
 
-int  __attribute__((nonnull))
-bsock_bind_intercept (int sockfd, const struct sockaddr *addr,
-                      const socklen_t addrlen);
-
 #ifdef __cplusplus
 }
 #endif
