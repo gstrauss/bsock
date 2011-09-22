@@ -52,7 +52,7 @@ endif
 ifeq ($(OSNAME),SunOS)
   RPATH= -Wl,-R,$(PREFIX)/lib
   CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
-  LDFLAGS+=-lsocket -lnsl -lrt
+  LDFLAGS+=-lsocket -lrt
 endif
 
 libbsock.so: LDFLAGS+= -ldl

@@ -53,6 +53,7 @@ struct addrinfo
     struct sockaddr *ai_addr;  /* order swapped with ai_cannonname in standard*/
     struct addrinfo *ai_next;
 };
+#define AI_PASSIVE 0x02        /* specific to AIX */
 #endif
 
 struct bsock_addrinfo_strs {

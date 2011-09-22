@@ -1,5 +1,13 @@
 bsock change log
 
+bsock v0.02 (2011.09.21)
+- portability fixes to compile on Solaris, AIX, HP-UX
+  (bsock still does not work on HP-UX since no getpeereid() or SO_PEERCRED)
+- proxyexec - build against local bsock headers, lib
+- bsock_bind - preserve file descriptor,status flags on socket provided
+- bsock_preload - use IPPROTO_TCP when getsockopt SO_PROTOCOL not available
+- NOTES - add example use of LD_PRELOAD=/usr/local/lib/libbsock_preload.so
+
 bsock v0.01 (2011.06.20)
 - WFM: works-for-me! (alpha)
   Initial release for feedback and to get over the hurdle of initial release.
