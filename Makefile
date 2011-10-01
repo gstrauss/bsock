@@ -5,6 +5,11 @@ bsock:
 proxyexec: bsock
 	$(MAKE) -C $@ --no-print-directory
 
+.PHONY: install
+install:
+	$(MAKE) -C bsock --no-print-directory install
+	$(MAKE) -C proxyexec --no-print-directory install
+
 .PHONY: clean clean-all
 clean: clean-all
 clean-all:
