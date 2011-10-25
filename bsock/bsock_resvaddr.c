@@ -99,15 +99,19 @@ bsock_resvaddr_count (void)
     return (NULL != bsock_resvaddr_alloc) ? bsock_resvaddr_alloc->elt_count : 0;
 }
 
+#if !(defined(__GNUC__) || defined(__xlc__) || defined(__xlC__))
+  #ifndef __builtin_expect
+  #define __builtin_expect(x,y) (x)
+  #endif
+#endif
 static uint32_t  __attribute__((nonnull))
 bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 {
-    const unsigned char * const restrict addr = (unsigned char *)ai->ai_addr;
-    const size_t addrlen = ai->ai_addrlen;
-    size_t i = SIZE_MAX;/* (size_t)-1; will wrap around to 0 with first ++i */
+    const unsigned char * restrict addr = (const unsigned char *)ai->ai_addr;
+    const unsigned char * const e =(const unsigned char *)addr + ai->ai_addrlen;
     uint32_t h = 5381;  /* djb cdb hash function: http://cr.yp.to/cdb/cdb.txt */
-    while (++i < addrlen)
-        h = (h + (h << 5)) ^ addr[i];
+    for (; __builtin_expect( (addr < e), 1); ++addr)
+        h = (h + (h << 5)) ^ *addr;
     return h;
 }
 
