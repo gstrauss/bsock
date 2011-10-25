@@ -1,0 +1,5 @@
+*.o
+*.so
+bsock/bsock
+bsock/bsock.t
+proxyexec/proxyexec
