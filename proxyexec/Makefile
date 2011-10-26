@@ -20,6 +20,8 @@ CFLAGS+=-I $(BSOCK_INCLUDE)
 OSNAME:=$(shell /bin/uname -s)
 ifeq ($(OSNAME),Linux)
   RPATH= -Wl,-rpath,$(PREFIX)/lib
+  CFLAGS+=-D_FORTIFY_SOURCE=2 -fstack-protector
+  LDFLAGS+=-Wl,-O,1 -Wl,--hash-style,gnu -Wl,-z,relro,-z,now
 endif
 ifeq ($(OSNAME),AIX)
   RPATH= -Wl,-b,libpath:$(PREFIX)/lib
