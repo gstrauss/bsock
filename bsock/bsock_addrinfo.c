@@ -120,6 +120,8 @@ extern int getprotobynumber_r(int proto, struct protoent *protoptr,
 #endif
 #endif
 
+#define memcmp_constr(str,constr) memcmp((str),(constr),sizeof(constr))
+
 /* Note: routines here are simple sequences of short lists of string comparisons
  * A more performant approach might be table-driven sorted tables and bsearch().
  * Similarly, simple string parsing routines like strtok() are used, even though
@@ -129,21 +131,21 @@ static int  __attribute__((nonnull))
 bsock_addrinfo_family_from_str (const char * const restrict family)
 {
     /* list of protocol families below is not complete */
-    if (        0 == strcmp(family, "AF_INET")
-             || 0 == strcmp(family, "PF_INET"))
+    if (        0 == memcmp_constr(family, "AF_INET")
+             || 0 == memcmp_constr(family, "PF_INET"))
         return AF_INET;
-    else if (   0 == strcmp(family, "AF_INET6")
-             || 0 == strcmp(family, "PF_INET6"))
+    else if (   0 == memcmp_constr(family, "AF_INET6")
+             || 0 == memcmp_constr(family, "PF_INET6"))
         return AF_INET6;
-    else if (   0 == strcmp(family, "AF_LOCAL")
-             || 0 == strcmp(family, "AF_UNIX")
-             || 0 == strcmp(family, "AF_FILE")
-             || 0 == strcmp(family, "PF_LOCAL")
-             || 0 == strcmp(family, "PF_UNIX")
-             || 0 == strcmp(family, "PF_FILE"))
+    else if (   0 == memcmp_constr(family, "AF_LOCAL")
+             || 0 == memcmp_constr(family, "AF_UNIX")
+             || 0 == memcmp_constr(family, "AF_FILE")
+             || 0 == memcmp_constr(family, "PF_LOCAL")
+             || 0 == memcmp_constr(family, "PF_UNIX")
+             || 0 == memcmp_constr(family, "PF_FILE"))
         return AF_UNIX;
-    else if (   0 == strcmp(family, "AF_UNSPEC")
-             || 0 == strcmp(family, "PF_UNSPEC"))
+    else if (   0 == memcmp_constr(family, "AF_UNSPEC")
+             || 0 == memcmp_constr(family, "PF_UNSPEC"))
         return AF_UNSPEC;
     else {
         errno = EAFNOSUPPORT;
@@ -168,24 +170,24 @@ bsock_addrinfo_family_to_str (const int family)
 static int  __attribute__((nonnull))
 bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
 {
-    if (     0 == strcmp(socktype, "SOCK_STREAM"))
+    if (     0 == memcmp_constr(socktype, "SOCK_STREAM"))
         return SOCK_STREAM;
-    else if (0 == strcmp(socktype, "SOCK_DGRAM"))
+    else if (0 == memcmp_constr(socktype, "SOCK_DGRAM"))
         return SOCK_DGRAM;
-    else if (0 == strcmp(socktype, "SOCK_RAW"))
+    else if (0 == memcmp_constr(socktype, "SOCK_RAW"))
         return SOCK_RAW;
   #ifdef SOCK_RDM
-    else if (0 == strcmp(socktype, "SOCK_RDM"))
+    else if (0 == memcmp_constr(socktype, "SOCK_RDM"))
         return SOCK_RDM;
   #endif
-    else if (0 == strcmp(socktype, "SOCK_SEQPACKET"))
+    else if (0 == memcmp_constr(socktype, "SOCK_SEQPACKET"))
         return SOCK_SEQPACKET;
   #ifdef SOCK_DCCP
-    else if (0 == strcmp(socktype, "SOCK_DCCP"))
+    else if (0 == memcmp_constr(socktype, "SOCK_DCCP"))
         return SOCK_DCCP;
   #endif
   #ifdef SOCK_PACKET
-    else if (0 == strcmp(socktype, "SOCK_PACKET"))
+    else if (0 == memcmp_constr(socktype, "SOCK_PACKET"))
         return SOCK_PACKET;
   #endif
     else {
