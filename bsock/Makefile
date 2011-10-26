@@ -3,11 +3,15 @@
 TARGETS:= libbsock.so libbsock_preload.so bsock bsock.t
 
 PREFIX?=/usr/local
+BSOCK_DOC_DIR?=$(PREFIX)/share/doc/bsock
 BSOCK_EXE?=$(PREFIX)/sbin/bsock
 BSOCK_CONFIG?=$(PREFIX)/etc/bsock
 BSOCK_SOCKET_DIR?=$(PREFIX)/var/run/bsock
 BSOCK_SOCKET_MODE?=0660
 BSOCK_GROUP?=daemon
+ifneq (0,$(shell id -u))
+BSOCK_GROUP:=$(shell id -gn)
+endif
 
 .PHONY: all
 all: $(TARGETS)
@@ -15,7 +19,7 @@ all: $(TARGETS)
 CC=gcc
 CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic-errors
 CFLAGS+=-Werror -Wall -Wextra -Winline
-CFLAGS+=-O3 -DNEBUG -fhosted
+CFLAGS+=-O3 -g -DNEBUG -fhosted
 CFLAGS+=-I.
 
 bsock.m.o:        CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
@@ -75,7 +79,7 @@ bsock.t: bsock.t.o libbsock.so
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
 # (Note: not currently installing libbsock.so with any version suffix)
-.PHONY: install install-suid install-headers
+.PHONY: install install-suid install-headers install-doc
 BSOCK_MODE=0550
 install-suid: BSOCK_MODE=4550
 install-suid: install ;
@@ -93,6 +97,9 @@ install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h \
                  bsock_daemon.h bsock_syslog.h
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock
 	/usr/bin/install -m 0444 -p $^ $(PREFIX)/include/bsock/
+install-doc: CHANGELOG COPYING FAQ INSTALL NOTES README
+	/bin/mkdir -p -m 0755 $(BSOCK_DOC_DIR)
+	/usr/bin/install -m 0444 -p $^ $(BSOCK_DOC_DIR)
 
 .PHONY: clean clean-bsock
 clean: clean-bsock

@@ -10,7 +10,7 @@ all: proxyexec
 CC=gcc
 CFLAGS+=-pipe -std=c99 -D_XOPEN_SOURCE=600 -pedantic-errors
 CFLAGS+=-Werror -Wall -Wextra -Winline
-CFLAGS+=-O3 -DNEBUG -fhosted
+CFLAGS+=-O3 -g -DNEBUG -fhosted
 CFLAGS+=-I $(BSOCK_INCLUDE)
 
 %.o: CFLAGS+=-pthread
@@ -39,14 +39,16 @@ endif
 # (reused from libbsock.so: bsock_daemon.o bsock_syslog.o bsock_unix.o
 # Override default socket dir by defining replacement.  Must end in '/'
 #   -DPROXYEXEC_SOCKET_DIR='"/usr/local/var/run/proxyexec/"'
-proxyexec: LDFLAGS+= $(BSOCK_LIBDIR)/libbsock.so
+proxyexec: LDFLAGS+= -L $(BSOCK_LIBDIR) -lbsock
 proxyexec: proxyexec.o
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
-.PHONY: install
+.PHONY: install install-headers install-doc
 install: proxyexec
 	/bin/mkdir -p -m 0755 $(PREFIX)/sbin
 	/usr/bin/install -m 0555 -p proxyexec $(PREFIX)/sbin/
+install-headers: ;
+install-doc: ;
 
 .PHONY: clean clean-proxyexec
 clean: clean-proxyexec
