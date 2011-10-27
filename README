@@ -11,10 +11,13 @@ The bsock daemon listens for requests on a local unix domain socket.
 
 
 
-proxyexec - client/server passing argv and stdin, stdout, stderr fds over
-            unix domain socket between processes owned by different users
+proxyexec - proxy command execution without setuid
 
 proxyexec is an executable that builds with libbsock.so and can be used
 as a login shell or as the target of an sshd_config ForceCommand to
 leverage operating system authentication to passing credentials to a
 service program running under a single account.
+
+proxyexec handles client/server communication by passing argv and stdin,
+stdout, stderr fds over unix domain socket between processes owned by
+different users.

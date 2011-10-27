@@ -1,0 +1,38 @@
+proxyexec - proxy command execution without setuid
+
+README  - summary (this file)
+COPYING - copyright/license
+
+proxyexec is an executable that builds with libbsock.so and can be used
+as a login shell or as the target of an sshd_config ForceCommand to
+leverage operating system authentication to passing credentials to a
+service program running under a single account.
+
+proxyexec handles client/server communication by passing argv and stdin,
+stdout, stderr fds over unix domain socket between processes owned by
+different users.
+
+
+Usage
+-----
+
+  proxyexec -c <cmd> [args]*
+
+proxyexec client mode connects to a socket based <cmd>
+Compile-time root of sockets is /var/run/proxyexec/ (when installed from RPM)
+or else /usr/local/var/run/proxyexec.  The path to the socket to handle a
+particular request is /var/run/proxyexec/<cmd>/socket and the admin setting
+up the daemon must create (mkdir) /var/run/proxyexec/<cmd>/.  The permissions
+can be set on this directory to control who is able to connect to the socket
+that is created within.
+
+  proxyexec -d [-F] -s <sock> <cmd> [args]*
+
+proxyexec server (daemon) mode requires the listen socket path be provided.
+When a connection is accepted from proxyexec client, the command that
+proxyexec runs begins with <cmd> [args]* provided on the proxyexec -d
+command line, followed by the argv passed by the client.  The command
+is executed with execv(); shell interpretation is bypassed.  However,
+the client environment is transferred, so the target command must take
+care to sanitize the environment before executing any shell commands.
+(The same advice is true for setuid/setgid programs, too.)

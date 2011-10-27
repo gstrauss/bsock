@@ -1,6 +1,5 @@
 /*
- * proxyexec - client/server passing argv and stdin, stdout, stderr fds over
- *             unix domain socket between processes owned by different users
+ * proxyexec - proxy command execution without setuid
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
@@ -453,8 +452,10 @@ proxyexec_client (const int argc, char ** const restrict argv)
     if (   NULL != (ssh_original_command = getenv("SSH_ORIGINAL_COMMAND"))
         || NULL != (ssh_original_command = getenv("SSH2_ORIGINAL_COMMAND"))) {
         /* (error if argc non-zero here and SSH[2]?_ORIGINAL_COMMAND is set) */
-        if (0 != argc || 0 != wordexp(ssh_original_command, &cmd, WRDE_NOCMD))
+        if (0 != argc || 0 != wordexp(ssh_original_command, &cmd, WRDE_NOCMD)) {
             cmd.we_wordc = 0;
+            ssh_original_command = NULL;
+        }
     }
 
     do {
@@ -462,7 +463,7 @@ proxyexec_client (const int argc, char ** const restrict argv)
         char *bn;
         char envbuf[8192];  /*(buffer for env vars; arbitrarily sized)*/
 
-        if (cmd.we_wordc == 0) {
+        if (cmd.we_wordc == 0 || *cmd.we_wordv[0] == '\0') {
             fputs("Invalid argument\n", stderr);
             break;
         }
@@ -477,15 +478,21 @@ proxyexec_client (const int argc, char ** const restrict argv)
         bn = (NULL != bn) ? bn+1 : cmd.we_wordv[0];
         sz = strlen(bn);  /* disallow "." and "..", and check length */
         if (!(bn[0]=='.' && (bn[1]=='\0' || (bn[1]=='.' && bn[2]=='\0')))
-            && sizeof(PROXYEXEC_SOCKET_DIR)+sz+sizeof("socket") <= PATH_MAX) {
-            char sock[sizeof(PROXYEXEC_SOCKET_DIR)+sz+sizeof("socket")];
+            && sizeof(PROXYEXEC_SOCKET_DIR)+sz+6+sizeof("socket") <= PATH_MAX) {
+            /*(add sz for name len, add 6 more for "default"; sz >= 1)*/
+            char sock[sizeof(PROXYEXEC_SOCKET_DIR)+sz+6+sizeof("socket")];
             memcpy(sock,PROXYEXEC_SOCKET_DIR,sizeof(PROXYEXEC_SOCKET_DIR)-1);
             memcpy(sock+sizeof(PROXYEXEC_SOCKET_DIR)-1, bn, sz);
             memcpy(sock+sizeof(PROXYEXEC_SOCKET_DIR)-1+sz,
                    "/socket", sizeof("/socket"));
             fd = bsock_unix_socket_connect(sock);
-            if (-1 == fd)
-                break;
+            if (-1 == fd) {
+                memcpy(sock+sizeof(PROXYEXEC_SOCKET_DIR)-1,
+                       "default/socket", sizeof("default/socket"));
+                fd = bsock_unix_socket_connect(sock);
+                if (-1 == fd)
+                    break;
+            }
           #if MSG_DONTWAIT == 0
             fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
           #endif
@@ -566,9 +573,9 @@ main (int argc, char *argv[])
           case 's': sockpath = optarg; break;/*"/var/run/proxyexec/.../socket"*/
           default:  fprintf(stderr, "\nerror: invalid arguments\n");/*fallthru*/
           case 'h': fprintf((sfd == 'h' ? stdout : stderr), "\n"
-                            "  proxyexec -h                   help\n"
-                            "  proxyexec -d [-F] -s <sock>    daemon mode\n"
-                            "  proxyexec -c [cmd] [args]*     client mode\n\n");
+            "  proxyexec -h                                 help\n"
+            "  proxyexec -d [-F] -s <sock> <cmd> [args]*    daemon mode\n"
+            "  proxyexec -c [cmd] [args]*                   client mode\n\n");
                     return (sfd == 'h' ? EXIT_SUCCESS : EXIT_FAILURE);
         }
     }

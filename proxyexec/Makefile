@@ -39,13 +39,16 @@ endif
 # (reused from libbsock.so: bsock_daemon.o bsock_syslog.o bsock_unix.o
 # Override default socket dir by defining replacement.  Must end in '/'
 #   -DPROXYEXEC_SOCKET_DIR='"/usr/local/var/run/proxyexec/"'
-proxyexec: LDFLAGS+= -L $(BSOCK_LIBDIR) -lbsock
+ifneq (,$(PROXYEXEC_SOCKET_DIR))
+proxyexec: LDFLAGS+=-DPROXYEXEC_SOCKET_DIR='"$(PROXYEXEC_SOCKET_DIR)"'
+endif
+proxyexec: LDFLAGS+=-L $(BSOCK_LIBDIR) -lbsock
 proxyexec: proxyexec.o
 	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -o $@ $^
 
 .PHONY: install install-headers install-doc
 install: proxyexec
-	/bin/mkdir -p -m 0755 $(PREFIX)/sbin
+	/bin/mkdir -p -m 0755 $(PREFIX)/sbin $(PREFIX)/var/run/proxyexec
 	/usr/bin/install -m 0555 -p proxyexec $(PREFIX)/sbin/
 install-headers: ;
 install-doc: ;

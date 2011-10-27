@@ -45,15 +45,17 @@ bsock.resvaddr config file line format:
 
 
 Building an RPM
+  ##(fill in correct version)
+  $ version=0.03
   ##(set up RPM build environment, if not already configured)
   echo %_topdir $HOME/rpm > $HOME/.rpmmacros
-  mkdir -p rpm/BUILD rpm/RPMS rpm/SOURCES rpm/SPECS rpm/SRPMS
-  ##(begin with bsock-0.02.tar.gz) or create tarball from source
-  $ rsync -avu --exclude=.git /path/to/bsock/ bsock-0.02
-  $ tar cvzf bsock-0.02.tar.gz bsock-0.02
-  $ rpmbuild -tb bsock-0.02.tar.gz 
-  ##(RPM for binary install now located in rpm/RPMS/<arch>/bsock-0.02-*.rpm)
-  $ rpm -Uvh rpm/RPMS/*/bsock-0.02-*.rpm
+  cd $HOME && mkdir -p rpm/BUILD rpm/RPMS rpm/SOURCES rpm/SPECS rpm/SRPMS
+  ##(begin with bsock-$version.tar.gz) or create tarball from source
+  $ rsync -avu --exclude=.git --delete /path/to/bsock/ bsock-$version
+  $ tar cvzf bsock-$version.tar.gz bsock-$version
+  $ rpmbuild -tb bsock-$version.tar.gz 
+  ##(RPM for binary install now located in rpm/RPMS/<arch>/bsock-$version-*.rpm)
+  $ rpm -Uvh rpm/RPMS/*/bsock-$version-*.rpm
   ##(some clean up)
-  $ rm -rf bsock-0.02
-  $ rm -f bsock-0.02.tar.gz
+  $ rm -rf bsock-$version
+  $ rm -f bsock-$version.tar.gz
