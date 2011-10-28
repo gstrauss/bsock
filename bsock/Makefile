@@ -9,8 +9,13 @@ BSOCK_CONFIG?=$(PREFIX)/etc/bsock
 BSOCK_SOCKET_DIR?=$(PREFIX)/var/run/bsock
 BSOCK_SOCKET_MODE?=0660
 BSOCK_GROUP?=daemon
-ifneq (0,$(shell id -u))
-BSOCK_GROUP:=$(shell id -gn)
+
+usr_bin_id:=$(wildcard /usr/xpg4/bin/id)
+ifeq (,$(usr_bin_id))
+usr_bin_id:=/usr/bin/id
+endif
+ifneq (0,$(shell $(usr_bin_id) -u))
+BSOCK_GROUP:=$(shell $(usr_bin_id) -gn)
 endif
 
 .PHONY: all

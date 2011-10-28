@@ -31,8 +31,9 @@ that is created within.
 proxyexec server (daemon) mode requires the listen socket path be provided.
 When a connection is accepted from proxyexec client, the command that
 proxyexec runs begins with <cmd> [args]* provided on the proxyexec -d
-command line, followed by the argv passed by the client.  The command
-is executed with execv(); shell interpretation is bypassed.  However,
-the client environment is transferred, so the target command must take
-care to sanitize the environment before executing any shell commands.
+command line, followed by the argv passed by the client.  The working
+directory is the root directory ("/").  The command is executed with execv();
+shell interpretation is bypassed.  The client environment is not transferred,
+except for a few variables use for logging.  The target command must still
+take care to sanitize the environment before executing any shell commands.
 (The same advice is true for setuid/setgid programs, too.)

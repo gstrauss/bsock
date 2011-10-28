@@ -40,7 +40,7 @@ endif
 # Override default socket dir by defining replacement.  Must end in '/'
 #   -DPROXYEXEC_SOCKET_DIR='"/usr/local/var/run/proxyexec/"'
 ifneq (,$(PROXYEXEC_SOCKET_DIR))
-proxyexec: LDFLAGS+=-DPROXYEXEC_SOCKET_DIR='"$(PROXYEXEC_SOCKET_DIR)"'
+proxyexec: CFLAGS+=-DPROXYEXEC_SOCKET_DIR='"$(PROXYEXEC_SOCKET_DIR)"'
 endif
 proxyexec: LDFLAGS+=-L $(BSOCK_LIBDIR) -lbsock
 proxyexec: proxyexec.o

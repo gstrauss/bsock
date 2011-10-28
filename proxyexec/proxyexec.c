@@ -396,6 +396,7 @@ proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
     uint32_t hdr[2] = { 0, (uint32_t)argc };/* assert(argc <= UINT_MAX) */
     struct iovec iov[IOV_MAX];
     struct iovec * const iovp = iov+1;
+    bool rc;
     /* store argv in struct iovec array (or first IOV_MAX-1 elements if many)*/
     iov[0].iov_base = (void *)hdr;
     iov[0].iov_len  = sizeof(hdr);
@@ -406,13 +407,13 @@ proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
         iovp[argc].iov_base = envbuf;
         sz += iovp[argc].iov_len = envbufsz;
         hdr[0] = (uint32_t)sz; /* store 4-byte total len */
-        return sz == (size_t)proxyexec_stdfds_send(fd, iov, argc+2);
+        /* send data; sz is not always an exact match, for some reason */
+        rc = (sz <= (size_t)proxyexec_stdfds_send(fd, iov, argc+2));
     }
     else { /* handle case of argc > IOV_MAX-2 */
         size_t totalsz = sz;
         char *p;
         struct iovec iovx[2];
-        bool rc;
         /* calculate size of remaining argv elements */
         for (; u < argc; ++u)
             totalsz += strlen(argv[u]) + 1;
@@ -429,12 +430,16 @@ proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
          *  strings fit into buffer, and p will not be NULL) */
         for (u = IOV_MAX-1; u < argc; ++u)
             p = memccpy(p, argv[u], '\0', totalsz);
-        /* send data */
-        rc = (        sz == (size_t)proxyexec_stdfds_send(fd, iov, IOV_MAX)
+        /* send data; sz is not always an exact match, for some reason */
+        rc = (        sz <= (size_t)proxyexec_stdfds_send(fd, iov, IOV_MAX)
               && totalsz == (size_t)bsock_unix_send_fds(fd, NULL, 0, iovx, 2));
         free(iovx[0].iov_base);
-        return rc;
     }
+    /* close transferred descriptors so that target program can detect EOF */
+    nointr_close(STDIN_FILENO);
+    nointr_close(STDOUT_FILENO);
+    nointr_close(STDERR_FILENO);
+    return rc;
 }
 
 static int  __attribute__((nonnull))
@@ -515,6 +520,7 @@ proxyexec_client (const int argc, char ** const restrict argv)
 
         /* send argv,env,fds over socket and wait for exit status */
         if (   !proxyexec_argv_env_send(fd, &cmd, envbuf, envsz)
+            || 0 != fcntl(fd, F_SETFL, (fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK))
             || recv(fd, &status, sizeof(status), MSG_WAITALL) != sizeof(status)
             || !WIFEXITED(status))
             status = EXIT_FAILURE;
@@ -559,6 +565,7 @@ main (int argc, char *argv[])
      */
 
     /* parse arguments (and require daemon mode be specified explicitly) */
+    char * const pc = getenv("POSIXLY_CORRECT");
     static char posixly_correct[] = "POSIXLY_CORRECT=1";
     if (0 != putenv(posixly_correct)) {
         perror("putenv");
@@ -583,6 +590,8 @@ main (int argc, char *argv[])
      * precede arguments received over unix domain socket from client argv */
     cxt.argc = argc - optind;
     cxt.argv = argv + optind;
+    if (pc == NULL || *pc == '\0')
+        unsetenv("POSIXLY_CORRECT");
 
     /* proxyexec redirects stderr to client before exec of target.
      * dup stderr to higher fd to ensure errors go to daemon stderr,
