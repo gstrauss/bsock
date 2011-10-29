@@ -13,6 +13,13 @@ CFLAGS+=-Werror -Wall -Wextra -Winline
 CFLAGS+=-O3 -g -DNEBUG -fhosted
 CFLAGS+=-I $(BSOCK_INCLUDE)
 
+ifeq (i686,$(TARGET_CPU))
+  CFLAGS+=-m32
+endif
+ifeq (x86_64,$(TARGET_CPU))
+  CFLAGS+=-m64
+endif
+
 %.o: CFLAGS+=-pthread
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<

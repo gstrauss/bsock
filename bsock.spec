@@ -14,8 +14,11 @@ Source0:	bsock-%{version}.tar.gz
 BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 BuildRequires:	gcc
-Requires:	glibc
-Prereq:		/sbin/ldconfig
+Requires:	glibc, %{name}-libs = %{version}
+
+%package libs
+Summary: bsock - shared libraries
+Group:   System Environment/Libraries
 
 %description
 ==
@@ -40,23 +43,30 @@ stdout, stderr fds over unix domain socket between processes owned by
 different users.
 ==
 
+%description libs
+bsock - bind() sockets to restricted ports for lower-privilege daemons
+This package contains bsock shared libraries.
+
+
 %prep
 %setup -q
 
 
 %build
+export TARGET_CPU=%{_target_cpu}
 make %{?_smp_mflags} PREFIX=/usr PROXYEXEC_SOCKET_DIR=/var/run/proxyexec/
 
 
 %install
 rm -rf $RPM_BUILD_ROOT
+export TARGET_CPU=%{_target_cpu}
 make install PREFIX=$RPM_BUILD_ROOT/usr
 make install-doc PREFIX=$RPM_BUILD_ROOT/usr
 make install-headers PREFIX=$RPM_BUILD_ROOT/usr
 mv $RPM_BUILD_ROOT/usr/share/doc/bsock \
    $RPM_BUILD_ROOT/usr/share/doc/bsock-%{version}
 # permissions restored in files section below, after 'strip' is possibly run
-chmod u+w $RPM_BUILD_ROOT/usr/lib/* $RPM_BUILD_ROOT/usr/sbin/*
+chmod u+w $RPM_BUILD_ROOT/usr/%{_lib}/* $RPM_BUILD_ROOT/usr/sbin/*
 mv $RPM_BUILD_ROOT/usr/etc $RPM_BUILD_ROOT/usr/var $RPM_BUILD_ROOT/
 
 
@@ -64,25 +74,21 @@ mv $RPM_BUILD_ROOT/usr/etc $RPM_BUILD_ROOT/usr/var $RPM_BUILD_ROOT/
 rm -rf $RPM_BUILD_ROOT
 
 
-%post
-/sbin/ldconfig
-
-
-%postun
-/sbin/ldconfig
+%post libs -p /sbin/ldconfig
+%postun libs -p /sbin/ldconfig
 
 
 %files
 %defattr(-,root,root,-)
-                        /etc/*
+%config(noreplace)      /etc/*
                         /usr/include/bsock
-%attr(0555,root,root)   /usr/lib/libbsock*
 %attr(0555,root,daemon) /usr/sbin/bsock
 %attr(0555,root,root)   /usr/sbin/proxyexec
-                        /var/run/bsock
-                        /var/run/proxyexec
+%ghost                  /var/run/bsock
+%ghost                  /var/run/proxyexec
 %doc                    /usr/share/doc/bsock-%{version}
 
-
-%changelog
+%files libs
+%defattr(-,root,root,-)
+%attr(0555,root,root)   %{_libdir}/libbsock*
 

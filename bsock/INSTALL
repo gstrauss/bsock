@@ -48,12 +48,15 @@ Building an RPM
   ##(fill in correct version)
   $ version=0.03
   ##(set up RPM build environment, if not already configured)
-  echo %_topdir $HOME/rpm > $HOME/.rpmmacros
-  cd $HOME && mkdir -p rpm/BUILD rpm/RPMS rpm/SOURCES rpm/SPECS rpm/SRPMS
+  $ echo %_topdir $HOME/rpm >> $HOME/.rpmmacros
+  $ cd $HOME && mkdir -p rpm/BUILD rpm/RPMS rpm/SOURCES rpm/SPECS rpm/SRPMS
   ##(begin with bsock-$version.tar.gz) or create tarball from source
   $ rsync -avu --exclude=.git --delete /path/to/bsock/ bsock-$version
   $ tar cvzf bsock-$version.tar.gz bsock-$version
   $ rpmbuild -tb bsock-$version.tar.gz 
+  ##(multilib platforms might want both 32-bit and 64-bit bsock-libs RPM)
+  #$rpmbuild -tb bsock-$version.tar.gz --target=i686
+  #$rpmbuild -tb bsock-$version.tar.gz --target=x86_64
   ##(RPM for binary install now located in rpm/RPMS/<arch>/bsock-$version-*.rpm)
   $ rpm -Uvh rpm/RPMS/*/bsock-$version-*.rpm
   ##(some clean up)

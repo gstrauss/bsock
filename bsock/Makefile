@@ -27,6 +27,21 @@ CFLAGS+=-Werror -Wall -Wextra -Winline
 CFLAGS+=-O3 -g -DNEBUG -fhosted
 CFLAGS+=-I.
 
+ifeq (i686,$(TARGET_CPU))
+  CFLAGS+=-m32
+endif
+ifeq (x86_64,$(TARGET_CPU))
+  ABI_BITS=64
+  CFLAGS+=-m64
+endif
+ifeq (,$(TARGET_CPU))
+_HAS_LIB64:=$(wildcard /lib64)
+ifneq (,$(_HAS_LIB64))
+  ABI_BITS=64
+  CFLAGS+=-m64
+endif
+endif
+
 bsock.m.o:        CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
@@ -41,8 +56,8 @@ bsock_sobjs=  bsock_unix.o \
               bsock_bind.o \
               bsock_daemon.o \
               bsock_syslog.o
-$(bsock_sobjs):  CFLAGS+=-fPIC
-bsock_preload.o: CFLAGS+=-fPIC
+$(bsock_sobjs):  CFLAGS+=-fpic
+bsock_preload.o: CFLAGS+=-fpic
 
 %.o: CFLAGS+=-pthread
 %.o: %.c
@@ -50,29 +65,30 @@ bsock_preload.o: CFLAGS+=-fPIC
 
 OSNAME:=$(shell /bin/uname -s)
 ifeq ($(OSNAME),Linux)
-  RPATH= -Wl,-rpath,$(PREFIX)/lib
+  RPATH= -Wl,-rpath,$(PREFIX)/lib$(ABI_BITS)
   CFLAGS+=-D_FORTIFY_SOURCE=2 -fstack-protector
   LDFLAGS+=-Wl,-O,1 -Wl,--hash-style,gnu -Wl,-z,relro,-z,now
   libbsock_preload.so: LDFLAGS+= -Wl,-z,interpose
 endif
 ifeq ($(OSNAME),AIX)
-  RPATH= -Wl,-b,libpath:$(PREFIX)/lib
+  RPATH= -Wl,-b,libpath:$(PREFIX)/lib$(ABI_BITS)
 endif
 ifeq ($(OSNAME),HP-UX)
-  RPATH= -Wl,+b,$(PREFIX)/lib
+  RPATH= -Wl,+b,$(PREFIX)/lib$(ABI_BITS)
 endif
 ifeq ($(OSNAME),SunOS)
-  RPATH= -Wl,-R,$(PREFIX)/lib
+  RPATH= -Wl,-R,$(PREFIX)/lib$(ABI_BITS)
   CFLAGS+=-D_POSIX_PTHREAD_SEMANTICS
   LDFLAGS+=-lsocket -lrt
 endif
 
 libbsock.so: LDFLAGS+= -ldl
 libbsock.so: $(bsock_sobjs)
-	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -fpic -Wl,-soname,bsock -o $@ $^
 libbsock_preload.so: LDFLAGS+= libbsock.so -ldl
 libbsock_preload.so: bsock_preload.o | libbsock.so
-	$(CC) $(CFLAGS) $(RPATH) $(LDFLAGS) -shared -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -fpic -Wl,-soname,$(@F) -o $@ $^ \
+	  $(RPATH)
 
 bsock: LDFLAGS+=-pthread
 bsock: bsock.m.o bsock_bindresvport.o bsock_resvaddr.o \
@@ -89,12 +105,12 @@ BSOCK_MODE=0550
 install-suid: BSOCK_MODE=4550
 install-suid: install ;
 install: bsock libbsock.so libbsock_preload.so
-	/bin/mkdir -p -m 0755 $(PREFIX)/lib $(PREFIX)/sbin \
+	/bin/mkdir -p -m 0755 $(PREFIX)/lib$(ABI_BITS) $(PREFIX)/sbin \
           $(dir $(BSOCK_CONFIG)) $(BSOCK_SOCKET_DIR)
 	/usr/bin/install -m $(BSOCK_MODE) -g $(BSOCK_GROUP) -p \
           bsock $(PREFIX)/sbin/
-	/usr/bin/install -m 0555 -p libbsock.so $(PREFIX)/lib/
-	/usr/bin/install -m 0555 -p libbsock_preload.so $(PREFIX)/lib/
+	/usr/bin/install -m 0555 -p libbsock.so $(PREFIX)/lib$(ABI_BITS)
+	/usr/bin/install -m 0555 -p libbsock_preload.so $(PREFIX)/lib$(ABI_BITS)
 	[ -f $(BSOCK_CONFIG) ] || \
           (/bin/touch $(BSOCK_CONFIG) && \
            /bin/chmod 0644 $(BSOCK_CONFIG))
