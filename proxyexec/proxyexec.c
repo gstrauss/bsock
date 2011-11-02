@@ -135,6 +135,7 @@ struct proxyexec_context {
   gid_t gid;
   int argc;
   char **argv;
+  const char *path;
 };
 
 static int  __attribute__((nonnull))  __attribute__((pure))
@@ -335,6 +336,10 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
     snprintf(proxyexec_gid+14,sizeof(proxyexec_uid)-14,"%u",(uint32_t)cxt->gid);
     if (0 != putenv(proxyexec_uid) || 0 != putenv(proxyexec_gid)) {
         bsock_syslog(errno, LOG_ERR, "putenv");
+        _exit(EXIT_FAILURE);
+    }
+    if (0 != chdir(cxt->path)) {
+        bsock_syslog(errno, LOG_ERR, "chdir");
         _exit(EXIT_FAILURE);
     }
 
@@ -542,6 +547,7 @@ main (int argc, char *argv[])
     int sfd, cfd, daemon = false, supervised = false;
     struct proxyexec_context cxt;
     char *sockpath = NULL;
+    char path[PATH_MAX];
 
     /* login shell: -proxyexec ...  (not permitted) */
     if (argv[0][0] == '-') {
@@ -592,6 +598,13 @@ main (int argc, char *argv[])
     cxt.argv = argv + optind;
     if (pc == NULL || *pc == '\0')
         unsetenv("POSIXLY_CORRECT");
+
+    /* save current working directory; bsock_daemon_init() chdir()s to "/" */
+    cxt.path = getcwd(path, sizeof(path));
+    if (NULL == cxt.path) {
+        perror("getcwd");
+        return EXIT_FAILURE;
+    }
 
     /* proxyexec redirects stderr to client before exec of target.
      * dup stderr to higher fd to ensure errors go to daemon stderr,
