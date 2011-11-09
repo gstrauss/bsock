@@ -232,6 +232,10 @@ proxyexec_fork_exec (char ** const restrict argv)
         _exit(errno);  /* exec() failed */
     }
     else if (-1 != pid) {
+        /* close transferred descriptors so that target program can detect EOF*/
+        nointr_close(STDIN_FILENO);
+        nointr_close(STDOUT_FILENO);
+        nointr_close(STDERR_FILENO);
         while (-1 == waitpid(pid, &status, 0) && errno == EINTR) ;
     }
 
@@ -524,11 +528,27 @@ proxyexec_client (const int argc, char ** const restrict argv)
       #endif
 
         /* send argv,env,fds over socket and wait for exit status */
-        if (   !proxyexec_argv_env_send(fd, &cmd, envbuf, envsz)
-            || 0 != fcntl(fd, F_SETFL, (fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK))
-            || recv(fd, &status, sizeof(status), MSG_WAITALL) != sizeof(status)
-            || !WIFEXITED(status))
-            status = EXIT_FAILURE;
+        if (   proxyexec_argv_env_send(fd, &cmd, envbuf, envsz)
+            && 0 == fcntl(fd, F_SETFL, (fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK))
+            && recv(fd, &status, sizeof(status), MSG_WAITALL)==sizeof(status)) {
+            if (WIFEXITED(status)) {
+                status = WEXITSTATUS(status); /* set exit status from daemon */
+                break;
+            }
+            else if (WIFSIGNALED(status)) {
+              #if MSG_NOSIGNAL==0
+                if (WTERMSIG(status) == SIGPIPE) {
+                    struct sigaction act;
+                    (void) sigemptyset(&act.sa_mask);
+                    act.sa_handler = SIG_DFL;
+                    act.sa_flags = 0;  /* omit SA_RESTART */
+                    sigaction(SIGPIPE, &act, (struct sigaction *) NULL);
+                }
+              #endif
+                raise(WTERMSIG(status)); /* raise signal received from daemon */
+            }
+        }
+        status = EXIT_FAILURE;
     } while (0);
 
     if (-1 != fd)
