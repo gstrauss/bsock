@@ -153,7 +153,7 @@ bsock_addrinfo_family_from_str (const char * const restrict family)
     }
 }
 
-static const char *  __attribute__((nonnull))
+static const char *
 bsock_addrinfo_family_to_str (const int family)
 {
     /* list of protocol families below is not complete */
@@ -196,7 +196,7 @@ bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
     }
 }
 
-static const char *  __attribute__((nonnull))
+static const char *
 bsock_addrinfo_socktype_to_str (const int socktype)
 {
     switch (socktype) {
