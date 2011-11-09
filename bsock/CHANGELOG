@@ -1,5 +1,8 @@
 bsock change log
 
+bsock v0.04 (2011.11.09)
+- proxyexec: fix bug handling waitpid() exit status
+
 bsock v0.03 (2011.10.27)
 - proxyexec doc and enhancements: add fallback to default socket
 - create RPM bsock.spec
