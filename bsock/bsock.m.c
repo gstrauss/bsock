@@ -468,8 +468,8 @@ bsock_client_session (struct bsock_client_st * const restrict c,
      * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
      * and combine with syslog() to log pid and other info, if available.
      * <<<FUTURE: might add additional logging of request and success/failure */
-    bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u",
-                 (uint32_t)uid, (uint32_t)c->gid);
+    bsock_syslog(0, LOG_INFO, "connect(%d): uid:%u gid:%u",
+                 c->fd, (uint32_t)uid, (uint32_t)c->gid);
 
     return rc;
 }
