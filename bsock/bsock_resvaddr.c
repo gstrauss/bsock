@@ -238,7 +238,7 @@ bsock_resvaddr_config (void)
     struct bsock_resvaddr_alloc *ar = NULL;
     struct bsock_resvaddr *t;
     struct bsock_resvaddr **tp;
-    struct bsock_resvaddr_cleanup cleanup = { .ar = NULL };
+    struct bsock_resvaddr_cleanup cleanup = { .fp = NULL, .ar = NULL };
     struct stat st;
     unsigned int lineno = 0;
     unsigned int addr_count = 0;

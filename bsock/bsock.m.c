@@ -666,10 +666,10 @@ main (int argc, char *argv[])
      *
      * (As written, code is extensible to use timer thread which expires long
      *  running threads using pthread_cancel().  Not implemented in bsock since
-     *  bsock only blocks on reading addrinfo from client, and handler handler
-     *  thread poll()s for limited time before aborting.)  (It should be
-     *  possible to implement as single-thread using poll() for POLLIN on all
-     *  accept()ed connections, and then handling in-line once data ready.
+     *  bsock only blocks on reading addrinfo from client, and handler thread
+     *  poll()s for limited time before aborting.)  (It should be possible to
+     *  implement as single-thread using poll() for POLLIN on all accept()ed
+     *  connections, and then handling in-line once data ready.
      *  Alternatively via SIGIO.)
      */
     do {
