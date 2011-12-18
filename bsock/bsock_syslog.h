@@ -31,6 +31,9 @@
 
 #include <sys/types.h>  /*(for __GNUC_PREREQ(), if available)*/
 
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
 #ifndef __GNUC_PREREQ
 #  ifdef __GNUC_PREREQ__
 #    define __GNUC_PREREQ __GNUC_PREREQ__
@@ -42,7 +45,7 @@
 #  endif
 #endif
 
-#if defined(__GNUC__) && __GNUC_PREREQ(4,3)
+#if __GNUC_PREREQ(4,3) || __has_attribute(cold)
 #ifndef __attribute_cold__
 #define __attribute_cold__  __attribute__((cold))
 #endif

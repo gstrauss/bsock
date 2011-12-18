@@ -1,5 +1,5 @@
 /*
- * bsock_preload.c - interpose bind() to call bsock_bind_intercept()
+ * bsock_preload - interpose bind() to call bsock_bind_intercept()
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *

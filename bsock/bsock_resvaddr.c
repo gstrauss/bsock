@@ -56,7 +56,10 @@
 #define BSOCK_RESVADDR_CONFIG BSOCK_CONFIG".resvaddr"
 #endif
 
-#if defined(__GNUC__) && __GNUC_PREREQ(4,3)
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+#if (defined(__GNUC__) && __GNUC_PREREQ(4,3)) || __has_attribute(cold)
 #ifndef __attribute_cold__
 #define __attribute_cold__  __attribute__((cold))
 #endif
