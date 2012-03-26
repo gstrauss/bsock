@@ -419,12 +419,12 @@ bool  __attribute__((nonnull))
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str)
 {
-    return (   NULL != (aistr->family   = strtok(str,  " "))
-            && NULL != (aistr->socktype = strtok(NULL, " "))
-            && NULL != (aistr->protocol = strtok(NULL, " "))
-            && NULL != (aistr->service  = strtok(NULL, " "))
-            && NULL != (aistr->addr     = strtok(NULL, " "))
-            && NULL == (                  strtok(NULL, " "))
+    return (   NULL != (aistr->family   = strtok(str,  " "  ))
+            && NULL != (aistr->socktype = strtok(NULL, " "  ))
+            && NULL != (aistr->protocol = strtok(NULL, " "  ))
+            && NULL != (aistr->service  = strtok(NULL, " "  ))
+            && NULL != (aistr->addr     = strtok(NULL, " \n"))
+            && NULL == (                  strtok(NULL, " \n"))
            ) || (errno = EINVAL, false);
 }
 

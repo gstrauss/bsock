@@ -275,6 +275,7 @@ bsock_resvaddr_config (void)
             ++lineno;
             if ('#' == line[0] || '\n' == line[0])
                 continue;  /* skip # comments, blank lines */
+            ai.ai_addrlen = sizeof(addr); /*(reset buffer size for each line)*/
             if (   !bsock_addrinfo_split_str(&aistr, line)
                 || !bsock_addrinfo_from_strs(&ai, &aistr)   ) {
                 bsock_syslog(EINVAL, LOG_ERR, "error parsing line %u in %s",
@@ -338,6 +339,7 @@ bsock_resvaddr_config (void)
         while (NULL != fgets(line, sizeof(line), cfg)) {
             if ('#' == line[0] || '\n' == line[0])
                 continue;  /* skip # comments, blank lines */
+            ai.ai_addrlen = sizeof(addr); /*(reset buffer size for each line)*/
             if (   !bsock_addrinfo_split_str(&aistr, line)
                 || !bsock_addrinfo_from_strs(&ai, &aistr)
                 || lineno >= ar->elt_count || ai.ai_addrlen > ar->buf_sz   ) {
