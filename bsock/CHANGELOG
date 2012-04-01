@@ -1,5 +1,11 @@
 bsock change log
 
+bsock v0.05 (2012.03.31)
+- proxyexec: preallocate msg ctrl buffer to handle larger max sizes
+- proxyexec: simple usage example: echo service
+- fix bug handling IPv6 addresses in bsock.resvaddr
+- minor additions to log info
+
 bsock v0.04 (2011.11.09)
 - proxyexec: fix bug handling waitpid() exit status
 
