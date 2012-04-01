@@ -1,0 +1,61 @@
+[
+  Editor's note:
+  gitolite g3 released 2012.03.25 is incompatible with the below.
+  The below integrates with what is now called gitolite g2.
+  (TODO: create patches for gitolite g3)
+]
+
+
+Using basic restricted shell accounts and ssh with gitolite g2
+--------------------------------------------------------------
+(in lieu of ssh key management in the account running gitolite)
+
+
+## Create 'git' user and 'git' group
+## Install bsock RPM (or build and install bsock and proxyexec)
+##   (RPM installs into /usr/lib, /usr/sbin, and /var)
+##   (default build from source installs into /usr/local/{lib,sbin,var})
+## Configure /var/run/proxyexec for use by 'git' account for gitolite
+## As 'root':
+# /usr/sbin/useradd --user-group git
+$ rpm -Uvh bsock....rpm
+$ mkdir         /var/run/proxyexec/default
+$ chgrp git:git /var/run/proxyexec/default
+$ chmod 755     /var/run/proxyexec/default
+
+
+## Download gitolite, patch, and install
+## (Set $REPO to path to directory holding bsock.git clone)
+## As user 'git':
+$ git clone https://github.com/sitaramc/gitolite.git
+$ cd gitolite/src
+$ patch gl-auth-command \
+    < $REPO/bsock/proxyexec/contrib/gitolite/gl-auth-command.patch
+$ cd ..
+## Follow rest of gitolite installation instructions
+
+
+## As 'git', start up proxyexec in /home/git
+##   (or configure .gitolite.rc REPO_BASE with absolute path):
+##   (put the following in a startup script or cron job)
+#!/bin/sh
+if ! [ -S /var/run/proxyexec/default/socket ]; then
+  cd /home/git && /usr/sbin/proxyexec -d -s /var/run/proxyexec/default/socket \
+     /home/git/bin/gl-auth-command -p
+fi
+
+
+## To grant access, create account for each git user and set shell as:
+##   /usr/sbin/proxyexec
+## Test it out.  That's it!
+
+
+## Q: What if I have a full shell on machine hosting gitolite?
+## A: Help yourself: use alternate ssh key for git access
+## create ~/.ssh/git.pub key on local machine
+## add git.pub key in ~/.ssh/authorized_keys on box running proxyexec/gitolite
+##   with ssh key command as '/usr/sbin/proxyexec -c' in ~/.ssh/authorized_keys
+## Then, on local machine (containing ~/.ssh/git and ~/.ssh/git.pub):
+$ ssh-agent /bin/bash
+$ ssh-add ~/.ssh/git
+$ git pull ...

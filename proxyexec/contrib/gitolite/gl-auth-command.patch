@@ -1,0 +1,48 @@
+--- gl-auth-command	2011-06-08 23:17:55.000000000 -0400
++++ gl-auth-command.new	2011-11-10 00:31:39.000000000 -0500
+@@ -49,10 +49,11 @@
+ #       start...
+ # ----------------------------------------------------------------------------
+ 
+-# these two options are mutually exclusive.  And this program is not supposed
++# these three options are mutually exclusive.  And this program is not supposed
+ # to be called manually anyway
+ my $shell_allowed = (@ARGV and $ARGV[0] eq '-s' and shift);
+ my $program       = (@ARGV and $ARGV[0] eq '-e' and shift);
++my $proxyexec     = (@ARGV and $ARGV[0] eq '-p' and shift);
+ 
+ # setup the environment for the kids so they don't need to embark on the
+ # voyage of self-discovery above ;-)  [environment also means things like
+@@ -67,7 +68,14 @@
+ # ----------------------------------------------------------------------------
+ 
+ my $user;
+-if ($ENV{REQUEST_URI}) {
++if ($proxyexec) {
++    exists($ENV{PROXYEXEC_UID}) || die "missing PROXYEXEC_UID\n";
++    $user = $ENV{GL_USER} = getpwuid($ENV{PROXYEXEC_UID})
++      || die "invalid user (uid $ENV{PROXYEXEC_UID})\n";
++    $ENV{SSH_ORIGINAL_COMMAND} = "@ARGV"; undef @ARGV;
++    # set SSH_ORIGINAL_COMMAND.  Note: original quoting not preserved.
++    # (not bothering to quote since shell is bypassed by gl-auth-command)
++} elsif ($ENV{REQUEST_URI}) {
+     die "fallback to DAV not supported\n" if $ENV{REQUEST_METHOD} eq 'PROPFIND';
+ 
+     # fake out SSH_ORIGINAL_COMMAND and SSH_CONNECTION when called via http,
+@@ -77,6 +85,7 @@
+     $ENV{REMOTE_USER} ||= $GL_HTTP_ANON_USER;   # see doc/http-backend.mkd
+     $user = $ENV{GL_USER} = $ENV{REMOTE_USER};
+ } else {
++    exists($ENV{PROXYEXEC_UID}) && die "unexpected PROXYEXEC_UID\n"; #paranoia
+     # no (more) arguments given in ssh mode?  default user is $USER
+     # (fedorahosted works like this, and it is harmless for others)
+     @ARGV = ($ENV{USER}) unless @ARGV;
+@@ -122,7 +131,7 @@
+ # single quotes):
+ #       git-receive-pack 'reponame.git'
+ 
+-my ($verb, $repo) = ($ENV{SSH_ORIGINAL_COMMAND} =~ /^\s*(git\s+\S+|\S+)\s+'\/?(.*?)(?:\.git)?'/);
++my ($verb, $q, $repo) = ($ENV{SSH_ORIGINAL_COMMAND} =~ /^\s*(git\s+\S+|\S+)\s+('?)\/?(.*?)(?:\.git)?\2$/);
+ unless ( $verb and ( $verb eq 'git-init' or $verb =~ $R_COMMANDS or $verb =~ $W_COMMANDS ) and $repo and $repo =~ $REPONAME_PATT ) {
+     special_cmd ($shell_allowed);
+     exit 0;
