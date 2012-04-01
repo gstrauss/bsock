@@ -150,7 +150,7 @@ bsock_daemon_signal_init (void)
 }
 
 bool
-bsock_daemon_init (const int supervised)
+bsock_daemon_init (const int supervised, const bool check)
 {
     /* Note: not retrying upon interruption; any fail to init means exit fail */
 
@@ -205,27 +205,14 @@ bsock_daemon_init (const int supervised)
 
     /* Sanity check system socket option max memory for ancillary data
      * (see bsock_unix.h for more details) */
-  #ifdef __linux__
-    {
-        ssize_t r;
-        long optmem_max;
-        const int fd = open("/proc/sys/net/core/optmem_max", O_RDONLY, 0);
-        char buf[32];
-        if (-1 != fd) {
-            if ((r = read(fd, buf, sizeof(buf)-1)) >= 0) {
-                buf[r] = '\0';
-                errno = 0;
-                optmem_max = strtol(buf, NULL, 10);
-                if (0 == errno && optmem_max > BSOCK_ANCILLARY_DATA_MAX)
-                    bsock_syslog(errno, LOG_ERR, "max ancillary data very "
-                      "large (%ld > %d); consider recompiling bsock with "
-                      "larger BSOCK_ANCILLARY_DATA_MAX", optmem_max,
-                      BSOCK_ANCILLARY_DATA_MAX);
-            }
-            nointr_close(fd);
-        }
+    if (check) {
+        const size_t optmem_max = bsock_daemon_msg_control_max();
+        if (optmem_max > BSOCK_ANCILLARY_DATA_MAX)
+            bsock_syslog(errno, LOG_ERR, "max ancillary data very large "
+                         "(%zu > %d); consider recompiling bsock with larger "
+                         "BSOCK_ANCILLARY_DATA_MAX", optmem_max,
+                         BSOCK_ANCILLARY_DATA_MAX);
     }
-  #endif
 
     return true;
 }
@@ -293,4 +280,30 @@ bsock_daemon_init_socket (const char * const restrict sockpath,
 
     bsock_syslog(errno, LOG_ERR, "chown,chmod");
     return -1;
+}
+
+size_t
+bsock_daemon_msg_control_max (void)
+{
+  #ifdef __linux__
+    /* obtain system max size for ancillary data
+     * (see bsock_unix.h for more details) */
+    long optmem_max = BSOCK_ANCILLARY_DATA_MAX;
+    ssize_t r;
+    const int fd = open("/proc/sys/net/core/optmem_max", O_RDONLY, 0);
+    char buf[32];
+    if (-1 != fd) {
+        if ((r = read(fd, buf, sizeof(buf)-1)) >= 0) {
+            buf[r] = '\0';
+            errno = 0;
+            optmem_max = strtol(buf, NULL, 10);
+            if (0 != errno || BSOCK_ANCILLARY_DATA_MAX > optmem_max)
+                optmem_max = BSOCK_ANCILLARY_DATA_MAX;
+        }
+        nointr_close(fd);
+    }
+    return (size_t)optmem_max;
+  #else
+    return (size_t)BSOCK_ANCILLARY_DATA_MAX;  /* patches for other OS welcome */
+  #endif
 }

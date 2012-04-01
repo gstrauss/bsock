@@ -189,15 +189,36 @@ proxyexec_argv_env_parse (char *b, char * const e,
     return (b == e);
 }
 
+static size_t proxyexec_ctrlbuf_sz;
+static char *proxyexec_ctrlbuf;
+
+/* preallocate proxyexec_ctrlbuf; implicit copy-on-write in child processes */
+static bool
+proxyexec_ctrlbuf_alloc (void)
+{
+    proxyexec_ctrlbuf_sz = bsock_daemon_msg_control_max();
+    proxyexec_ctrlbuf = malloc(proxyexec_ctrlbuf_sz);
+    if (proxyexec_ctrlbuf != NULL)
+        return true;
+    else {
+        bsock_syslog(errno, LOG_ERR, "max ancillary data very "
+          "large (?); error in malloc(%zu)", proxyexec_ctrlbuf_sz);
+        return false;
+    }
+}
+
 static ssize_t  __attribute__((nonnull))
 proxyexec_stdfds_recv_dup2 (int fd, struct iovec * const restrict iov,
                             const size_t iovlen)
 {
     /* caller must ensure fd > STDERR_FILENO, or else fd gets closed below */
+    /* use of proxyexec_ctrlbuf not thread-safe; proxyexec is not threaded */
     int rfds[3];
     unsigned int n = 3;
     int i, x;
-    const ssize_t r = bsock_unix_recv_fds(fd, rfds, &n, iov, iovlen);
+    const ssize_t r = bsock_unix_recv_fds_ex(fd, rfds, &n, iov, iovlen,
+                                             proxyexec_ctrlbuf,
+                                             proxyexec_ctrlbuf_sz);
     if (-1 == r || 3 != n)
         return -1;  /* fatal error; called should exit; might leak fds */
     /* (STDIN_FILENO == 0, STDOUT_FILENO == 1, STDERR_FILENO == 2) */
@@ -636,7 +657,7 @@ main (int argc, char *argv[])
     bsock_syslog_setlevel(BSOCK_SYSLOG_PERROR_NOSYSLOG);
     bsock_syslog_openlog("proxyexec", LOG_NOWAIT|LOG_ODELAY, LOG_DAEMON);
 
-    if (!bsock_daemon_init(supervised))
+    if (!bsock_daemon_init(supervised, false)) /*(false:skip ctrlbuf sz check)*/
         return EXIT_FAILURE;
 
     /* set SIGCHLD handler to ignore (master process does not need to reap) */
@@ -664,6 +685,10 @@ main (int argc, char *argv[])
     if (cfd > STDERR_FILENO)
         nointr_close(cfd);
 
+    /* preallocate proxyexec_ctrlbuf; implicit copy-on-write in child procs */
+    if (!proxyexec_ctrlbuf_alloc())
+        return EXIT_FAILURE;
+
     /* sort proxyexec_envs[] list of allowed environment variables */
     qsort(proxyexec_envs,sizeof(proxyexec_envs)/sizeof(struct proxyexec_env_st),
           sizeof(struct proxyexec_env_st), proxyexec_env_cmp);
@@ -681,11 +706,12 @@ main (int argc, char *argv[])
             switch (errno) {
               case ECONNABORTED:
               case EINTR: continue;
-              case EINVAL:return EXIT_FAILURE;
+              case EINVAL:free(proxyexec_ctrlbuf);
+                          return EXIT_FAILURE;
               default: /* temporary process/system resource issue */
-                bsock_syslog(errno, LOG_ERR, "accept");
-                poll(NULL, 0, 10); /* pause 10ms and continue */
-                continue;
+                          bsock_syslog(errno, LOG_ERR, "accept");
+                          poll(NULL, 0, 10); /* pause 10ms and continue */
+                          continue;
             }
         }
 
@@ -697,8 +723,8 @@ main (int argc, char *argv[])
         }
 
         /* log all connections to (or instantiations of) daemon */
-        bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u",
-                     (uint32_t)cxt.uid, (uint32_t)cxt.gid);
+        bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u %s",
+                     (uint32_t)cxt.uid, (uint32_t)cxt.gid, sockpath);
 
         if (0 == fork()) {
             cxt.fd = cfd;

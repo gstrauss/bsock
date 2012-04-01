@@ -40,12 +40,15 @@ bool
 bsock_daemon_setuid_stdinit (void);
 
 bool
-bsock_daemon_init (const int supervised);
+bsock_daemon_init (const int supervised, const bool check);
 
 int  __attribute__((nonnull))
 bsock_daemon_init_socket (const char * const restrict sockpath, /*(persistent)*/
                           const uid_t uid, const gid_t gid,
                           const mode_t mode);
+
+size_t
+bsock_daemon_msg_control_max (void);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 /*
- * bsock_bind.c - interfaces to bind to reserved ports
+ * bsock_bind - interfaces to bind to reserved ports
  *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *

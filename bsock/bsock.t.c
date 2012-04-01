@@ -39,7 +39,8 @@ main (int argc, char *argv[])
 {
     int nfd;
     int addr[28];
-    struct addrinfo ai = { .ai_addr = (struct sockaddr *)addr,
+    struct addrinfo ai = { .ai_flags = 0,
+                           .ai_addr = (struct sockaddr *)addr,
                            .ai_addrlen = sizeof(addr) };
     struct bsock_addrinfo_strs aistr;
 

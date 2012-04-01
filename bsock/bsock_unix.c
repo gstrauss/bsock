@@ -139,7 +139,7 @@ bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
      * (defensive client must handle multiple fds received unexpectedly)
      * (defensive client might setsockopt SO_PASSCRED, check SCM_CREDENTIALS) */
 
-    for (cmsg=CMSG_FIRSTHDR(msg); NULL != cmsg; cmsg=CMSG_NXTHDR(msg,cmsg)) {
+    for (cmsg = CMSG_FIRSTHDR(msg); NULL != cmsg; cmsg = CMSG_NXTHDR(msg,cmsg)){
         if (cmsg->cmsg_type == SCM_RIGHTS && cmsg->cmsg_level == SOL_SOCKET) {
             const int * const restrict fds = (int *)CMSG_DATA(cmsg);
             const unsigned int nfds = (cmsg->cmsg_len-CMSG_LEN(0))/sizeof(int);
@@ -159,6 +159,32 @@ bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
         *nrfdsp = nrfd;
 }
 
+static ssize_t  __attribute__((nonnull (4)))  __attribute__((noinline))
+bsock_unix_recv_fds_msghdr (const int fd,
+                            int * const restrict rfds,
+                            unsigned int * const restrict nrfds,
+                            struct msghdr * const restrict msg)
+{
+    /* receive and return file descriptor(s) sent over unix domain socket */
+    /* 'man cmsg' provides example code */
+    ssize_t r;
+    do { r = recvmsg(fd, msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
+    if (r < 1) {  /* EOF (r=0) or error (r=-1) */
+        if (0 == r && 0 == errno) errno = EPIPE;
+        return -1;
+    }
+
+    /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
+    /*(MSG_CTRUNC should not happen if ctrlbuf >= socket max ancillary data)*/
+    /*(syslog() here; no dependency on bsock_syslog.h)*/
+    if (msg->msg_flags & MSG_CTRUNC)
+        syslog(LOG_CRIT, "recvmsg(%d) msg_flags MSG_CTRUNC unexpected", fd);
+
+    bsock_unix_recv_ancillary(msg, rfds, nrfds);
+
+    return r;
+}
+
 ssize_t  __attribute__((nonnull (4)))
 bsock_unix_recv_fds (const int fd,
                      int * const restrict rfds,
@@ -168,7 +194,6 @@ bsock_unix_recv_fds (const int fd,
 {
     /* receive and return file descriptor(s) sent over unix domain socket */
     /* 'man cmsg' provides example code */
-    ssize_t r;
     char ctrlbuf[BSOCK_ANCILLARY_DATA_MAX];
     struct msghdr msg = {
       .msg_name       = NULL,
@@ -179,21 +204,30 @@ bsock_unix_recv_fds (const int fd,
       .msg_controllen = sizeof(ctrlbuf),
       .msg_flags      = 0
     };
-    do { r = recvmsg(fd, &msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
-    if (r < 1) {  /* EOF (r=0) or error (r=-1) */
-        if (0 == r && 0 == errno) errno = EPIPE;
-        return -1;
-    }
+    return bsock_unix_recv_fds_msghdr(fd, rfds, nrfds, &msg);
+}
 
-    /*(MSG_TRUNC should not happen on stream-based (SOCK_STREAM) socket)*/
-    /*(MSG_CTRUNC should not happen if ctrlbuf >= socket max ancillary data)*/
-    /*(syslog() here; no dependency on bsock_syslog.h)*/
-    if (msg.msg_flags & MSG_CTRUNC)
-        syslog(LOG_CRIT, "recvmsg(%d) msg_flags MSG_CTRUNC unexpected", fd);
-
-    bsock_unix_recv_ancillary(&msg, rfds, nrfds);
-
-    return r;
+ssize_t  __attribute__((nonnull (4,6)))
+bsock_unix_recv_fds_ex (const int fd,
+                        int * const restrict rfds,
+                        unsigned int * const restrict nrfds,
+                        struct iovec * const restrict iov,
+                        const size_t iovlen,
+                        char * const restrict ctrlbuf,
+                        const size_t ctrlbuf_sz)
+{
+    /* receive and return file descriptor(s) sent over unix domain socket */
+    /* 'man cmsg' provides example code */
+    struct msghdr msg = {
+      .msg_name       = NULL,
+      .msg_namelen    = 0,
+      .msg_iov        = iov,
+      .msg_iovlen     = iovlen,
+      .msg_control    = ctrlbuf,
+      .msg_controllen = ctrlbuf_sz,
+      .msg_flags      = 0
+    };
+    return bsock_unix_recv_fds_msghdr(fd, rfds, nrfds, &msg);
 }
 
 ssize_t  __attribute__((nonnull (4)))

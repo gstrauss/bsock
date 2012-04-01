@@ -643,7 +643,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (!bsock_daemon_init(supervised))
+    if (!bsock_daemon_init(supervised, true))
         return EXIT_FAILURE;
 
     sfd = bsock_daemon_init_socket(BSOCK_SOCKET, geteuid(), gr->gr_gid,

@@ -2,6 +2,7 @@ proxyexec - proxy command execution without setuid
 
 README  - summary (this file)
 COPYING - copyright/license
+NOTES   - technical notes
 
 proxyexec is an executable that builds with libbsock.so and can be used
 as a login shell or as the target of an sshd_config ForceCommand to
@@ -16,24 +17,26 @@ different users.
 Usage
 -----
 
+proxyexec client mode connects to a socket based <cmd>
   proxyexec -c <cmd> [args]*
 
-proxyexec client mode connects to a socket based <cmd>
+proxyexec server (daemon) mode listens on the provided socket path
+  proxyexec -d [-F] -s <sock> <cmd> [args]*
+
+proxyexec server (daemon) mode requires the listen socket path be provided.
 Compile-time root of sockets is /var/run/proxyexec/ (when installed from RPM)
 or else /usr/local/var/run/proxyexec.  The path to the socket to handle a
 particular request is /var/run/proxyexec/<cmd>/socket and the admin setting
 up the daemon must create (mkdir) /var/run/proxyexec/<cmd>/.  The permissions
 can be set on this directory to control who is able to connect to the socket
-that is created within.
+that is created within.  Default permissions are restrictive.
+See proxyexec/NOTES, as well as bsock/FAQ and bsock/NOTES, for more details.
 
-  proxyexec -d [-F] -s <sock> <cmd> [args]*
-
-proxyexec server (daemon) mode requires the listen socket path be provided.
 When a connection is accepted from proxyexec client, the command that
 proxyexec runs begins with <cmd> [args]* provided on the proxyexec -d
 command line, followed by the argv passed by the client.  The working
 directory is the root directory ("/").  The command is executed with execv();
 shell interpretation is bypassed.  The client environment is not transferred,
-except for a few variables use for logging.  The target command must still
+except for a few variables used for logging.  The target command must still
 take care to sanitize the environment before executing any shell commands.
 (The same advice is true for setuid/setgid programs, too.)

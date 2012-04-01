@@ -114,7 +114,7 @@ ifeq ($(OSNAME),SunOS)
 endif
 
 ifeq ($(OSNAME),Linux)
-libbsock.so: LDFLAGS+=-Wl,-soname,bsock
+libbsock.so: LDFLAGS+=-Wl,-soname,$(@F)
 endif
 libbsock.so: LDFLAGS+= -ldl
 libbsock.so: $(bsock_sobjs)

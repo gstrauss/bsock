@@ -81,6 +81,15 @@ bsock_unix_recv_fds (const int fd,
                      struct iovec * const restrict iov,
                      const size_t iovlen);
 
+ssize_t  __attribute__((nonnull (4,6)))
+bsock_unix_recv_fds_ex (const int fd,
+                        int * const restrict rfds,
+                        unsigned int * const restrict nrfds,
+                        struct iovec * const restrict iov,
+                        const size_t iovlen,
+                        char * const restrict ctrlbuf,
+                        const size_t ctrlbuf_sz);
+
 ssize_t  __attribute__((nonnull (4)))
 bsock_unix_send_fds (const int fd,
                      const int * const restrict sfds,
