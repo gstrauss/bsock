@@ -41,8 +41,33 @@ and change the group ownership of /usr/local/var/run/proxyexec/echo/ to that
 specific group.
 
 
+gitolite example
+----------------
+See proxyexec/contrib/gitolite/README for how to use proxyexec with gitolite.
+From http://sitaramc.github.com/gitolite/ :
+"Gitolite allows you to setup git hosting on a central server, with
+ fine-grained access control and many (many!) more powerful features."
+
+
 Security
 --------
+
+proxyexec proxies command execution between different accounts without using
+setuid.  However, many if not all precautions that should be taken with setuid
+programs should also be taken with proxyexec target programs, since such
+programs are running under different (privileged) accounts from that of the
+requestor.  For example, proxyexec target commands should not offer shell
+escapes which a requestor could use to take over a privileged account,
+e.g. target commands *should not* be file editors, many of which offer shell
+escapes.  Each proxyexec target command should be evaluated individually before
+permitting access via proxyexec.
+
+For each service, review the permissions on the path to the unix domain socket
+on which proxyexec listens.  The directory containing the socket should be
+writable only by the uid that runs the proxyexec daemon.  rx access to the
+directory should be granted to the uid running the proxyexec daemon, and group
+and other privileges should be granted only if members of those groups should
+be able to submit requests to the specific service.
 
 Depending on how proxyexec is used, it should be noted that proxyexec can be
 used as an amplifier to cause a denial-of-service (DoS), due to proxyexec
