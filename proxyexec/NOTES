@@ -1,3 +1,46 @@
+Simple 'echo' proxyexec example
+-------------------------------
+
+As root, perform the following one-time setup steps.
+Note that permission on dir allow/disallow access to socket within.
+(Set permission mode 0700 to restrict access to self for testing.)
+(Replace myusername with a specific user account.)
+  $ mkdir -p -m 0700 /usr/local/var/run/proxyexec/echo/
+  $ chown myusername /usr/local/var/run/proxyexec/echo/
+
+As myusername (i.e. your account)), the following commands runs a proxyexec
+daemon in the foreground.  Hit Ctrl-C to cancel.
+  $ proxyexec -d -F -s /usr/local/var/run/proxyexec/echo/socket /bin/echo
+
+As myusername, in separate xterm from above, access the proxyexec echo service:
+  $ proxyexec -c echo hi
+  echo hi
+
+Note that the entire command is proxied, including argv0, the command.
+Why is this useful?  The basename of the command is used to find the proxyexec
+socket.  Consider this command, which provides the server with the information
+that the client shell has, without discarding the original command.
+  $ proxyexec -c /another/path/to/bin/echo hi
+  /another/path/to/bin/echo hi
+
+Instead of /bin/echo, you could use a wrapper script to manipulate, validate,
+and pass arguments.  See Security notes below for some caveats and commentary.
+An example wrapper script "echo_wrapper" to strip the command argument, and
+skip validation (not a good idea):
+  #!/bin/bash
+  shift
+  exec /bin/echo ${1+"$@"}
+
+If the permissions on /usr/local/var/run/proxyexec/echo/ were 0755 (not +w !),
+then other users would be able to send commands to proxyexec echo service and
+/bin/echo would be run as myusername and return the results to those other
+users.  Recommended proxyexec socket directory permissions are 0750 or 0755,
+depending on whether the service should be restricted to a specific group or
+open to all.  To permit access only to a specific group, use permissions 0750
+and change the group ownership of /usr/local/var/run/proxyexec/echo/ to that
+specific group.
+
+
 Security
 --------
 
