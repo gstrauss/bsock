@@ -1,0 +1,29 @@
+--- gitolite-shell
++++ gitolite-shell.new
+@@ -14,6 +14,15 @@ use Gitolite::Conf::Load;
+ use strict;
+ use warnings;
+ 
++# convert proxyexec (https://github.com/gstrauss/bsock) input to gitolite-shell
++if (exists $ENV{PROXYEXEC_UID}) {
++    # Set SSH_ORIGINAL_COMMAND from @ARGV.  Note: original quoting not preserved
++    # (not bothering to quote since Gitolite::Common::_system() bypasses shell)
++    $ENV{SSH_ORIGINAL_COMMAND} = "@ARGV"; undef @ARGV;
++    $ARGV[0] = getpwuid($ENV{PROXYEXEC_UID})
++      || _die "invalid user (uid $ENV{PROXYEXEC_UID})";
++}
++
+ # the main() sub expects ssh-ish things; set them up...
+ my $id = '';
+ if ( exists $ENV{G3T_USER} ) {
+@@ -116,8 +125,8 @@ sub parse_soc {
+     $soc ||= 'info';
+ 
+     my $git_commands = "git-upload-pack|git-receive-pack|git-upload-archive";
+-    if ( $soc =~ m(^($git_commands) '/?(.*?)(?:\.git(\d)?)?'$) ) {
+-        my ( $verb, $repo, $trace_level ) = ( $1, $2, $3 );
++    if ( $soc =~ m(^($git_commands) ('?)/?(.*?)(?:\.git(\d)?)?\2$) ) {
++        my ( $verb, $repo, $trace_level ) = ( $1, $3, $4 );
+         $ENV{D} = $trace_level if $trace_level;
+         _die "invalid repo name: '$repo'" if $repo !~ $REPONAME_PATT;
+         trace( 2, "git command", $soc );

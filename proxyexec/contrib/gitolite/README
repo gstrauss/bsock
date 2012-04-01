@@ -1,13 +1,12 @@
-[
-  Editor's note:
-  gitolite g3 released 2012.03.25 is incompatible with the below.
-  The below integrates with what is now called gitolite g2.
-  (TODO: create patches for gitolite g3)
-]
+From http://sitaramc.github.com/gitolite/ :
+
+"Gitolite allows you to setup git hosting on a central server, with
+ fine-grained access control and many (many!) more powerful features."
 
 
-Using basic restricted shell accounts and ssh with gitolite g2
---------------------------------------------------------------
+
+Using basic restricted shell accounts and ssh with gitolite g2 or g3
+--------------------------------------------------------------------
 (in lieu of ssh key management in the account running gitolite)
 
 
@@ -29,19 +28,30 @@ $ chmod 755     /var/run/proxyexec/default
 ## As user 'git':
 $ git clone https://github.com/sitaramc/gitolite.git
 $ cd gitolite/src
-$ patch gl-auth-command \
-    < $REPO/bsock/proxyexec/contrib/gitolite/gl-auth-command.patch
+## (gitolite g2 only)
+##$ patch gl-auth-command \
+##    < $REPO/bsock/proxyexec/contrib/gitolite/gl-auth-command.patch
+## (gitolite g3 only)
+$ patch gitolite-shell \
+    < $REPO/bsock/proxyexec/contrib/gitolite/gitolite-shell.patch
 $ cd ..
 ## Follow rest of gitolite installation instructions
 
 
 ## As 'git', start up proxyexec in /home/git
 ##   (or configure .gitolite.rc REPO_BASE with absolute path):
-##   (put the following in a startup script or cron job)
+##   (put one of the following in a startup script or cron job)
+## (gitolite g2 only)
 #!/bin/sh
 if ! [ -S /var/run/proxyexec/default/socket ]; then
   cd /home/git && /usr/sbin/proxyexec -d -s /var/run/proxyexec/default/socket \
      /home/git/bin/gl-auth-command -p
+fi
+## (gitolite g3 only)
+#!/bin/sh
+if ! [ -S /var/run/proxyexec/default/socket ]; then
+  cd /home/git && /usr/sbin/proxyexec -d -s /var/run/proxyexec/default/socket \
+     /home/git/bin/gitolite-shell
 fi
 
 
