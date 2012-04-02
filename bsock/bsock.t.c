@@ -61,6 +61,8 @@ main (int argc, char *argv[])
         && 0 == bsock_bind_addrinfo(nfd, &ai))
         return EXIT_SUCCESS;
   #else  /* load test (serial requests) */
+    /* Use 'bsock -d' (no -F unless redirecting output to file) */
+    /* Timing inaccurate and much slower if output to terminal (bsock -d -F) */
     int i;
     struct timeval tva, tvb;
     bsock_addrinfo_from_strs(&ai, &aistr);

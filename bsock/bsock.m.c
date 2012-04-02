@@ -79,6 +79,32 @@
 #define BSOCK_SOCKET_MODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP
 #endif
 
+
+#ifdef SO_ACCEPTFILTER  /* OpenBSD, FreeBSD, NetBSD */
+#define BSOCK_UNIX_ACCEPTFILTER
+#endif
+
+/* Note: Linux does not support TCP_DEFER_ACCEPT on AF_UNIX sockets;
+ * setsockopt TCP_DEFER_ACCEPT on AF_UNIX socket returns EOPNOTSUPP:
+ * "Operation not supported" */
+#if 0  /* disabled */
+#ifdef __linux__
+#include <netinet/in.h>   /* IPPROTO_TCP */
+#include <netinet/tcp.h>  /* TCP_DEFER_ACCEPT */
+#ifdef TCP_DEFER_ACCEPT
+#define BSOCK_UNIX_ACCEPTFILTER
+#endif
+#endif
+#endif
+
+/* bsock_client_session assumes MSG_DONTWAIT support if BSOCK_UNIX_ACCEPTFILTER
+ * and this assumption is true for Linux and *BSD, but check here for others
+ * (or fcntl c->fd F_SETFL O_NONBLOCK before speculative bsock_addrinfo_recv) */
+#ifndef MSG_DONTWAIT
+#undef BSOCK_UNIX_ACCEPTFILTER
+#endif
+
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -360,11 +386,20 @@ bsock_client_session (struct bsock_client_st * const restrict c,
          * (NOTE: receiving addrinfo is ONLY place in bsock that can block on
          *  client input (at this time).  Set timeout for 2000ms (2 sec)) */
         if (!(NULL == aistr
-              ? 1 == retry_poll_fd(c->fd, POLLIN, 2000)
-                && bsock_addrinfo_recv(c->fd, &ai, &fd)
+              ? (/* speculative recv if OS can defer accept() until data ready*/
+                 #ifdef BSOCK_UNIX_ACCEPTFILTER
+                 bsock_addrinfo_recv(c->fd, &ai, &fd)
+                 || ((errno == EAGAIN || errno == EWOULDBLOCK)
+                     && 1 == retry_poll_fd(c->fd, POLLIN, 2000)
+                     && bsock_addrinfo_recv(c->fd, &ai, &fd))
+                 #else
+                        1 == retry_poll_fd(c->fd, POLLIN, 2000)
+                     && bsock_addrinfo_recv(c->fd, &ai, &fd)
+                 #endif
+                )
               : bsock_addrinfo_from_strs(&ai, aistr))) {
             bsock_syslog(errno, LOG_ERR,
-                              "recv addrinfo error or invalid addrinfo");
+                         "recv addrinfo error or invalid addrinfo");
             break;
         }
 
@@ -650,6 +685,28 @@ main (int argc, char *argv[])
                                    BSOCK_SOCKET_MODE);
     if (-1 == sfd)
         return EXIT_FAILURE;
+
+  #ifdef BSOCK_UNIX_ACCEPTFILTER
+    {
+      #if defined(SO_ACCEPTFILTER)
+        /* setsockopt SO_ACCEPTFILTER must be after listen() */
+        /* http://www.freebsd.org/cgi/man.cgi?query=setsockopt */
+        /* http://www.freebsd.org/cgi/man.cgi?query=accept_filter */
+        /* http://www.freebsd.org/cgi/man.cgi?query=accf_data */
+        struct accept_filter_arg af = { .af_name = "dataready", .af_arg  = "" };
+        if (0 != setsockopt(sfd, SOL_SOCKET, SO_ACCEPTFILTER, &af, sizeof(af)))
+            bsock_syslog(errno, LOG_WARNING, "setsockopt SO_ACCEPTFILTER");
+      #elif defined(TCP_DEFER_ACCEPT) && 0  /* disabled */
+        /* Note: Linux does not support TCP_DEFER_ACCEPT on AF_UNIX sockets;
+         * setsockopt TCP_DEFER_ACCEPT on AF_UNIX socket returns EOPNOTSUPP:
+         * "Operation not supported" */
+        int timeout = 2;  /* 2 secs; kernel converts to num TCP retransmits */
+        if (0 != setsockopt(sfd, SOL_TCP, TCP_DEFER_ACCEPT,
+                            &timeout, sizeof(timeout)))
+            bsock_syslog(errno, LOG_WARNING, "setsockopt TCP_DEFER_ACCEPT");
+      #endif
+    }
+  #endif
 
     if (   0 != pthread_attr_init(&attr)
         || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
