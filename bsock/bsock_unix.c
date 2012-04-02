@@ -86,10 +86,12 @@ bsock_unix_socket_bind_listen (const char * const restrict sockpath,
                                int * const restrict bound)
 {
     /* bind and listen to unix domain socket */
-    /* (not bothering to retry bind() and listen(); lazy) */
+    /* (not bothering to retry bind() and listen() if EINTR; lazy) */
     /* (nointr_close to avoid fd resource leak) */
-    /* N.B. caller must create dir for sockpath with restricted permissions &
-     *      caller must set umask so socket created with desired permissions*/
+    /* (no setsockopt SO_REUSEADDR; AF_UNIX sockets have no TIME_WAIT state)
+     * ('man netstat' on Linux; XXX: ?AF_UNIX TIME_WAIT on other OS? prob not)*/
+    /* N.B. caller must create dir for sockpath with restricted permissions and
+     *      caller must set umask so socket created with desired permissions */
     struct sockaddr_un saddr;
     const size_t len = strlen(sockpath);
     int fd, flags;

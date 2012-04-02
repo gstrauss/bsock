@@ -1,5 +1,8 @@
 bsock change log
 
+bsock v0.06 (2012.04.02)
+- security: avoid SO_REUSEADDR for bsock.resvaddr; see bsock/NOTES for details
+
 bsock v0.05 (2012.03.31)
 - proxyexec: preallocate msg ctrl buffer to handle larger max sizes
 - proxyexec: simple usage example: echo service

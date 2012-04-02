@@ -63,7 +63,7 @@ to reserve the port(s) using bsock.resvaddr config to reserve address/port
 combinations.
 
 At startup, bsock will attempt to bind to addresses listed in the file
-bsock.resvaddr.  These sockets are persistently held open in the daemon and
+bsock.resvaddr.  These sockets are held persistently open in the daemon and
 a copy of the same socket is returned to authorized clients requesting a
 persistent reserved address.  This feature can be used to protect ports that
 are >= IPPORT_RESERVED as it can prevent race conditions during the restarts
@@ -73,6 +73,14 @@ provided by the portreserve/portrelease program (see References).  Persistent
 reserved addresses in bsock also eliminate race conditions during program
 restart during which pending client connections in the listen backlog queue
 are dropped when the socket is closed and reopened.
+
+The first authorized client to request a persistently reserved socket gets the
+opportunity to set additional socket options before calling listen(), after
+which subsequent requests will receive from bsock a copy of the listening
+socket.  Calling listen() on an already listening socket succeeds silently
+(at least on Linux).  BSOCK_FLAGS_REBIND can be set in ai.ai_flags in the bsock
+request to cause bsock to close and re-bind() to the socket, but see technical
+note below about SO_REUSEADDR and race condition this exposes for ports >= 1024.
 
 
 bsock config file line format:
@@ -129,7 +137,7 @@ bsock is installed with ownership root:daemon, permissions 0550 with
 'make install' target.  Permissions 4550 are used with 'make install-suid'.
 Compile with -DBSOCK_GROUP=xxxxx to modify the group ownership.
 By default, this restricts only those users part of group 'daemon' to run
-bsock.  It is recommended that you use a custom group, e.g. bindsock, and
+bsock.  It is recommended that you use a custom group, e.g. 'bsock', and
 to add to this custom group those specialized role accounts (e.g. apache)
 under which your daemons run.  This group is also used to permission the
 bsock unix domain socket (e.g. /usr/local/var/run/bsock/socket) to restrict
@@ -137,7 +145,7 @@ which accounts can connect to bsock daemon through socket.  Permission modes
 can be modified with gmake command line overrides to BSOCK_MODE and/or
 BSOCK_SOCKET_MODE.  The BSOCK_CONFIG file is created 0644 so that others can
 see the config for troubleshooting.  Change this after install if other
-permssions are preferred.
+permissions are preferred.
 
 
 bsock is by no means the end-all-be-all of security.  Defense-in-depth is
@@ -146,6 +154,61 @@ as can firewalls external to the host.  SELinux policies or grsecurity might
 also be used, but bsock subverts some of the targetted policies that restrict
 the ports to which a specific executable can bind since bsock performs the
 bind() as root if bsock config permits.
+
+
+Technical note SO_REUSEADDR (security):
+
+  setsockopt SO_REUSEADDR is commonly employed by IP-based services to avoid
+  "Address already in use" (EADDRINUSE) errors when restarting the service.
+  (More details at http://hea-www.harvard.edu/~fine/Tech/addrinuse.html)
+
+  Unix Sockets FAQ mentions it is possible to bind() and listen() to a specific
+  address even if another process is already listening on INADDR_ANY if the
+  original process setsockopt SO_REUSEADDR before bind() and listen().
+  http://www.faqs.org/faqs/unix-faq/socket/
+    4.11.  What is the difference between SO_REUSEADDR and SO_REUSEPORT?
+      "SO_REUSEADDR allows your server to bind to an address which is in a
+       TIME_WAIT state.  It does not allow more than one server to bind to
+       the same address.  It was mentioned that use of this flag can create
+       a security risk because another server can bind to a the same port,
+       by binding to a specific address as opposed to INADDR_ANY."
+
+  bsock persistent reserved address in bsock.resvaddr are handled by creating
+  a socket and then bind()ing the local address.  However, bsock does not call
+  listen() since some socket options must be set prior to listen() to take
+  effect (e.g. SO_SNDBUF and SO_RCVBUF).
+
+  Not calling listen() on a bound socket with SO_REUSEADDR option also permits
+  other processes (e.g. any process by any user) to setsockopt SO_REUSEADDR and
+  bind(), listen() to a port >= 1024 and same or similar address.  The address
+  might be a subset of the reserved address, e.g. specific addresses on the same
+  port where the listen address is INADDR_ANY or INADDR6_ANY_INIT (i.e. a port
+  on all interfaces for IPv4 and/or IPv6.)  The specific IP address (e.g. an
+  external interface on the host) gets priority for incoming connections and so
+  could then sniff traffic and forward to localhost, intercepting such things as
+  website or database authentication credentials.  There are probably more than
+  a few ways to set up a listener besides writing custom code.  One is ssh -R
+  port forwarding (uses SO_REUSEADDR), often enabled by default in sshd_config.
+  ('man sshd_config' and see AllowTcpForwarding directive to disable.)
+
+  To avoid these, bsock attempts to bind() bsock.resvaddr addresses without
+  setsockopt SO_REUSEADDR, which causes other attempts to bind() to receive
+  EADDRINUSE, at least on Linux.  Note: other platforms have not been tested!!!
+  If bind() fails with EADDRINUSE, bsock will setsockopt SO_REUSEADDR and try
+  again.  bsock will issue a warning if it fails to bind() to an address
+  without SO_REUSEADDR, but then succeeds after setsockopt SO_REUSEADDR, since
+  the socket address is then exposed to the risk scenarios described above.
+  (This might happen if reconfiguring bsock some time after system startup,
+  but should not happen for stable configs where bsock reserves the addresses
+  at system startup and requests do not set ai.ai_flags BSOCK_FLAGS_REBIND.)
+
+  (If on other operating systems, bind() without SO_REUSEADDR and without
+  calling listen() still allows others to bind(), then bsock_resvaddr.c might
+  be modified to call listen() on reserved addresses.  This might better protect
+  them from interlopers at the cost of cancelling the effects of any setsockopt
+  an application wants if those options must be set prior to listen().  Such
+  setsockopt options are infrequently used in popular applications, at least
+  in the experience of this author.)
 
 
 References:
@@ -196,8 +259,8 @@ port.  authbind distributes the configs in filesystem paths to avoid reading
 and parsing the entire config for each request, whereas bsock currently has
 a monolithic config file.  (If bsock config parsing becomes a performance
 bottleneck, this will be revisited.)
-authbind disallows port >= IPPORT_RESERVED/2 and < IPPORT_RESERVED since
-those are used by bindresvport() for, e.g. rsh outbound connections.
+authbind disallows port >= IPPORT_RESERVED/2 and < IPPORT_RESERVED since those
+are used by bindresvport() or rresvport() for, e.g. rsh outbound connections.
 authbind presumably must reject these ports because one authbind config file
 authorization mode just looks at IP address and will bind to any port
 requested if the IP address matches.  On the other hand, bsock requires

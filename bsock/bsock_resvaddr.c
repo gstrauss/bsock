@@ -118,32 +118,6 @@ bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
     return h;
 }
 
-static int
-  __attribute__((noinline))  __attribute_cold__  __attribute__((nonnull))
-bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
-                       int * const restrict tfd);
-
-int  __attribute__((nonnull))
-bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
-{
-    const uint32_t h = bsock_resvaddr_hash(ai);
-    struct bsock_resvaddr_alloc * const ar = bsock_resvaddr_alloc;
-    struct bsock_resvaddr * restrict t = ar->table[h & (ar->table_sz-1)];
-    const struct addrinfo * restrict tai;
-    for (; NULL != t; t = t->next) {
-        tai = t->ai;
-        if (   ai->ai_addrlen == tai->ai_addrlen
-            && 0 == memcmp(ai->ai_addr, tai->ai_addr, ai->ai_addrlen)
-            && ai->ai_family   == tai->ai_family
-            && (ai->ai_socktype == tai->ai_socktype || 0 == ai->ai_socktype)
-            && (ai->ai_protocol == tai->ai_protocol || 0 == ai->ai_protocol))
-            return !(ai->ai_flags & BSOCK_FLAGS_REBIND)
-              ? t->fd
-              : bsock_resvaddr_rebind(ai, &t->fd);
-    }
-    return -1;
-}
-
 static void  __attribute__((nonnull))  __attribute_cold__
 bsock_resvaddr_cleanup_close (void * const arg)
 {
@@ -154,22 +128,44 @@ bsock_resvaddr_cleanup_close (void * const arg)
         nointr_close(fd[1]);
 }
 
-static int
-  __attribute__((noinline))  __attribute_cold__  __attribute__((nonnull))
+static int  __attribute__((nonnull))  __attribute__((noinline))
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd)
 {
-    /* (race condition with re-reading config (mitigated by reconfig sleep)) */
+    /* Intentionally do not setsockopt SO_REUSEADDR for AF_INET/AF_INET6 on
+     * socket for initial bind() attempt since doing so might permit malicious
+     * users to bind(), listen() on reserved address (e.g. IP and port >= 1024)
+     * before the intended process does so.  See bsock/NOTES for more info */
     /* (requires pthread PTHREAD_CANCEL_DEFERRED type for proper operation) */
+    /* (race condition with re-reading config  or requests with
+     *  BSOCK_FLAGS_REBIND (not currently in use or recommended))
+     * (mitigated by reconfig sleep in bsock_resvaddr_config())
+     * (re-reading config is rare, anyway) */
     int fd[] = { -1, -1 }, flag = 1;
     pthread_cleanup_push(bsock_resvaddr_cleanup_close, &fd);
     if (-1 != (fd[0] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol))
-        && (!(AF_INET == ai->ai_family || AF_INET6 == ai->ai_family)
-            || 0==setsockopt(fd[0],SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag)))
         /*(race condition with another thread requesting same address)*/
-        && (fd[1] = *tfd, *tfd = -1, 0 == nointr_close(fd[1]))
+        && (fd[1] = *tfd, *tfd = -1, -1 == fd[1] || 0 == nointr_close(fd[1]))
         && (fd[1] = -1, 0 == bind(fd[0], ai->ai_addr, ai->ai_addrlen))) {
         *tfd = fd[0]; fd[0] = -1;
+    }
+    else if ((AF_INET == ai->ai_family || AF_INET6 == ai->ai_family)
+             && errno == EADDRINUSE  /* bind() call above failed */
+             && 0==setsockopt(fd[0],SOL_SOCKET,SO_REUSEADDR,&flag,sizeof(flag))
+             && 0==bind(fd[0], ai->ai_addr, ai->ai_addrlen)) {
+        *tfd = fd[0]; fd[0] = -1;
+        if (!(ai->ai_flags & BSOCK_FLAGS_REBIND)) {
+            /* issue warning if had to bind() after setsockopt SO_REUSEADDR.
+             * bsock_addrinfo_to_strs() should not fail here
+             * since addr should already have been validated */
+            struct bsock_addrinfo_strs aistr;
+            char bufstr[112];
+            if (bsock_addrinfo_to_strs(ai, &aistr, bufstr, sizeof(bufstr))) {
+                bsock_syslog(0,LOG_WARNING,"bind SO_REUSEADDR: %s %s %s %s %s",
+                             aistr.family, aistr.socktype, aistr.protocol,
+                             aistr.service, aistr.addr);
+            }
+        }
     }
     else {
         bsock_syslog(errno, LOG_ERR, "socket,setsockopt,bind");
@@ -177,6 +173,27 @@ bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
     }
     pthread_cleanup_pop(0);
     return *tfd;
+}
+
+int  __attribute__((nonnull))
+bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
+{
+    const uint32_t h = bsock_resvaddr_hash(ai);
+    struct bsock_resvaddr_alloc * const ar = bsock_resvaddr_alloc;
+    struct bsock_resvaddr * restrict t = ar->table[h & (ar->table_sz-1)];
+    const struct addrinfo * restrict tai;
+    for (; NULL != t; t = t->next) {
+        tai = t->ai;
+        if (    ai->ai_addrlen  == tai->ai_addrlen
+            && 0 == memcmp(ai->ai_addr, tai->ai_addr, ai->ai_addrlen)
+            &&  ai->ai_family   == tai->ai_family
+            && (ai->ai_socktype == tai->ai_socktype || 0 == ai->ai_socktype)
+            && (ai->ai_protocol == tai->ai_protocol || 0 == ai->ai_protocol))
+            return (-1 != t->fd && !(ai->ai_flags & BSOCK_FLAGS_REBIND))
+              ? t->fd
+              : bsock_resvaddr_rebind(ai, &t->fd);
+    }
+    return -1;
 }
 
 struct bsock_resvaddr_cleanup {
@@ -246,7 +263,6 @@ bsock_resvaddr_config (void)
     unsigned int lineno = 0;
     unsigned int addr_count = 0;
     unsigned int table_sz = 32;
-    int flag = 1;
     size_t addr_sz = 0;
     char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bsock str */
     bool rc = true;
@@ -355,27 +371,16 @@ bsock_resvaddr_config (void)
             t->ai = ar->ai  + lineno;
 
             /* retrieve previously reserved addr or bind to reserve new addr */
-            if (-1 == (t->fd = bsock_resvaddr_fd(&ai))) {
-                t->fd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
-                if (-1 != t->fd
-                    && (!(AF_INET == ai.ai_family || AF_INET6 == ai.ai_family)
-                        || 0 == setsockopt(t->fd, SOL_SOCKET, SO_REUSEADDR,
-                                           &flag, sizeof(flag))) /* flag == 1 */
-                    && 0 == bind(t->fd, ai.ai_addr, ai.ai_addrlen))
-                    flag = 1;
-                else {
-                    flag = errno;
-                    bsock_syslog(flag, LOG_ERR, "socket,setsockopt,bind");
-                    bsock_syslog(flag, LOG_ERR, "skipping addr: %s %s %s %s %s",
-                                 aistr.family,aistr.socktype,
-                                 aistr.protocol,aistr.service,aistr.addr);
-                    if (-1 != t->fd) {
-                        nointr_close(t->fd);
-                        t->fd = -1;
-                    }
-                    flag = 1;
-                    continue;
+            if (   -1 == (t->fd = bsock_resvaddr_fd(&ai))
+                && -1 == bsock_resvaddr_rebind(&ai, &t->fd)) {
+                bsock_syslog(errno, LOG_ERR, "skipping addr: %s %s %s %s %s",
+                             aistr.family, aistr.socktype,
+                             aistr.protocol, aistr.service, aistr.addr);
+                if (-1 != t->fd) {
+                    nointr_close(t->fd);
+                    t->fd = -1;
                 }
+                continue;
             }
 
             /* copy addrinfo */
