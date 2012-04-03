@@ -40,3 +40,10 @@ shell interpretation is bypassed.  The client environment is not transferred,
 except for a few variables used for logging.  The target command must still
 take care to sanitize the environment before executing any shell commands.
 (The same advice is true for setuid/setgid programs, too.)
+
+
+News
+----
+
+2012.03.29 CloudLinux is piloting proxyexec in CloudLinux CageFS 3.2 beta.
+http://www.cloudlinux.com/blog/clnews/beta-cagefs-32-say-goodbye-to-suid-scripts.php
