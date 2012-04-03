@@ -97,7 +97,7 @@
 #endif
 #endif
 
-/* bsock_client_session assumes MSG_DONTWAIT support if BSOCK_UNIX_ACCEPTFILTER
+/* bsock_client_thread assumes MSG_DONTWAIT support if BSOCK_UNIX_ACCEPTFILTER
  * and this assumption is true for Linux and *BSD, but check here for others
  * (or fcntl c->fd F_SETFL O_NONBLOCK before speculative bsock_addrinfo_recv) */
 #ifndef MSG_DONTWAIT
@@ -338,100 +338,51 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
 }
 
 static int  __attribute__((nonnull (1)))
-bsock_client_session (struct bsock_client_st * const restrict c,
-                      struct bsock_addrinfo_strs * const restrict aistr)
+bsock_client_handler (struct bsock_client_st * const restrict c,
+                      struct addrinfo * const restrict ai,
+                      int * const restrict fd)
 {
-    int fd = -1, nfd = -1;
+    int nfd = -1;
     int rc = EXIT_FAILURE;
     int flag;
-    int addr[28];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
-    struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
-      .ai_addrlen = sizeof(addr),
-      .ai_addr    = (struct sockaddr *)addr
-    };
     struct iovec iov = { .iov_base = &flag, .iov_len = sizeof(flag) };
     uid_t uid;
 
-    /* get client credentials (if non-daemon mode) */
-    if ((uid_t)-1 == c->uid) {
-        if (NULL != aistr && 0 != getpeername(c->fd,ai.ai_addr,&ai.ai_addrlen)){
-            /* authbind: client provided as stdin the socket to which to bind()
-             *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
-             * bsock has args and stdin is not a connected socket.
-             * bsock is running setuid; use real uid, gid as credentials */
-            if (errno == ENOTCONN) {
-                fd = c->fd; /*(Note: setting fd=c->fd is reason why code here)*/
-                c->uid = getuid();
-                c->gid = getgid();
-            }
-            else {
-                bsock_syslog(errno, LOG_ERR, "getpeername");
-                return EXIT_FAILURE;
-            }
-        }
-        ai.ai_addrlen = sizeof(addr); /* reset addr size after getpeername() */
-        if ((uid_t)-1 == c->uid) {
-            if (0 != bsock_unix_getpeereid(c->fd, &c->uid, &c->gid)){
-                bsock_syslog(errno, LOG_ERR, "getpeereid");
-                return EXIT_FAILURE;
-            }
-        }
-    }
+    do {  /*(required steps follow block in order to send response to client)*/
 
-    pthread_cleanup_push(bsock_cleanup_close, &fd);
-
-    do {  /*(required steps follow this block; this might be made subroutine)*/
-
-        /* receive addrinfo from client
-         * (NOTE: receiving addrinfo is ONLY place in bsock that can block on
-         *  client input (at this time).  Set timeout for 2000ms (2 sec)) */
-        if (!(NULL == aistr
-              ? (/* speculative recv if OS can defer accept() until data ready*/
-                 #ifdef BSOCK_UNIX_ACCEPTFILTER
-                 bsock_addrinfo_recv(c->fd, &ai, &fd)
-                 || ((errno == EAGAIN || errno == EWOULDBLOCK)
-                     && 1 == retry_poll_fd(c->fd, POLLIN, 2000)
-                     && bsock_addrinfo_recv(c->fd, &ai, &fd))
-                 #else
-                        1 == retry_poll_fd(c->fd, POLLIN, 2000)
-                     && bsock_addrinfo_recv(c->fd, &ai, &fd)
-                 #endif
-                )
-              : bsock_addrinfo_from_strs(&ai, aistr))) {
-            bsock_syslog(errno, LOG_ERR,
-                         "recv addrinfo error or invalid addrinfo");
+        if (0 == ai->ai_addrlen) { /* overloaded to indicate error if value 0 */
             break;
         }
 
         /* check client credentials to authorize client request */
-        if (!bsock_is_authorized_addrinfo(&ai, c->uid, c->gid))
+        if (!bsock_is_authorized_addrinfo(ai, c->uid, c->gid))
             break;
 
         /* check if addr, port already reserved and bound in bsock cache
-         * (Note: fd is intentionally not set to nfd to avoid cleanup close) */
-        if (-1 != (nfd = bsock_resvaddr_fd(&ai))) {
-            if (c->fd != fd)
+         * (Note: *fd is intentionally not set to nfd to avoid cleanup close) */
+        if (-1 != (nfd = bsock_resvaddr_fd(ai))) {
+            if (c->fd != *fd)
                 rc = EXIT_SUCCESS;
-            else /* (incompatible (unsupportable) with authbind (c->fd==fd)) */
+            else /* (incompatible (unsupportable) with authbind (c->fd==*fd)) */
                 errno = EACCES;
             break;
         }
 
         /* create socket (if not provided by client) */
-        if (-1 == fd) {
-            fd = nfd = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
-            if (-1 == fd) {
+        if (-1 == *fd) {
+            *fd = nfd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+            if (-1 == nfd) {
                 bsock_syslog(errno, LOG_ERR, "socket");
                 break;
             }
         }
 
-        if (AF_INET == ai.ai_family || AF_INET6 == ai.ai_family) {
-            if (0 == (AF_INET == ai.ai_family
-                      ? ((struct sockaddr_in *)ai.ai_addr)->sin_port
-                      : ((struct sockaddr_in6 *)ai.ai_addr)->sin6_port)) {
+        if (AF_INET == ai->ai_family || AF_INET6 == ai->ai_family) {
+            if (0 == (AF_INET == ai->ai_family
+                      ? ((struct sockaddr_in *)ai->ai_addr)->sin_port
+                      : ((struct sockaddr_in6 *)ai->ai_addr)->sin6_port)) {
                 /* bind to reserved port (special-case port == 0) */
-                if (0 == bsock_bindresvport_sa(fd, ai.ai_addr))
+                if (0 == bsock_bindresvport_sa(*fd, ai->ai_addr))
                     rc = EXIT_SUCCESS;
                 else
                     bsock_syslog(errno, LOG_ERR, "bindresvport_sa");
@@ -440,7 +391,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
             else {
                 /* set SO_REUSEADDR socket option */
                 flag = 1;
-                if (0 != setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+                if (0 != setsockopt(*fd, SOL_SOCKET, SO_REUSEADDR,
                                     &flag, sizeof(flag))) {
                     bsock_syslog(errno, LOG_ERR, "setsockopt");
                     break;
@@ -449,7 +400,7 @@ bsock_client_session (struct bsock_client_st * const restrict c,
         }
 
         /* bind to address */
-        if (0 == bind(fd, ai.ai_addr, ai.ai_addrlen))
+        if (0 == bind(*fd, ai->ai_addr, ai->ai_addrlen))
             rc = EXIT_SUCCESS;
         else
             bsock_syslog(errno, LOG_ERR, "bind");
@@ -475,8 +426,8 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     c->uid = (uid_t)-1;
 
     /* send 4-byte value in data to indicate success or errno value
-     * (send socket fd to client if new socket, no poll since only one send) */
-    if (c->fd != fd) {
+     * (send socket *fd to client if new socket, no poll since only one send) */
+    if (c->fd != *fd) {
       #if !defined(MSG_DONTWAIT) || MSG_DONTWAIT-0 == 0
         /* poll()d before recv above, so can defer O_NONBLOCK to here */
         fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
@@ -490,10 +441,8 @@ bsock_client_session (struct bsock_client_st * const restrict c,
     }
     else {
         rc = flag;  /* authbind: set exit value */
-        fd = -1;    /* no-op bsock_cleanup_close(&fd) since fd == c->fd */
+        *fd = -1;   /* no-op bsock_cleanup_close(fd) since *fd == c->fd */
     }
-
-    pthread_cleanup_pop(1);  /* bsock_cleanup_close(&fd)  */
 
     /* syslog all connections to (or instantiations of) bsock daemon
      * Note: This syslog results in bsock taking 1.5x longer (wall clock)
@@ -528,42 +477,73 @@ static void *  __attribute__((nonnull))
 bsock_client_thread (void * const arg)
 {
     struct bsock_client_st c; /* copy so that not referencing hash entry */
+    int addr[28];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
+    struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
+      .ai_addrlen = sizeof(addr),
+      .ai_addr    = (struct sockaddr *)addr
+    };
+    int fd = -1;
     memcpy(&c, arg, sizeof(struct bsock_client_st));
     pthread_cleanup_push(bsock_cleanup_client, &c);
-    bsock_client_session(&c, NULL);  /* ignore rc */
+    pthread_cleanup_push(bsock_cleanup_close, &fd);
+    /* receive addrinfo from client
+     * (NOTE: receiving addrinfo is ONLY place in bsock that can block on
+     *  client input (at this time).  Set timeout for 2000ms (2 sec)) */
+    if (!(/* speculative recv if OS can defer accept() until data ready*/
+          #ifdef BSOCK_UNIX_ACCEPTFILTER
+          bsock_addrinfo_recv(c.fd, &ai, &fd)
+          || ((errno == EAGAIN || errno == EWOULDBLOCK)
+              && 1 == retry_poll_fd(c.fd, POLLIN, 2000)
+              && bsock_addrinfo_recv(c.fd, &ai, &fd))
+          #else
+                 1 == retry_poll_fd(c.fd, POLLIN, 2000)
+              && bsock_addrinfo_recv(c.fd, &ai, &fd)
+          #endif
+         ) ) {
+        ai.ai_addrlen = 0;   /* overloaded flag to send error in response */
+        bsock_syslog(errno, LOG_ERR, "recv addrinfo error or invalid addrinfo");
+    }
+    bsock_client_handler(&c, &ai, &fd);  /* ignore rc */
+    pthread_cleanup_pop(1);  /* bsock_cleanup_close(&fd) */
     pthread_cleanup_pop(1);  /* bsock_cleanup_client(&c) */
     return NULL;  /* end of thread; identical to pthread_exit() */
+}
+
+static void  __attribute__((nonnull))
+bsock_sigaction (sigset_t * const restrict sigs, const int signo)
+{
+    switch (signo) {
+      case SIGHUP:
+        /* efficiency: keep databases open */
+        endprotoent();
+        setprotoent(1);
+        endservent();
+        setservent(1);
+        /* (no locks needed; executed while signals blocked) */
+        /* refresh table of persistent reserved addresses */
+        bsock_resvaddr_config();
+        /* refresh table of authorized username/address/port */
+        bsock_authz_config();
+        break;
+      case SIGINT: case SIGQUIT: case SIGTERM:
+        (void)pthread_sigmask(SIG_UNBLOCK, sigs, NULL);
+        raise(signo); /*not expected to return, but reset mask if it does*/
+        (void)pthread_sigmask(SIG_BLOCK, sigs, NULL);
+        break;
+      default:
+        bsock_syslog(0, LOG_ERR, "caught unexpected signal: %d", signo);
+        break;
+    }
 }
 
 static void  __attribute__((nonnull))  __attribute__((noreturn))
 bsock_sigwait (void * const arg)
 {
     sigset_t * const sigs = (sigset_t *)arg;
-    int signum = SIGHUP;
+    int signo = SIGHUP;
     for (;;) {
-        switch (signum) {
-          case SIGHUP:
-            /* efficiency: keep databases open */
-            endprotoent();
-            setprotoent(1);
-            endservent();
-            setservent(1);
-            /* (no locks needed; executed while signals blocked) */
-            /* refresh table of persistent reserved addresses */
-            bsock_resvaddr_config();
-            /* refresh table of authorized username/address/port */
-            bsock_authz_config();
-            break;
-          case SIGINT: case SIGQUIT: case SIGTERM:
-            (void)pthread_sigmask(SIG_UNBLOCK, sigs, NULL);
-            raise(signum); /*not expected to return, but reset mask if it does*/
-            (void)pthread_sigmask(SIG_BLOCK, sigs, NULL);
-            break;
-          default:
-            bsock_syslog(0,LOG_ERR,"caught unexpected signal: %d",signum);
-            break;
-        }
-        (void) sigwait(sigs, &signum);
+        bsock_sigaction(sigs, signo);
+        (void) sigwait(sigs, &signo);
     }
 }
 
@@ -629,8 +609,13 @@ main (int argc, char *argv[])
 
     if (!daemon) {
         struct bsock_addrinfo_strs aistr;
-        struct bsock_addrinfo_strs *aistrptr = &aistr;
         struct stat st;
+        int addr[28];  /*buf for IPv4, IPv6, or AF_UNIX w/ up to 108 char path*/
+        struct addrinfo ai = { /*init only fields used to pass buf and bufsize*/
+          .ai_addrlen = sizeof(addr),
+          .ai_addr    = (struct sockaddr *)addr
+        };
+        int fd = -1;
         if (0 != fstat(STDIN_FILENO, &st)) {
             bsock_syslog(errno, LOG_ERR, "fstat stdin");
             return EXIT_FAILURE;
@@ -641,8 +626,7 @@ main (int argc, char *argv[])
         }
         argv += optind;
         switch ((argc -= optind)) {
-          case 0: aistrptr = NULL;
-                  break;
+          case 0: break;
           case 1: if (bsock_addrinfo_split_str(&aistr, argv[0]))
                       break;
                   bsock_syslog(errno,LOG_ERR,"invalid address info arguments");
@@ -660,7 +644,45 @@ main (int argc, char *argv[])
         m.fd  = STDIN_FILENO;
         m.uid = (uid_t)-1;
         m.gid = (gid_t)-1;
-        return bsock_client_session(&m, aistrptr);
+
+        /* get client credentials (non-daemon mode) */
+        if (0 != argc) {
+            /* authbind: client provided as stdin the socket to which to bind()
+             *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
+             * bsock has args and stdin is not a connected socket.
+             * bsock is running setuid; use real uid, gid as credentials */
+            if (0 != getpeername(m.fd, ai.ai_addr, &ai.ai_addrlen)) {
+                if (errno == ENOTCONN) {
+                    fd = m.fd;
+                    m.uid = getuid();
+                    m.gid = getgid();
+                }
+                else {
+                    bsock_syslog(errno, LOG_ERR, "getpeername");
+                    return EXIT_FAILURE;
+                }
+            }
+            ai.ai_addrlen = sizeof(addr);/*reset addr size after getpeername()*/
+        }
+        if ((uid_t)-1 == m.uid) {
+            if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
+                bsock_syslog(errno, LOG_ERR, "getpeereid");
+                return EXIT_FAILURE;
+            }
+        }
+
+        /* receive addrinfo from client */
+        if (!(0 == argc
+              ? 1 == retry_poll_fd(m.fd, POLLIN, 2000)
+                && bsock_addrinfo_recv(m.fd, &ai, &fd)    /*args from socket */
+              : bsock_addrinfo_from_strs(&ai, &aistr))) { /*command line args*/
+            ai.ai_addrlen = 0;  /* overloaded flag to send error in response */
+            bsock_syslog(errno, LOG_ERR,
+                         "recv addrinfo error or invalid addrinfo");
+        }
+
+        return bsock_client_handler(&m, &ai, &fd);
+        /*(not bothering to close(fd) since program is exiting)*/
     }
 
     /*
