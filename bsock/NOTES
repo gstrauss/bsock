@@ -163,9 +163,18 @@ Technical note SO_REUSEADDR (security):
   (More details at http://hea-www.harvard.edu/~fine/Tech/addrinuse.html)
 
   Unix Sockets FAQ mentions it is possible to bind() and listen() to a specific
-  address even if another process is already listening on INADDR_ANY if the
-  original process setsockopt SO_REUSEADDR before bind() and listen().
-  http://www.faqs.org/faqs/unix-faq/socket/
+  address as long as another process is not already listen()ing on the specific
+  address or INADDR_ANY, and as long as the original process setsockopt
+  SO_REUSEADDR before bind().  For socket types SOCK_STREAM and SOCK_SEQPACKET,
+  a listen() call prevents others from bind()ing, but if a daemon closes the
+  listen() socket, such as when it restarts, then another process can grab the
+  address and port.  For other socket types, e.g. SOCK_DGRAM used with protocol
+  UDP, no listen() call is made, and so others can also bind() unless blocked
+  by other means, such as use of a privileged port < 1024.  (One of the most
+  common UDP services is DNS, and the standard port for DNS is port 53, which
+  is < 1024.)
+
+  http://www.faqs.org/faqs/unix-faq/socket/  (1998.01.22)
     4.11.  What is the difference between SO_REUSEADDR and SO_REUSEPORT?
       "SO_REUSEADDR allows your server to bind to an address which is in a
        TIME_WAIT state.  It does not allow more than one server to bind to
@@ -176,19 +185,28 @@ Technical note SO_REUSEADDR (security):
   bsock persistent reserved address in bsock.resvaddr are handled by creating
   a socket and then bind()ing the local address.  However, bsock does not call
   listen() since some socket options must be set prior to listen() to take
-  effect (e.g. SO_SNDBUF and SO_RCVBUF).
+  effect (e.g. SO_SNDBUF and SO_RCVBUF), and listen() is invalid for some
+  socket types (e.g. SOCK_DGRAM).
 
-  Not calling listen() on a bound socket with SO_REUSEADDR option also permits
-  other processes (e.g. any process by any user) to setsockopt SO_REUSEADDR and
-  bind(), listen() to a port >= 1024 and same or similar address.  The address
-  might be a subset of the reserved address, e.g. specific addresses on the same
-  port where the listen address is INADDR_ANY or INADDR6_ANY_INIT (i.e. a port
-  on all interfaces for IPv4 and/or IPv6.)  The specific IP address (e.g. an
-  external interface on the host) gets priority for incoming connections and so
-  could then sniff traffic and forward to localhost, intercepting such things as
-  website or database authentication credentials.  There are probably more than
-  a few ways to set up a listener besides writing custom code.  One is ssh -R
-  port forwarding (uses SO_REUSEADDR), often enabled by default in sshd_config.
+  Not calling listen() on a bound socket with SO_REUSEADDR option permits other
+  processes (e.g. any process by any user) to setsockopt SO_REUSEADDR and bind()
+  to a port >= 1024 and same or similar address.  The address might be a subset
+  of the reserved address, e.g. specific addresses on the same port where the
+  address is INADDR_ANY or INADDR6_ANY_INIT (i.e. a port on all interfaces for
+  IPv4 and/or IPv6.)  The specific IP address (e.g. an external interface on the
+  host) gets priority for incoming connections and so could then sniff traffic
+  and forward to localhost if different service instances are listening on 
+  different IPs, or to another machine in a cluster providing the same service,
+  intercepting such things as website or database authentication credentials.
+  The real daemon -- which lost the race to bind() and listen() -- would fail
+  to bind(),listen() and might report problem and require manual intervention.
+  For sockets not SOCK_STREAM and not SOCK_SEQPACKET, there would be a race for
+  multiple processes to recv() and no indication of interception, other than
+  waking up and trying to recv() but getting EAGAIN or EWOULDBLOCK.
+
+  There are probably more than a few ways to set up a listener besides writing
+  custom code.  One is ssh -R port forwarding (uses SO_REUSEADDR), often enabled
+  by default in sshd_config.
   ('man sshd_config' and see AllowTcpForwarding directive to disable.)
 
   To avoid these, bsock attempts to bind() bsock.resvaddr addresses without
