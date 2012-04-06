@@ -130,7 +130,6 @@ bsock_cleanup_close (void * const arg)
 
 struct bsock_client_st {
   struct bsock_client_st *next;
-  pthread_t thread;
   int fd;
   uid_t uid;
   gid_t gid;
@@ -337,7 +336,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
       : ((errno=EACCES), false));
 }
 
-static int  __attribute__((nonnull (1)))
+static int  __attribute__((nonnull))
 bsock_client_handler (struct bsock_client_st * const restrict c,
                       struct addrinfo * const restrict ai,
                       int * const restrict fd)
@@ -346,7 +345,6 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
     int rc = EXIT_FAILURE;
     int flag;
     struct iovec iov = { .iov_base = &flag, .iov_len = sizeof(flag) };
-    uid_t uid;
 
     do {  /*(required steps follow block in order to send response to client)*/
 
@@ -417,13 +415,12 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
      *  uid would get deferred since this thread did not remove uid from thread
      *  table before client was able to make another request, and the listening
      *  thread able to handle it (and defer due to existing request in process))
-     * (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
+     * (skip pthread_cleanup_push(),_pop() on mutex since
      *  bsock_thread_table_remove() provides no cancellation point) */
-    pthread_mutex_lock(&bsock_thread_table_mutex);
-    bsock_thread_table_remove(c);
-    pthread_mutex_unlock(&bsock_thread_table_mutex);
-    uid = c->uid;
-    c->uid = (uid_t)-1;
+    pthread_mutex_lock(&bsock_thread_table_mutex);   /* excess if event-based */
+    bsock_thread_table_remove(c); /* single threaded, event-based could defer */
+    pthread_mutex_unlock(&bsock_thread_table_mutex); /* excess if event-based */
+    c->uid = (uid_t)-1;  /* mark to prevent bsock_cleanup_client table_remove */
 
     /* send 4-byte value in data to indicate success or errno value
      * (send socket *fd to client if new socket, no poll since only one send) */
@@ -443,17 +440,6 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
         rc = flag;  /* authbind: set exit value */
         *fd = -1;   /* no-op bsock_cleanup_close(fd) since *fd == c->fd */
     }
-
-    /* syslog all connections to (or instantiations of) bsock daemon
-     * Note: This syslog results in bsock taking 1.5x longer (wall clock)
-     * to service each request on my uniprocessor system, so do syslog after
-     * servicing request for benefit of multiple requests on multiprocessors.
-     * (However, if thread cancelled before this point, syslog does not happen)
-     * <<<FUTURE: might write custom wrapper to platform-specific getpeereid
-     * and combine with syslog() to log pid and other info, if available.
-     * <<<FUTURE: might add additional logging of request and success/failure */
-    bsock_syslog(0, LOG_INFO, "connect(%d): uid:%u gid:%u",
-                 c->fd, (uint32_t)uid, (uint32_t)c->gid);
 
     return rc;
 }
@@ -483,7 +469,10 @@ bsock_client_thread (void * const arg)
       .ai_addr    = (struct sockaddr *)addr
     };
     int fd = -1;
+    char info[64];
     memcpy(&c, arg, sizeof(struct bsock_client_st));
+    snprintf(info, sizeof(info), "connect(%d): uid:%u gid:%u",
+             c.fd, (uint32_t)c.uid, (uint32_t)c.gid);
     pthread_cleanup_push(bsock_cleanup_client, &c);
     pthread_cleanup_push(bsock_cleanup_close, &fd);
     /* receive addrinfo from client
@@ -503,9 +492,15 @@ bsock_client_thread (void * const arg)
         ai.ai_addrlen = 0;   /* overloaded flag to send error in response */
         bsock_syslog(errno, LOG_ERR, "recv addrinfo error or invalid addrinfo");
     }
-    bsock_client_handler(&c, &ai, &fd);  /* ignore rc */
+    bsock_client_handler(&c, &ai, &fd);  /* ignore rc; client request handled */
     pthread_cleanup_pop(1);  /* bsock_cleanup_close(&fd) */
     pthread_cleanup_pop(1);  /* bsock_cleanup_client(&c) */
+    /* syslog all connections to bsock daemon
+     * Note: This syslog results in bsock taking 1.5x longer (wall clock)
+     * to service each request on my uniprocessor system, so do syslog after
+     * servicing request for benefit of multiple requests on multiprocessors.
+     * (However, if thread cancelled before this point, syslog doesn't happen)*/
+    bsock_syslog(0, LOG_INFO, "%s", info); /* deferred to not delay response */
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
@@ -568,15 +563,177 @@ bsock_thread_signals (void)
         bsock_syslog(errnum, LOG_ERR, "pthread_create");
 }
 
+static void  __attribute__((noinline))  __attribute__((cold))
+bsock_client_send_errno (const int fd, int errnum)
+{
+    /* one-shot response; send buffer should be empty and should not block */
+    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(int) };
+    bsock_unix_send_fds(fd, NULL, 0, &iov, 1);  /* no err chk; send & forget */
+}
+
+static int
+bsock_thread_event_loop (const int sfd, pthread_attr_t * const restrict attr)
+{
+    /* daemon event loop
+     * accept, get client credentials, insert into table, spawn handler thread
+     *
+     * (As written, code is extensible to use timer thread which expires long
+     *  running threads using pthread_cancel().  Not implemented in bsock since
+     *  bsock only blocks on reading addrinfo from client, and handler thread
+     *  poll()s for limited time before aborting.)  (It should be possible to
+     *  implement as single-thread using poll() for POLLIN on all accept()ed
+     *  connections, and then handling in-line once data ready.
+     *  Alternatively via SIGIO.)
+     */
+    struct bsock_client_st m;
+    struct bsock_client_st *c;
+    pthread_t thread_id;
+
+    do {
+
+        /* accept new connection */
+        if (-1 == (m.fd = accept(sfd, NULL, NULL))) {
+            switch (errno) {
+              case ECONNABORTED:
+              case EINTR: continue;
+              case EINVAL:/* listen sfd closed by another thread */
+                          pthread_attr_destroy(attr);
+                          return EXIT_SUCCESS;
+              default:    /* temporary process/system resource issue */
+                          bsock_syslog(errno, LOG_ERR, "accept");
+                          poll(NULL, 0, 10); /* pause 10ms and continue */
+                          continue;
+            }
+        }
+
+        /* get client credentials */
+        if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
+            bsock_syslog(errno, LOG_ERR, "getpeereid");
+            nointr_close(m.fd);
+            continue;
+        }
+
+        /* allocate thread table entry; permit one request at a time per uid */
+        c = NULL;
+        pthread_mutex_lock(&bsock_thread_table_mutex);
+        if (bsock_thread_table_query(&m) == NULL) {
+            while ((c = bsock_thread_table_add(&m)) == NULL) {
+                /* (yield then retry if max threads already in progress) */
+                pthread_mutex_unlock(&bsock_thread_table_mutex);
+                sched_yield();
+                pthread_mutex_lock(&bsock_thread_table_mutex);
+            }
+        }
+        pthread_mutex_unlock(&bsock_thread_table_mutex);
+        if (NULL == c) {
+            /* sendmsg with EAGAIN; permit only one request at a time per uid */
+            bsock_client_send_errno(m.fd, EAGAIN);  /*see bsock_bind_viasock()*/
+            nointr_close(m.fd);
+            continue;
+        }
+
+        /* create handler thread */
+        if (0 != pthread_create(&thread_id, attr, bsock_client_thread, c)) {
+            bsock_thread_table_remove(c);
+            nointr_close(m.fd);
+            continue;
+        }
+
+    } while (1);
+}
+
+/* one-shot mode; handle single request and exit */
+static int
+  __attribute__((nonnull))  __attribute__((noinline))  __attribute__((cold))
+bsock_client_once (const int argc, char ** const restrict argv)
+{
+    struct bsock_client_st m;
+    struct bsock_addrinfo_strs aistr;
+    struct stat st;
+    int addr[28];  /*buf for IPv4, IPv6, or AF_UNIX w/ up to 108 char path*/
+    struct addrinfo ai = { /*init only fields used to pass buf and bufsize*/
+      .ai_addrlen = sizeof(addr),
+      .ai_addr    = (struct sockaddr *)addr
+    };
+    int fd = -1, rc;
+    char info[64];
+    if (0 != fstat(STDIN_FILENO, &st)) {
+        bsock_syslog(errno, LOG_ERR, "fstat stdin");
+        return EXIT_FAILURE;
+    }
+    if (!S_ISSOCK(st.st_mode)) {
+        bsock_syslog(ENOTSOCK, LOG_ERR, "invalid socket on bsock stdin");
+        return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
+    }
+    switch (argc) {
+      case 0: break;
+      case 1: if (bsock_addrinfo_split_str(&aistr, argv[0]))
+                  break;
+              bsock_syslog(errno, LOG_ERR, "invalid address info arguments");
+              return EXIT_FAILURE;
+      case 5: aistr.family   = argv[0];
+              aistr.socktype = argv[1];
+              aistr.protocol = argv[2];
+              aistr.service  = argv[3];
+              aistr.addr     = argv[4];
+              break;
+      default: bsock_syslog(EINVAL, LOG_ERR, "invalid number of arguments");
+               return EXIT_FAILURE;
+    }
+
+    m.fd  = STDIN_FILENO;
+    m.uid = (uid_t)-1;
+    m.gid = (gid_t)-1;
+
+    /* get client credentials (non-daemon mode) */
+    if (0 != argc) {
+        /* authbind: client provided as stdin the socket to which to bind()
+         *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
+         * bsock has args and stdin is not a connected socket.
+         * bsock is running setuid; use real uid, gid as credentials */
+        if (0 != getpeername(m.fd, ai.ai_addr, &ai.ai_addrlen)) {
+            if (errno == ENOTCONN) {
+                fd = m.fd;
+                m.uid = getuid();
+                m.gid = getgid();
+            }
+            else {
+                bsock_syslog(errno, LOG_ERR, "getpeername");
+                return EXIT_FAILURE;
+            }
+        }
+        ai.ai_addrlen = sizeof(addr); /*reset addr size after getpeername()*/
+    }
+    if ((uid_t)-1 == m.uid) {
+        if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
+            bsock_syslog(errno, LOG_ERR, "getpeereid");
+            return EXIT_FAILURE;
+        }
+    }
+    snprintf(info, sizeof(info), "connect(%d): uid:%u gid:%u",
+             m.fd, (uint32_t)m.uid, (uint32_t)m.gid);
+
+    /* receive addrinfo from client */
+    if (!(0 == argc
+          ? 1 == retry_poll_fd(m.fd, POLLIN, 2000)
+            && bsock_addrinfo_recv(m.fd, &ai, &fd)    /* args from socket  */
+          : bsock_addrinfo_from_strs(&ai, &aistr))) { /* command line args */
+        ai.ai_addrlen = 0;    /* overloaded flag to send error in response */
+        bsock_syslog(errno, LOG_ERR, "recv addrinfo error or invalid addrinfo");
+    }
+
+    rc = bsock_client_handler(&m, &ai, &fd);
+    bsock_syslog(0, LOG_INFO, "%s", info); /*deferred to not delay response*/
+    /*(not bothering to close() m.fd or fd since program is exiting)*/
+    return rc;
+}
+
 int  __attribute__((nonnull))
 main (int argc, char *argv[])
 {
-    int sfd, daemon = false, supervised = false, errnum = EAGAIN;
-    struct bsock_client_st m;
-    struct bsock_client_st *c;
-    pthread_attr_t attr;
-    struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(int) };
+    int sfd, opt, daemon = false, supervised = false;
     struct group *gr;
+    pthread_attr_t attr;
 
     /* setuid safety measures must be performed before anything else */
     if (!bsock_daemon_setuid_stdinit())
@@ -586,20 +743,20 @@ main (int argc, char *argv[])
     bsock_syslog_openlog(BSOCK_SYSLOG_IDENT, LOG_NDELAY, BSOCK_SYSLOG_FACILITY);
 
     /* parse arguments */
-    while ((sfd = getopt(argc, argv, "dhF")) != -1
+    while ((opt = getopt(argc, argv, "dhF")) != -1
            || (daemon && optind != argc)) { /* no additional args for daemon */
-        switch (sfd) {
+        switch (opt) {
           case 'd': daemon = true; break;
           case 'F': supervised = true; break;
           default:  if (0 != getuid()) /*(syslog here; not bsock_syslog)*/
                         syslog(LOG_ERR,"bad arguments sent by uid %d",getuid());
                     fprintf(stderr, "\nerror: invalid arguments\n");/*fallthru*/
-          case 'h': fprintf((sfd == 'h' ? stdout : stderr), "\n"
+          case 'h': fprintf((opt == 'h' ? stdout : stderr), "\n"
                             "  bsock -h\n"
                             "  bsock -d [-F]\n"
                             "  bsock <addr_family> <socktype> <protocol> "
                                         "<service_or_port> <addr>\n\n");
-                    return (sfd == 'h' ? EXIT_SUCCESS : EXIT_FAILURE);
+                    return (opt == 'h' ? EXIT_SUCCESS : EXIT_FAILURE);
         }
     }
 
@@ -607,83 +764,8 @@ main (int argc, char *argv[])
      * one-shot mode; handle single request and exit
      */
 
-    if (!daemon) {
-        struct bsock_addrinfo_strs aistr;
-        struct stat st;
-        int addr[28];  /*buf for IPv4, IPv6, or AF_UNIX w/ up to 108 char path*/
-        struct addrinfo ai = { /*init only fields used to pass buf and bufsize*/
-          .ai_addrlen = sizeof(addr),
-          .ai_addr    = (struct sockaddr *)addr
-        };
-        int fd = -1;
-        if (0 != fstat(STDIN_FILENO, &st)) {
-            bsock_syslog(errno, LOG_ERR, "fstat stdin");
-            return EXIT_FAILURE;
-        }
-        if (!S_ISSOCK(st.st_mode)) {
-            bsock_syslog(ENOTSOCK, LOG_ERR, "invalid socket on bsock stdin");
-            return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
-        }
-        argv += optind;
-        switch ((argc -= optind)) {
-          case 0: break;
-          case 1: if (bsock_addrinfo_split_str(&aistr, argv[0]))
-                      break;
-                  bsock_syslog(errno,LOG_ERR,"invalid address info arguments");
-                  return EXIT_FAILURE;
-          case 5: aistr.family   = argv[0];
-                  aistr.socktype = argv[1];
-                  aistr.protocol = argv[2];
-                  aistr.service  = argv[3];
-                  aistr.addr     = argv[4];
-                  break;
-          default: bsock_syslog(EINVAL, LOG_ERR, "invalid number of arguments");
-                   return EXIT_FAILURE;
-        }
-
-        m.fd  = STDIN_FILENO;
-        m.uid = (uid_t)-1;
-        m.gid = (gid_t)-1;
-
-        /* get client credentials (non-daemon mode) */
-        if (0 != argc) {
-            /* authbind: client provided as stdin the socket to which to bind()
-             *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
-             * bsock has args and stdin is not a connected socket.
-             * bsock is running setuid; use real uid, gid as credentials */
-            if (0 != getpeername(m.fd, ai.ai_addr, &ai.ai_addrlen)) {
-                if (errno == ENOTCONN) {
-                    fd = m.fd;
-                    m.uid = getuid();
-                    m.gid = getgid();
-                }
-                else {
-                    bsock_syslog(errno, LOG_ERR, "getpeername");
-                    return EXIT_FAILURE;
-                }
-            }
-            ai.ai_addrlen = sizeof(addr);/*reset addr size after getpeername()*/
-        }
-        if ((uid_t)-1 == m.uid) {
-            if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
-                bsock_syslog(errno, LOG_ERR, "getpeereid");
-                return EXIT_FAILURE;
-            }
-        }
-
-        /* receive addrinfo from client */
-        if (!(0 == argc
-              ? 1 == retry_poll_fd(m.fd, POLLIN, 2000)
-                && bsock_addrinfo_recv(m.fd, &ai, &fd)    /*args from socket */
-              : bsock_addrinfo_from_strs(&ai, &aistr))) { /*command line args*/
-            ai.ai_addrlen = 0;  /* overloaded flag to send error in response */
-            bsock_syslog(errno, LOG_ERR,
-                         "recv addrinfo error or invalid addrinfo");
-        }
-
-        return bsock_client_handler(&m, &ai, &fd);
-        /*(not bothering to close(fd) since program is exiting)*/
-    }
+    if (!daemon)
+        return bsock_client_once(argc-optind, argv+optind);
 
     /*
      * daemon mode
@@ -736,70 +818,9 @@ main (int argc, char *argv[])
         bsock_syslog(errno, LOG_ERR, "pthread_attr_*");
         return EXIT_FAILURE;
     }
-    bsock_thread_table_init();
+    bsock_thread_table_init(); /*used to permit one concurrent request per uid*/
 
-    bsock_thread_signals();  /* blocks signals for all but one thread */
+    bsock_thread_signals();    /*blocks signals for all but one thread*/
 
-    /* daemon event loop
-     * accept, get client credentials, insert into table, spawn handler thread
-     *
-     * (As written, code is extensible to use timer thread which expires long
-     *  running threads using pthread_cancel().  Not implemented in bsock since
-     *  bsock only blocks on reading addrinfo from client, and handler thread
-     *  poll()s for limited time before aborting.)  (It should be possible to
-     *  implement as single-thread using poll() for POLLIN on all accept()ed
-     *  connections, and then handling in-line once data ready.
-     *  Alternatively via SIGIO.)
-     */
-    do {
-
-        /* accept new connection */
-        if (-1 == (m.fd = accept(sfd, NULL, NULL))) {
-            switch (errno) {
-              case ECONNABORTED:
-              case EINTR: continue;
-              case EINVAL:/* listen sfd closed by another thread */
-                          pthread_attr_destroy(&attr);
-                          return EXIT_SUCCESS;
-              default:    /* temporary process/system resource issue */
-                          bsock_syslog(errno, LOG_ERR, "accept");
-                          poll(NULL, 0, 10); /* pause 10ms and continue */
-                          continue;
-            }
-        }
-
-        /* get client credentials */
-        if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
-            bsock_syslog(errno, LOG_ERR, "getpeereid");
-            nointr_close(m.fd);
-            continue;
-        }
-
-        /* allocate thread table entry; permit one request at a time per uid */
-        c = NULL;
-        pthread_mutex_lock(&bsock_thread_table_mutex);
-        if (bsock_thread_table_query(&m) == NULL) {
-            while ((c = bsock_thread_table_add(&m)) == NULL) {
-                /* (yield then retry if max threads already in progress) */
-                pthread_mutex_unlock(&bsock_thread_table_mutex);
-                sched_yield();
-                pthread_mutex_lock(&bsock_thread_table_mutex);
-            }
-        }
-        pthread_mutex_unlock(&bsock_thread_table_mutex);
-        if (NULL == c) {
-            /* sendmsg with EAGAIN; permit only one request at a time per uid */
-            bsock_unix_send_fds(m.fd, NULL, 0, &iov, 1);
-            nointr_close(m.fd);
-            continue;
-        }
-
-        /* create handler thread */
-        if (0 != pthread_create(&c->thread, &attr, bsock_client_thread, c)) {
-            bsock_thread_table_remove(c);
-            nointr_close(m.fd);
-            continue;
-        }
-
-    } while (1);
+    return bsock_thread_event_loop(sfd, &attr);
 }
