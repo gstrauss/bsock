@@ -428,10 +428,12 @@ bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
            ) || (errno = EINVAL, false);
 }
 
-bool  __attribute__((nonnull))
-bsock_addrinfo_recv (const int fd,
-                     struct addrinfo * const restrict ai,
-                     int * const restrict rfd)
+bool  __attribute__((nonnull (2,3)))
+bsock_addrinfo_recv_ex (const int fd,
+                        struct addrinfo * const restrict ai,
+                        int * const restrict rfd,
+                        char * const restrict ctrlbuf,
+                        const size_t ctrlbuf_sz)
 {
     /* receive addrinfo request */
     /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
@@ -447,8 +449,12 @@ bsock_addrinfo_recv (const int fd,
       { .iov_base = ai->ai_addr, .iov_len = ai->ai_addrlen }
     };
     unsigned int nrfds = 1;
-    ssize_t r = bsock_unix_recv_fds(fd, rfd, &nrfds, iov,
-                                    sizeof(iov)/sizeof(struct iovec));
+    ssize_t r = (ctrlbuf != NULL)
+      ? bsock_unix_recv_fds_ex(fd, rfd, &nrfds, iov,
+                               sizeof(iov)/sizeof(struct iovec),
+                               ctrlbuf, ctrlbuf_sz)
+      : bsock_unix_recv_fds(fd, rfd, &nrfds, iov,
+                            sizeof(iov)/sizeof(struct iovec));
     if (r <= 0)
         return false;  /* error or client disconnect */
     if (r < (ssize_t)sizeof(protover))
@@ -492,6 +498,16 @@ bsock_addrinfo_recv (const int fd,
 
     return false;   /* invalid client request; undecipherable format */
 }
+
+#if 0 /* see #define bsock_addrinfo_recv(fd, ai, rfd) in bsock_addrinfo.h */
+bool  __attribute__((nonnull))
+bsock_addrinfo_recv (const int fd,
+                     struct addrinfo * const restrict ai,
+                     int * const restrict rfd)
+{
+    return bsock_addrinfo_recv_ex(fd, ai, rfd, NULL, 0);
+}
+#endif
 
 bool  __attribute__((nonnull))
 bsock_addrinfo_send (const int fd,

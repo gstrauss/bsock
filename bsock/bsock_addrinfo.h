@@ -80,10 +80,15 @@ bool  __attribute__((nonnull))
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str);
 
-bool  __attribute__((nonnull))
-bsock_addrinfo_recv (const int fd,
-                     struct addrinfo * const restrict ai,
-                     int * const restrict rfd);
+bool  __attribute__((nonnull (2,3)))
+bsock_addrinfo_recv_ex (const int fd,
+                        struct addrinfo * const restrict ai,
+                        int * const restrict rfd,
+                        char * const restrict ctrlbuf,
+                        const size_t ctrlbuf_sz);
+
+#define bsock_addrinfo_recv(fd, ai, rfd) \
+        bsock_addrinfo_recv_ex((fd),(ai),(rfd),0,0)
 
 bool  __attribute__((nonnull))
 bsock_addrinfo_send (const int fd,
