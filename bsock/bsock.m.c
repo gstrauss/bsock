@@ -105,6 +105,14 @@
 #endif
 
 
+/* MSG_DONTWAIT is defined to MSG_DONTWAIT on Linux;
+ * preprocessor does not see the actual enum value;
+ * unexpected result with #if !defined(MSG_DONTWAIT) || (MSG_DONTWAIT-0 == 0) */
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -188,6 +196,8 @@ bsock_thread_table_remove (struct bsock_client_st * const c)
     struct bsock_client_st **prev =
       &bsock_thread_table[(uid & (BSOCK_THREAD_TABLE_SZ-1))];
     struct bsock_client_st *t = *prev;
+    /* mark to prevent bsock_cleanup_client taking extra mutex to repeat this */
+    c->next = (struct bsock_client_st *)~(uintptr_t)0;
     while (NULL != t && t->uid != uid)
         t = *(prev = &t->next);
     if (NULL != t) {
@@ -410,25 +420,12 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
     else if (0 == (flag = errno))
         flag = EACCES;  /*(iov.iov_base = &flag)*/
 
-    /* (remove from thread table prior to send due to observed process and 
-     *  thread execution order where a sequence of bind requests from same
-     *  uid would get deferred since this thread did not remove uid from thread
-     *  table before client was able to make another request, and the listening
-     *  thread able to handle it (and defer due to existing request in process))
-     * (skip pthread_cleanup_push(),_pop() on mutex since
-     *  bsock_thread_table_remove() provides no cancellation point) */
-    pthread_mutex_lock(&bsock_thread_table_mutex);   /* excess if event-based */
-    bsock_thread_table_remove(c); /* single threaded, event-based could defer */
-    pthread_mutex_unlock(&bsock_thread_table_mutex); /* excess if event-based */
-    c->uid = (uid_t)-1;  /* mark to prevent bsock_cleanup_client table_remove */
-
     /* send 4-byte value in data to indicate success or errno value
      * (send socket *fd to client if new socket, no poll since only one send) */
     if (c->fd != *fd) {
-      #if !defined(MSG_DONTWAIT) || MSG_DONTWAIT-0 == 0
         /* poll()d before recv above, so can defer O_NONBLOCK to here */
-        fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
-      #endif
+        if (!MSG_DONTWAIT)
+            fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
         rc = (bsock_unix_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
               == (ssize_t)iov.iov_len)
           ? EXIT_SUCCESS
@@ -452,7 +449,7 @@ bsock_cleanup_client (void * const arg)
         nointr_close(c->fd);
     /* (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
      *  bsock_thread_table_remove() provides no cancellation point) */
-    if ((uid_t)-1 != c->uid) {
+    if (c->next != (struct bsock_client_st *)~(uintptr_t)0) {
         pthread_mutex_lock(&bsock_thread_table_mutex);
         bsock_thread_table_remove(c);
         pthread_mutex_unlock(&bsock_thread_table_mutex);
@@ -492,14 +489,25 @@ bsock_client_thread (void * const arg)
         ai.ai_addrlen = 0;   /* overloaded flag to send error in response */
         bsock_syslog(errno, LOG_ERR, "recv addrinfo error or invalid addrinfo");
     }
+    /* (remove from thread table prior to send due to observed process and 
+     *  thread execution order where a sequence of bind requests from same
+     *  uid would get deferred since this thread did not remove uid from thread
+     *  table before client was able to make another request, and the listening
+     *  thread able to handle it (and defer due to existing request in process))
+     * (bsock_client_handler() should not perform any activities that block)
+     * (skip pthread_cleanup_push(),_pop() on mutex since
+     *  bsock_thread_table_remove() provides no cancellation point) */
+    pthread_mutex_lock(&bsock_thread_table_mutex);
+    bsock_thread_table_remove(&c);
+    pthread_mutex_unlock(&bsock_thread_table_mutex);
     bsock_client_handler(&c, &ai, &fd);  /* ignore rc; client request handled */
     pthread_cleanup_pop(1);  /* bsock_cleanup_close(&fd) */
     pthread_cleanup_pop(1);  /* bsock_cleanup_client(&c) */
     /* syslog all connections to bsock daemon
-     * Note: This syslog results in bsock taking 1.5x longer (wall clock)
+     * Note: This syslog results in bsock taking 1.3x longer (wall clock)
      * to service each request on my uniprocessor system, so do syslog after
      * servicing request for benefit of multiple requests on multiprocessors.
-     * (However, if thread cancelled before this point, syslog doesn't happen)*/
+     * (However, if thread cancelled before here, then logging doesn't happen)*/
     bsock_syslog(0, LOG_INFO, "%s", info); /* deferred to not delay response */
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
@@ -563,7 +571,7 @@ bsock_thread_signals (void)
         bsock_syslog(errnum, LOG_ERR, "pthread_create");
 }
 
-static void  __attribute__((noinline))  __attribute__((cold))
+static void  __attribute__((noinline))  __attribute_cold__
 bsock_client_send_errno (const int fd, int errnum)
 {
     /* one-shot response; send buffer should be empty and should not block */
@@ -644,7 +652,7 @@ bsock_thread_event_loop (const int sfd, pthread_attr_t * const restrict attr)
 
 /* one-shot mode; handle single request and exit */
 static int
-  __attribute__((nonnull))  __attribute__((noinline))  __attribute__((cold))
+  __attribute__((nonnull))  __attribute__((noinline))  __attribute_cold__
 bsock_client_once (const int argc, char ** const restrict argv)
 {
     struct bsock_client_st m;

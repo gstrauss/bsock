@@ -59,6 +59,13 @@ extern char **environ;
 #endif
 #define BSOCK_SOCKET BSOCK_SOCKET_DIR "/socket"
 
+/* MSG_DONTWAIT is defined to MSG_DONTWAIT on Linux;
+ * preprocessor does not see the actual enum value;
+ * unexpected result with #if !defined(MSG_DONTWAIT) || (MSG_DONTWAIT-0 == 0) */
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -87,9 +94,8 @@ bsock_bind_send_addr_and_recv (const int fd,
     unsigned int nrfd = 1;
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
-  #if !defined(MSG_DONTWAIT) || MSG_DONTWAIT-0 == 0
-    fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);
-  #endif
+    if (!MSG_DONTWAIT)
+        fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);
     if (bsock_addrinfo_send(sfd, ai, fd)
         &&  1 == retry_poll_fd(sfd, POLLIN, BSOCK_POLL_TIMEOUT)
         && -1 != bsock_unix_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {

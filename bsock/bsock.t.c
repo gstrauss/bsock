@@ -77,10 +77,11 @@ main (int argc, char *argv[])
     time_t secs = tvb.tv_sec - tva.tv_sec;
     long usecs = tvb.tv_usec - tva.tv_usec;
     if (usecs < 0) {
-        usecs = tva.tv_usec - tvb.tv_usec;
+        usecs += 1000000;
         --secs;
     }
-    fprintf(stderr, "count: %d %u:%u\n", i, (unsigned)secs,(unsigned)usecs);
+    fprintf(stderr, "count: %d in %u usecs\n", i,
+            (unsigned)secs*1000000u + (unsigned)usecs);
     if (i == 10000)
         return EXIT_SUCCESS;
   #endif

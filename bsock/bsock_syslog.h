@@ -47,7 +47,7 @@
 
 #if __GNUC_PREREQ(4,3) || __has_attribute(cold)
 #ifndef __attribute_cold__
-#define __attribute_cold__  __attribute__((cold))
+#define __attribute_cold__  __attribute__ ((cold))
 #endif
 #endif
 #ifndef __attribute_cold__
