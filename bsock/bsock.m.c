@@ -295,7 +295,7 @@ bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
 
     if (uid == 0 || gid == 0)  /* permit root or wheel */
         return true;
-    if (0 != getpwuid_r(uid, &pw, pwbuf, sizeof(pwbuf), &pwres))
+    if (0 != getpwuid_r(uid,&pw,pwbuf,sizeof(pwbuf),&pwres) || NULL == pwres)
         return false;
 
     if (ai->ai_family != ai->ai_addr->sa_family) {
