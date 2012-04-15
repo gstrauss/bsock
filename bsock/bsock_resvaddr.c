@@ -201,7 +201,7 @@ struct bsock_resvaddr_cleanup {
     struct bsock_resvaddr_alloc *ar;
 };
 
-static void  __attribute__((nonnull))
+static void  __attribute__((nonnull))  __attribute_cold__
 bsock_resvaddr_cleanup (void * const arg)
 {
     struct bsock_resvaddr_cleanup * const cleanup =
@@ -245,14 +245,17 @@ bsock_resvaddr_cleanup (void * const arg)
     }
 }
 
-void
+/* XXX: future
+ * bsock_resvaddr_config() and bsock_authz_config() should share parsing code */
+
+void  __attribute_cold__
 bsock_resvaddr_config (void)
 {
     FILE *cfg;
-    int addr[28];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
+    struct sockaddr_storage addr;
     struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
       .ai_addrlen = sizeof(addr),
-      .ai_addr    = (struct sockaddr *)addr
+      .ai_addr    = (struct sockaddr *)&addr
     };
     struct bsock_addrinfo_strs aistr;
     struct bsock_resvaddr_alloc *ar = NULL;
@@ -301,7 +304,7 @@ bsock_resvaddr_config (void)
             if (!rc)
                 continue; /* parse to end of file to report all syntax errors */
             ++addr_count;
-            addr_sz += (ai.ai_addrlen + 3) & (size_t)~0x3;/* align to 4 bytes */
+            addr_sz += (ai.ai_addrlen + 7) & (size_t)~0x7;/* align to 8 bytes */
             if (-1 == bsock_resvaddr_fd(&ai))
                 addr_added = true;
         }
@@ -390,8 +393,8 @@ bsock_resvaddr_config (void)
             t->ai->ai_addrlen  = ai.ai_addrlen;
             t->ai->ai_addr     = (struct sockaddr *)ar->buf;
             memcpy(t->ai->ai_addr, ai.ai_addr, ai.ai_addrlen);
-            ar->buf    += (ai.ai_addrlen + 3) & (size_t)~0x3;  /* align to 4 */
-            ar->buf_sz -= (ai.ai_addrlen + 3) & (size_t)~0x3;  /* align to 4 */
+            ar->buf    += (ai.ai_addrlen + 7) & (size_t)~0x7;  /* align to 8 */
+            ar->buf_sz -= (ai.ai_addrlen + 7) & (size_t)~0x7;  /* align to 8 */
 
             /* insert into table */
             tp = &ar->table[bsock_resvaddr_hash(t->ai) & (ar->table_sz-1)];

@@ -34,7 +34,6 @@
 #include <grp.h>
 #include <poll.h>
 #include <pthread.h>
-#include <pwd.h>
 #include <netdb.h>
 #include <sched.h>
 #include <signal.h>
@@ -46,6 +45,7 @@
 #include <unistd.h>
 
 #include <bsock_addrinfo.h>
+#include <bsock_authz.h>
 #include <bsock_bindresvport.h>
 #include <bsock_daemon.h>
 #include <bsock_resvaddr.h>
@@ -58,10 +58,6 @@
 
 #ifndef BSOCK_SYSLOG_FACILITY
 #define BSOCK_SYSLOG_FACILITY LOG_DAEMON
-#endif
-
-#ifndef BSOCK_CONFIG
-#error "BSOCK_CONFIG must be defined"
 #endif
 
 #ifndef BSOCK_GROUP
@@ -188,7 +184,7 @@ bsock_thread_table_add (struct bsock_client_st * const c)
     return (*next = t);
 }
 
-static struct bsock_client_st *  __attribute__((nonnull))
+static void  __attribute__((nonnull))
 bsock_thread_table_remove (struct bsock_client_st * const c)
 {
     /* (removes only first uid found if multiple (should not happen)) */
@@ -205,145 +201,6 @@ bsock_thread_table_remove (struct bsock_client_st * const c)
         t->next = bsock_thread_head;
         bsock_thread_head = t;
     }
-    return t;
-}
-
-static const char * restrict bsock_authz_lines;
-
-static char *
-bsock_authz_config_read (const int fd, const size_t sz)
-{
-    char * restrict buf = NULL;
-    pthread_cleanup_push(free, buf);
-    if (NULL != (buf = malloc(sz+2))) {
-        buf[0] = '\n';
-        buf[sz+1] = '\0';
-        if (read(fd, buf+1, sz) != (ssize_t)sz) {
-            free(buf);
-            buf = NULL;
-        }
-    }
-    else
-        bsock_syslog(errno, LOG_ERR, "malloc");
-    pthread_cleanup_pop(0);
-    return buf;
-}
-
-static void
-bsock_authz_config (void)
-{
-    char * restrict buf = NULL;
-    struct stat st;
-    int fd = -1;
-
-    pthread_cleanup_push(bsock_cleanup_close, &fd);
-
-    do {
-
-        if (-1 == (fd = open(BSOCK_CONFIG, O_RDONLY, 0))) {
-            bsock_syslog(errno, LOG_ERR, BSOCK_CONFIG);
-            break;
-        }
-
-        if (0 != fstat(fd, &st)
-            || st.st_uid != geteuid() || (st.st_mode & (S_IWGRP|S_IWOTH))) {
-            bsock_syslog(EPERM, LOG_ERR,
-                         "ownership/permissions incorrect on %s", BSOCK_CONFIG);
-            break;
-        }
-
-        buf = bsock_authz_config_read(fd, (size_t)st.st_size);
-
-    } while (0);
-
-    pthread_cleanup_pop(1);  /* close(fd)  */
-
-    if (NULL == buf)
-        return;
-
-    if (NULL == bsock_authz_lines)
-        bsock_authz_lines = buf;
-    else {
-        const char * const restrict p = bsock_authz_lines;
-        bsock_authz_lines = buf; /* (might do atomic swap in future) */
-        /* pause 1 sec for simple and coarse (not perfect) mechanism to give
-         * other threads running strstr() time to finish, else might crash.
-         * (could grab mutex around all bsock_authz_lines access, if desired) */
-        pthread_cleanup_push(free, (void *)(uintptr_t)p);
-        poll(NULL, 0, 1000);
-        free((void *)(uintptr_t)p);
-        pthread_cleanup_pop(0);
-    }
-}
-
-static bool  __attribute__((nonnull))
-bsock_is_authorized_addrinfo (const struct addrinfo * const restrict ai,
-                              const uid_t uid, const gid_t gid)
-{
-    /* Note: client must specify address family; AF_UNSPEC not supported
-     * Note: minimal process optimization implemented (room for improvement)
-     *       (numerous options for caching, improving performance if needed)
-     *       (e.g. bsearch(), or (better) use a cdb) */
-
-    char *p;
-    struct bsock_addrinfo_strs aistr;
-    char cmpstr[256]; /* username + AF_UNIX, AF_INET, AF_INET6 bsock str */
-    char bufstr[80];  /* buffer for use by bsock_addrinfo_to_strs() */
-    struct passwd pw;
-    struct passwd *pwres;
-    char pwbuf[2048];
-
-    if (uid == 0 || gid == 0)  /* permit root or wheel */
-        return true;
-    if (0 != getpwuid_r(uid,&pw,pwbuf,sizeof(pwbuf),&pwres) || NULL == pwres)
-        return false;
-
-    if (ai->ai_family != ai->ai_addr->sa_family) {
-        bsock_syslog(EINVAL, LOG_ERR, "addrinfo inconsistent");
-        return false;
-    }
-
-    /* convert username and addrinfo to string for comparison with config file
-     * (validate and canonicalize user input)
-     * (user input converted to addrinfo and back to str to canonicalize str) */
-    if (!bsock_addrinfo_to_strs(ai, &aistr, bufstr, sizeof(bufstr))) {
-        bsock_syslog(ENOSPC, LOG_ERR, "addrinfo string expansion is too long");
-        return false;
-    }
-  #if 0
-    cmplen = snprintf(cmpstr, sizeof(cmpstr), "\n%s %s %s %s %s %s\n",
-                      pw.pw_name, aistr.family, aistr.socktype, aistr.protocol,
-                      aistr.service, aistr.addr);
-    if (cmplen >= sizeof(cmpstr)) {
-            bsock_syslog(ENOSPC, LOG_ERR,
-                         "addrinfo string expansion is too long");
-            return false;
-    }
-  #else
-    cmpstr[0] = '\n';
-    if (    NULL == (p = memccpy(cmpstr+1, pw.pw_name, '\0', sizeof(cmpstr)-1))
-        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.family,  '\0',
-                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
-        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.socktype,'\0',
-                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
-        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.protocol,'\0',
-                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
-        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.service, '\0',
-                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
-        || (*(p-1) = ' ',NULL==(p = memccpy(p, aistr.addr,    '\0',
-                                            sizeof(cmpstr)-(size_t)(p-cmpstr))))
-        || sizeof(cmpstr) == p-cmpstr   ) {
-        bsock_syslog(ENOSPC, LOG_ERR, "addrinfo string expansion is too long");
-        return false;
-    }
-    *(p-1) = '\n';
-    *p = '\0';
-    /*cmplen = (size_t)(p - cmpstr);*/
-  #endif
-
-    return (NULL != strstr(bsock_authz_lines, cmpstr)
-      ? true
-      : ((errno=EACCES), false));
 }
 
 static int  __attribute__((nonnull))
@@ -363,7 +220,7 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
         }
 
         /* check client credentials to authorize client request */
-        if (!bsock_is_authorized_addrinfo(ai, c->uid, c->gid))
+        if (!bsock_authz_validate(ai, c->uid, c->gid))
             break;
 
         /* check if addr, port already reserved and bound in bsock cache
@@ -441,6 +298,47 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
     return rc;
 }
 
+static int
+uint32_to_str(uint32_t u, char * const buf)
+{
+    char * restrict out = buf;
+    int n = 0;
+    char tmp[10];
+    do { tmp[n++] = '0' + (u % 10); } while ((u /= 10));
+    do { *out++ = tmp[--n]; } while (n);
+    return (int)(out - buf);
+}
+
+static void  __attribute__((noinline))
+bsock_infostr (char * restrict infobuf,
+               const int fd, const uid_t uid, const gid_t gid)
+{
+    /* snprintf() can be expensive so special-case LOG_INFO.
+     * (snprintf() took 1.5 usec with fmtstr below -- as much as a system call!)
+     * snprintf(info, sizeof(info), "fd(%d) uid:%u gid:%u",
+     *          fd, (uint32_t)uid, (uint32_t)gid);
+     * We assume buffer large enough to hold fmtstr plus (3) 10-digit uint32_t,
+     * i.e. our callers pass 64-byte buffer, and fd must not be negative. */
+    infobuf[0] = 'f';
+    infobuf[1] = 'd';
+    infobuf[2] = '(';
+    infobuf += 3 + uint32_to_str((uint32_t)fd, infobuf+3);
+    infobuf[0] = ')';
+    infobuf[1] = ' ';
+    infobuf[2] = 'u';
+    infobuf[3] = 'i';
+    infobuf[4] = 'd';
+    infobuf[5] = ':';
+    infobuf += 6 + uint32_to_str((uint32_t)uid, infobuf+6);
+    infobuf[0] = ' ';
+    infobuf[1] = 'g';
+    infobuf[2] = 'i';
+    infobuf[3] = 'd';
+    infobuf[4] = ':';
+    infobuf += 5 + uint32_to_str((uint32_t)gid, infobuf+5);
+    infobuf[0] = '\0';
+}
+
 static void  __attribute__((nonnull))
 bsock_cleanup_client (void * const arg)
 {
@@ -460,16 +358,15 @@ static void *  __attribute__((nonnull))
 bsock_client_thread (void * const arg)
 {
     struct bsock_client_st c; /* copy so that not referencing hash entry */
-    int addr[28];/* buffer for IPv4, IPv6, or AF_UNIX w/ up to 108 char path */
+    struct sockaddr_storage addr;
     struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
       .ai_addrlen = sizeof(addr),
-      .ai_addr    = (struct sockaddr *)addr
+      .ai_addr    = (struct sockaddr *)&addr
     };
     int fd = -1;
     char info[64];
     memcpy(&c, arg, sizeof(struct bsock_client_st));
-    snprintf(info, sizeof(info), "connect(%d): uid:%u gid:%u",
-             c.fd, (uint32_t)c.uid, (uint32_t)c.gid);
+    bsock_infostr(info, c.fd, c.uid, c.gid);
     pthread_cleanup_push(bsock_cleanup_client, &c);
     pthread_cleanup_push(bsock_cleanup_close, &fd);
     /* receive addrinfo from client
@@ -487,7 +384,9 @@ bsock_client_thread (void * const arg)
           #endif
          ) ) {
         ai.ai_addrlen = 0;   /* overloaded flag to send error in response */
-        bsock_syslog(errno, LOG_ERR, "recv addrinfo error or invalid addrinfo");
+        bsock_syslog(errno, LOG_ERR,
+                     "(uid:%u) recv addrinfo error or invalid addrinfo",
+                     (uint32_t)c.uid);
     }
     /* (remove from thread table prior to send due to observed process and 
      *  thread execution order where a sequence of bind requests from same
@@ -512,21 +411,30 @@ bsock_client_thread (void * const arg)
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
+static void  __attribute_cold__
+bsock_sigaction_sighup (void)
+{
+    /* efficiency: keep databases open (advantageous for nss_mcdb module) */
+    /* perform database open in event thread (thread-specific in nss_mcdb)*/
+    /* (not bothering to close these databases if pthread_cancel() called)*/
+    setprotoent(1);
+    setservent(1);
+
+    /* refresh table of persistent reserved addresses */
+    bsock_resvaddr_config();
+    /* refresh table of authorized username/address/port */
+    bsock_authz_config();
+
+    endprotoent();
+    endservent();
+}
+
 static void  __attribute__((nonnull))
 bsock_sigaction (sigset_t * const restrict sigs, const int signo)
 {
     switch (signo) {
       case SIGHUP:
-        /* efficiency: keep databases open */
-        endprotoent();
-        setprotoent(1);
-        endservent();
-        setservent(1);
-        /* (no locks needed; executed while signals blocked) */
-        /* refresh table of persistent reserved addresses */
-        bsock_resvaddr_config();
-        /* refresh table of authorized username/address/port */
-        bsock_authz_config();
+        bsock_sigaction_sighup();
         break;
       case SIGINT: case SIGQUIT: case SIGTERM:
         (void)pthread_sigmask(SIG_UNBLOCK, sigs, NULL);
@@ -658,26 +566,30 @@ bsock_client_once (const int argc, char ** const restrict argv)
     struct bsock_client_st m;
     struct bsock_addrinfo_strs aistr;
     struct stat st;
-    int addr[28];  /*buf for IPv4, IPv6, or AF_UNIX w/ up to 108 char path*/
+    struct sockaddr_storage addr;
     struct addrinfo ai = { /*init only fields used to pass buf and bufsize*/
       .ai_addrlen = sizeof(addr),
-      .ai_addr    = (struct sockaddr *)addr
+      .ai_addr    = (struct sockaddr *)&addr
     };
     int fd = -1, rc;
     char info[64];
     if (0 != fstat(STDIN_FILENO, &st)) {
-        bsock_syslog(errno, LOG_ERR, "fstat stdin");
+        bsock_syslog(errno, LOG_ERR, "(uid:%u) fstat stdin",(uint32_t)getuid());
         return EXIT_FAILURE;
     }
     if (!S_ISSOCK(st.st_mode)) {
-        bsock_syslog(ENOTSOCK, LOG_ERR, "invalid socket on bsock stdin");
+        bsock_syslog(ENOTSOCK, LOG_ERR,
+                     "(uid:%u) invalid socket on bsock stdin",
+                     (uint32_t)getuid());
         return EXIT_FAILURE; /* STDIN_FILENO must be socket for one-shot */
     }
     switch (argc) {
       case 0: break;
       case 1: if (bsock_addrinfo_split_str(&aistr, argv[0]))
                   break;
-              bsock_syslog(errno, LOG_ERR, "invalid address info arguments");
+              bsock_syslog(errno, LOG_ERR,
+                           "(uid:%u) invalid address info arguments",
+                           (uint32_t)getuid());
               return EXIT_FAILURE;
       case 5: aistr.family   = argv[0];
               aistr.socktype = argv[1];
@@ -685,7 +597,9 @@ bsock_client_once (const int argc, char ** const restrict argv)
               aistr.service  = argv[3];
               aistr.addr     = argv[4];
               break;
-      default: bsock_syslog(EINVAL, LOG_ERR, "invalid number of arguments");
+      default: bsock_syslog(EINVAL, LOG_ERR,
+                            "(uid:%u) invalid number of arguments",
+                            (uint32_t)getuid());
                return EXIT_FAILURE;
     }
 
@@ -706,7 +620,8 @@ bsock_client_once (const int argc, char ** const restrict argv)
                 m.gid = getgid();
             }
             else {
-                bsock_syslog(errno, LOG_ERR, "getpeername");
+                bsock_syslog(errno, LOG_ERR, "(uid:%u) getpeername",
+                             (uint32_t)getuid());
                 return EXIT_FAILURE;
             }
         }
@@ -718,8 +633,7 @@ bsock_client_once (const int argc, char ** const restrict argv)
             return EXIT_FAILURE;
         }
     }
-    snprintf(info, sizeof(info), "connect(%d): uid:%u gid:%u",
-             m.fd, (uint32_t)m.uid, (uint32_t)m.gid);
+    bsock_infostr(info, m.fd, m.uid, m.gid);
 
     /* receive addrinfo from client */
     if (!(0 == argc
@@ -727,7 +641,9 @@ bsock_client_once (const int argc, char ** const restrict argv)
             && bsock_addrinfo_recv(m.fd, &ai, &fd)    /* args from socket  */
           : bsock_addrinfo_from_strs(&ai, &aistr))) { /* command line args */
         ai.ai_addrlen = 0;    /* overloaded flag to send error in response */
-        bsock_syslog(errno, LOG_ERR, "recv addrinfo error or invalid addrinfo");
+        bsock_syslog(errno, LOG_ERR,
+                     "(uid:%u) recv addrinfo error or invalid addrinfo",
+                     (uint32_t)m.uid);
     }
 
     rc = bsock_client_handler(&m, &ai, &fd);

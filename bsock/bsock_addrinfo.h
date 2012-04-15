@@ -64,8 +64,8 @@ struct bsock_addrinfo_strs {
     const char *addr;
 };
 
-/* ai->ai_addr must be provided containing usage storage of len ai->ai_addrlen
- * (recommend: int addr[28]; ai->ai_addr=addr; ai->ai_addrlen=sizeof(addr); )*/
+/* ai->ai_addr must be provided containing usable storage of len ai->ai_addrlen
+ * (recommended: #include <sys/socket.h> and use struct sockaddr_storage) */
 bool  __attribute__((nonnull))
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
                          const struct bsock_addrinfo_strs *

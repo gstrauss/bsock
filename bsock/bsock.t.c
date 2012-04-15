@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 
 #include <bsock_addrinfo.h>
@@ -38,9 +39,9 @@ int  __attribute__((nonnull))
 main (int argc, char *argv[])
 {
     int nfd;
-    int addr[28];
+    struct sockaddr_storage addr;
     struct addrinfo ai = { .ai_flags = 0,
-                           .ai_addr = (struct sockaddr *)addr,
+                           .ai_addr = (struct sockaddr *)&addr,
                            .ai_addrlen = sizeof(addr) };
     struct bsock_addrinfo_strs aistr;
 

@@ -437,8 +437,7 @@ bsock_addrinfo_recv_ex (const int fd,
 {
     /* receive addrinfo request */
     /* caller provides buffer in ai->ai_addr and specifies sz in ai->ai_addrlen
-     * To support IPv4, IPv6, AF_UNIX domain sockets (2 byte short + 108 chars)
-     * and align buffer: int addr[28]; ai.ai_addr = (struct sockaddr *)addr */
+     * (recommended: #include <sys/socket.h> and use struct sockaddr_storage) */
     /* N.B. data received from client is untrustworthy; validate well */
     /* N.B. partial write from client results in error;
      *      client will have to open new connection to retry */

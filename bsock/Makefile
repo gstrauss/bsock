@@ -62,11 +62,11 @@ else
   LDFLAGS+=$(ABI_FLAGS)
 endif
 
-bsock.m.o:        CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
 bsock.t.o:        CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
+bsock_authz.o:    CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
 bsock_bind.o:     CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'
 bsock_bind.o:     CFLAGS+=-DBSOCK_EXE='"$(BSOCK_EXE)"'
 bsock_resvaddr.o: CFLAGS+=-DBSOCK_CONFIG='"$(BSOCK_CONFIG)"'
@@ -127,8 +127,7 @@ libbsock_preload.so: bsock_preload.o | libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) -shared -fpic $^
 
 bsock: LDFLAGS+=$(PTHREAD_FLAGS)
-bsock: bsock.m.o bsock_bindresvport.o bsock_resvaddr.o \
-            libbsock.so
+bsock: bsock.m.o bsock_authz.o bsock_bindresvport.o bsock_resvaddr.o libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) $^
 
 bsock.t: LDFLAGS+=$(PTHREAD_FLAGS)
@@ -163,13 +162,14 @@ clean: clean-bsock
 clean-bsock:
 	$(RM) $(TARGETS) *.o
 
-bsock.m.o: bsock_addrinfo.h bsock_bindresvport.h bsock_daemon.h \
+bsock.m.o: bsock_addrinfo.h bsock_authz.h bsock_bindresvport.h bsock_daemon.h \
            bsock_resvaddr.h bsock_syslog.h bsock_unix.h
-bsock.t.o: bsock_unix.h
+bsock.t.o: bsock_addrinfo.h bsock_bind.h bsock_unix.h
 bsock_addrinfo.o: bsock_addrinfo.h bsock_unix.h
-bsock_bind.o: bsock_bind.h bsock_unix.h
+bsock_authz.o: bsock_addrinfo.h bsock_authz.h bsock_syslog.h
+bsock_bind.o: bsock_addrinfo.h bsock_bind.h bsock_unix.h
 bsock_bindresvport.o: bsock_bindresvport.h
 bsock_daemon.o: bsock_daemon.h bsock_syslog.h bsock_unix.h
-bsock_resvaddr.o: bsock_resvaddr.h bsock_syslog.h
+bsock_resvaddr.o: bsock_addrinfo.h bsock_resvaddr.h bsock_syslog.h
 bsock_unix.o: bsock_unix.h
 bsock_syslog.o: bsock_syslog.h
