@@ -345,8 +345,6 @@ bsock_cleanup_client (void * const arg)
     struct bsock_client_st * const c = (struct bsock_client_st *)arg;
     if (-1 != c->fd)
         nointr_close(c->fd);
-    /* (skip pthread_cleanup_push(),_pop() on mutex since in cleanup and
-     *  bsock_thread_table_remove() provides no cancellation point) */
     if (c->next != (struct bsock_client_st *)~(uintptr_t)0) {
         pthread_mutex_lock(&bsock_thread_table_mutex);
         bsock_thread_table_remove(c);
@@ -367,8 +365,6 @@ bsock_client_thread (void * const arg)
     char info[64];
     memcpy(&c, arg, sizeof(struct bsock_client_st));
     bsock_infostr(info, c.fd, c.uid, c.gid);
-    pthread_cleanup_push(bsock_cleanup_client, &c);
-    pthread_cleanup_push(bsock_cleanup_close, &fd);
     /* receive addrinfo from client
      * (NOTE: receiving addrinfo is ONLY place in bsock that can block on
      *  client input (at this time).  Set timeout for 2000ms (2 sec)) */
@@ -393,15 +389,13 @@ bsock_client_thread (void * const arg)
      *  uid would get deferred since this thread did not remove uid from thread
      *  table before client was able to make another request, and the listening
      *  thread able to handle it (and defer due to existing request in process))
-     * (bsock_client_handler() should not perform any activities that block)
-     * (skip pthread_cleanup_push(),_pop() on mutex since
-     *  bsock_thread_table_remove() provides no cancellation point) */
+     * (bsock_client_handler() should not perform any activities that block) */
     pthread_mutex_lock(&bsock_thread_table_mutex);
     bsock_thread_table_remove(&c);
     pthread_mutex_unlock(&bsock_thread_table_mutex);
     bsock_client_handler(&c, &ai, &fd);  /* ignore rc; client request handled */
-    pthread_cleanup_pop(1);  /* bsock_cleanup_close(&fd) */
-    pthread_cleanup_pop(1);  /* bsock_cleanup_client(&c) */
+    bsock_cleanup_close(&fd);
+    bsock_cleanup_client(&c);
     /* syslog all connections to bsock daemon
      * Note: This syslog results in bsock taking 1.3x longer (wall clock)
      * to service each request on my uniprocessor system, so do syslog after

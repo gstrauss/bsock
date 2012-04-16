@@ -40,7 +40,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
-#include <pthread.h>
 #include <pwd.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -75,14 +74,6 @@
 static int
 nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
-
-static void  __attribute__((nonnull))
-bsock_cleanup_close (void * const arg)
-{
-    const int fd = *(int *)arg;
-    if (-1 != fd)
-        nointr_close(fd);
-}
 
 struct bsock_authz_hash_st {
     uid_t mask;
@@ -165,7 +156,6 @@ bsock_authz_config_parse (struct bsock_authz_hash_st* const restrict authz_hash,
     char pwbuf[2048];
 
     /* efficiency: keep database open (advantageous for nss_mcdb module) */
-    /* (not bothering to close database if error or pthread_cancel() called)*/
     setpwent();
 
     /* (note: expects final line in buf to end in '\n' (or else skips it)) */
@@ -221,13 +211,12 @@ bsock_authz_config_parse (struct bsock_authz_hash_st* const restrict authz_hash,
 void  __attribute_cold__
 bsock_authz_config (void)
 {
-    char * volatile restrict buf = NULL; /*volatile for pthread_cleanup_push()*/
-    struct bsock_authz_hash_st * volatile restrict authz_hash = NULL;
+    char * restrict buf = NULL;
+    struct bsock_authz_hash_st * restrict authz_hash = NULL;
     int fd = -1;
     int n = 0;
     int table_sz = 8;
 
-    pthread_cleanup_push(bsock_cleanup_close, &fd);
     do {
         struct stat st;
         if (-1 == (fd = open(BSOCK_CONFIG, O_RDONLY, 0))) {
@@ -240,8 +229,6 @@ bsock_authz_config (void)
                          "ownership/permissions incorrect on %s", BSOCK_CONFIG);
             break;
         }
-
-        pthread_cleanup_push(free, buf);
 
         if (NULL != (buf = malloc((size_t)st.st_size+2))) {
             char * restrict b = buf;
@@ -280,11 +267,9 @@ bsock_authz_config (void)
         }
         else
             bsock_syslog(errno, LOG_ERR, "malloc");
-
-        pthread_cleanup_pop(0);
-
     } while (0);
-    pthread_cleanup_pop(1);  /* close(fd)  */
+    if (-1 != fd)
+        nointr_close(fd);
 
     /* allocate space, wasting some memory but ensuring enough
      * size for ai_addr by using struct sockaddr_storage */
@@ -303,17 +288,11 @@ bsock_authz_config (void)
         authz_hash->addr  = (int *)(authz_hash->ai+n);
         memset(authz_hash->table, '\0', sizeof(struct addrinfo *) * table_sz);
         memset(authz_hash->addr,  '\0', sizeof(struct sockaddr_storage) * n);
-        pthread_cleanup_push(free, (void *)(uintptr_t)buf);
-        pthread_cleanup_push(free, (void *)(uintptr_t)authz_hash);
-
-        n = bsock_authz_config_parse(authz_hash, buf);
-
-        pthread_cleanup_pop(0);  /* free(authz_hash) (only if cancelled) */
-        pthread_cleanup_pop(1);  /* free(buf); finished parsing buf */
-        if (0 != n) {
+        if (0 != bsock_authz_config_parse(authz_hash, buf)) {
             free(authz_hash);
             authz_hash = NULL;
         }
+        free(buf);
     }
 
     if (NULL == bsock_authz_hash) {
@@ -322,13 +301,12 @@ bsock_authz_config (void)
             exit(1);  /* unable to continue if no prior, good bsock config */
     }
     else if (NULL != authz_hash) {
-        const struct bsock_authz_hash_st * restrict p = bsock_authz_hash;
+        struct bsock_authz_hash_st * const restrict p = bsock_authz_hash;
         bsock_authz_hash = authz_hash; /* (might do atomic swap in future) */
         /* pause 1 sec for simple and coarse (not perfect) mechanism to give
          * other threads accessing hash time to finish, else might crash.
          * (could instead grab mutex around all bsock_authz_hash accesses) */
-        pthread_cleanup_push(free, (void *)(uintptr_t)p);
         poll(NULL, 0, 1000);
-        pthread_cleanup_pop(1);
+        free(p);
     }
 }

@@ -39,7 +39,7 @@
  */
 
 /* ---------- */
-/* This file has be substantially modified from the original OpenBSD source */
+/* This file has been substantially modified from the original OpenBSD source */
 
 /*      $OpenBSD: bindresvport.c,v 1.17 2005/12/21 01:40:22 millert Exp $       */
 
@@ -125,35 +125,6 @@ bsock_bindresvport_skip (const unsigned int port)
 #define bsock_bindresvport_skip(port) 0
 #endif
 
-#ifndef __has_attribute
-#define __has_attribute(x) 0
-#endif
-#ifndef __GNUC_PREREQ
-#  ifdef __GNUC_PREREQ__
-#    define __GNUC_PREREQ __GNUC_PREREQ__
-#  elif defined __GNUC__ && defined __GNUC_MINOR__
-#    define __GNUC_PREREQ(maj, min) \
-       ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
-#  else
-#    define __GNUC_PREREQ(maj, min) 0
-#  endif
-#endif
-
-#if __GNUC_PREREQ(4,3) || __has_attribute(cold)
-#ifndef __attribute_cold__
-#define __attribute_cold__  __attribute__((cold))
-#endif
-#endif
-#ifndef __attribute_cold__
-#define __attribute_cold__
-#endif
-
-static void  __attribute__((nonnull))  __attribute_cold__
-bsock_bindresvport_cleanup_mutex (void * const restrict mutex)
-{
-    pthread_mutex_unlock((pthread_mutex_t *)mutex);
-}
-
 static int
 bsock_bindresvport_random_port (void)
 {
@@ -169,10 +140,6 @@ bsock_bindresvport_random_port (void)
     int fd = ufd;
     int r = -1;
     if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
-        int cancel_type;
-        pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &cancel_type);
-        pthread_cleanup_push(bsock_bindresvport_cleanup_mutex,
-                             &devurandom_mutex);
         r = -1;
         if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
             fd = ufd; /* re-check volatile ufd after obtaining mutex */
@@ -191,8 +158,6 @@ bsock_bindresvport_random_port (void)
             }
             pthread_mutex_unlock(&devurandom_mutex);
         } /* (use less random getpid() ^ time() if obtaining mutex fails) */
-        pthread_cleanup_pop(0);
-        pthread_setcanceltype(cancel_type, NULL);
     }
     if (-1 != r)
         r ^= (((r>>4)&0xF000)|((r>>12)&0xF00)|((r>>20)&0xF0)|((r>>28)&0xF));

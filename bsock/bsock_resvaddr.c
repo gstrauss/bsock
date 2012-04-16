@@ -34,7 +34,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
-#include <pthread.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
@@ -69,7 +68,7 @@
 #endif
 
 /* nointr_close() - make effort to avoid leaking open file descriptors */
-static int
+static int  __attribute__((noinline))
 nointr_close (const int fd)
 { int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
 
@@ -118,16 +117,6 @@ bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
     return h;
 }
 
-static void  __attribute__((nonnull))  __attribute_cold__
-bsock_resvaddr_cleanup_close (void * const arg)
-{
-    const int * const restrict fd = (int *)arg;
-    if (-1 != fd[0])
-        nointr_close(fd[0]);
-    if (-1 != fd[1])
-        nointr_close(fd[1]);
-}
-
 static int  __attribute__((nonnull))  __attribute__((noinline))
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd)
@@ -136,13 +125,11 @@ bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
      * socket for initial bind() attempt since doing so might permit malicious
      * users to bind(), listen() on reserved address (e.g. IP and port >= 1024)
      * before the intended process does so.  See bsock/NOTES for more info */
-    /* (requires pthread PTHREAD_CANCEL_DEFERRED type for proper operation) */
     /* (race condition with re-reading config  or requests with
      *  BSOCK_FLAGS_REBIND (not currently in use or recommended))
      * (mitigated by reconfig sleep in bsock_resvaddr_config())
      * (re-reading config is rare, anyway) */
     int fd[] = { -1, -1 }, flag = 1;
-    pthread_cleanup_push(bsock_resvaddr_cleanup_close, &fd);
     if (-1 != (fd[0] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol))
         /*(race condition with another thread requesting same address)*/
         && (fd[1] = *tfd, *tfd = -1, -1 == fd[1] || 0 == nointr_close(fd[1]))
@@ -169,9 +156,12 @@ bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
     }
     else {
         bsock_syslog(errno, LOG_ERR, "socket,setsockopt,bind");
-        bsock_resvaddr_cleanup_close(&fd);
+        /* previously bsock_resvaddr_cleanup_close(&fd); for pthread_cancel() */
+        if (-1 != fd[0])
+            nointr_close(fd[0]);
+        if (-1 != fd[1])
+            nointr_close(fd[1]);
     }
-    pthread_cleanup_pop(0);
     return *tfd;
 }
 
@@ -270,9 +260,6 @@ bsock_resvaddr_config (void)
     char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bsock str */
     bool rc = true;
     bool addr_added = false;
-
-    /* (requires pthread PTHREAD_CANCEL_DEFERRED type for proper operation) */
-    pthread_cleanup_push(bsock_resvaddr_cleanup, &cleanup);
 
     do {
 
@@ -416,5 +403,5 @@ bsock_resvaddr_config (void)
 
     } while (0);
 
-    pthread_cleanup_pop(1);  /* bsock_resvaddr_cleanup(&ar) */
+    bsock_resvaddr_cleanup(&cleanup); /* previously for pthread_cancel() */
 }
