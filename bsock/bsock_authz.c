@@ -26,9 +26,11 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* ? clang-2.9-10.fc16.i686 and compiling bsock_authz.c with -D_FORTIFY_SOURCE=2
- *   results in spinning read() taking 100% CPU ?  TODO: file bug report */
-#ifdef __clang__
+/* clang-2.9-10.fc16.i686 and compiling bsock_authz.c with -D_FORTIFY_SOURCE=2
+ * results in spinning read() taking 100% CPU.  Fixed in clang 3.0.
+ *   http://llvm.org/bugs/show_bug.cgi?id=10160
+ *   http://llvm.org/bugs/show_bug.cgi?id=9614 */
+#if defined(__clang_major__) && __clang_major__ < 3
 #undef _FORTIFY_SOURCE
 #endif
 
