@@ -26,6 +26,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* ? clang-2.9-10.fc16.i686 and compiling bsock_authz.c with -D_FORTIFY_SOURCE=2
+ *   results in spinning read() taking 100% CPU ?  TODO: file bug report */
+#ifdef __clang__
+#undef _FORTIFY_SOURCE
+#endif
+
 #include <bsock_authz.h>
 
 #include <sys/types.h>
@@ -216,7 +222,7 @@ void  __attribute_cold__
 bsock_authz_config (void)
 {
     char * volatile restrict buf = NULL; /*volatile for pthread_cleanup_push()*/
-    struct bsock_authz_hash_st * restrict authz_hash = NULL;
+    struct bsock_authz_hash_st * volatile restrict authz_hash = NULL;
     int fd = -1;
     int n = 0;
     int table_sz = 8;
@@ -242,11 +248,9 @@ bsock_authz_config (void)
             ssize_t r = 0;
             ssize_t len = st.st_size;
             b[len] = b[len+1] = '\0';
-            while (     0 != len
-                   && (-1 != (r = read(fd,b,len)) || ((r=0), errno == EINTR))) {
-                b   += r;
-                len -= r;
-            }
+            do {
+                r = read(fd, b, len);
+            } while (-1 != r ? (b+=r, len-=r) : (errno == EINTR));
             if (0 == len) {
                 /* count lines for later struct addrinfo memory allocation
                  * (not exact; might be few more than needed; but that's okay)*/
@@ -282,8 +286,6 @@ bsock_authz_config (void)
     } while (0);
     pthread_cleanup_pop(1);  /* close(fd)  */
 
-    if (NULL == buf)
-        return;
     /* allocate space, wasting some memory but ensuring enough
      * size for ai_addr by using struct sockaddr_storage */
     authz_hash = malloc(  sizeof(struct bsock_authz_hash_st)
@@ -293,7 +295,7 @@ bsock_authz_config (void)
     if (NULL == authz_hash) {
         bsock_syslog(errno, LOG_ERR, "malloc");
         free(buf);
-        return;
+        buf = NULL;
     }
     else {
         authz_hash->table = (struct addrinfo **)(authz_hash+1);
@@ -310,13 +312,16 @@ bsock_authz_config (void)
         pthread_cleanup_pop(1);  /* free(buf); finished parsing buf */
         if (0 != n) {
             free(authz_hash);
-            return;
+            authz_hash = NULL;
         }
     }
 
-    if (NULL == bsock_authz_hash)
+    if (NULL == bsock_authz_hash) {
         bsock_authz_hash = authz_hash;
-    else {
+        if (NULL == authz_hash)
+            exit(1);  /* unable to continue if no prior, good bsock config */
+    }
+    else if (NULL != authz_hash) {
         const struct bsock_authz_hash_st * restrict p = bsock_authz_hash;
         bsock_authz_hash = authz_hash; /* (might do atomic swap in future) */
         /* pause 1 sec for simple and coarse (not perfect) mechanism to give
