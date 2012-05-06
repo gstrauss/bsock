@@ -21,7 +21,7 @@ proxyexec client mode connects to a socket based <cmd>
   proxyexec -c <cmd> [args]*
 
 proxyexec server (daemon) mode listens on the provided socket path
-  proxyexec -d [-F] -s <sock> <cmd> [args]*
+  proxyexec -d [-F] [-q] -s <sock> <cmd> [args]*
 
 proxyexec server (daemon) mode requires the listen socket path be provided.
 Compile-time root of sockets is /var/run/proxyexec/ (when installed from RPM)
@@ -32,13 +32,13 @@ can be set on this directory to control who is able to connect to the socket
 that is created within.  Default permissions are restrictive.
 See proxyexec/NOTES, as well as bsock/FAQ and bsock/NOTES, for more details.
 
-When a connection is accepted from proxyexec client, the command that
-proxyexec runs begins with <cmd> [args]* provided on the proxyexec -d
-command line, followed by the argv passed by the client.  The working
-directory is the root directory ("/").  The command is executed with execv();
-shell interpretation is bypassed.  The client environment is not transferred,
-except for a few variables used for logging.  The target command must still
-take care to sanitize the environment before executing any shell commands.
+When a connection is accepted from proxyexec client, the command that proxyexec
+runs begins with <cmd> [args]* provided on the proxyexec -d command line,
+followed by the argv passed by the client.  The working directory is the dir
+in which proxyexec was started.  The command is executed with execv(); shell
+interpretation is bypassed.  The client environment is not transferred, except
+for a few variables used for logging.  The target command must still take care
+to sanitize the environment before executing any shell commands.
 (The same advice is true for setuid/setgid programs, too.)
 
 

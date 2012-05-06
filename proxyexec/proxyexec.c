@@ -79,15 +79,32 @@
 #define PROXYEXEC_SOCKET_DIR "/usr/local/var/run/proxyexec/"
 #endif
 
-/* rawmemchr is non-portable GNU glibc extension
- * copy prototye instead of #define _GNU_SOURCE before all headers
+#ifndef __GLIBC_PREREQ
+#  if defined __GLIBC__ && defined __GLIBC_MINOR__
+#    define __GLIBC_PREREQ(maj, min) \
+        ((__GLIBC__ << 16) + __GLIBC_MINOR__ >= ((maj) << 16) + (min))
+#  else
+#    define __GLIBC_PREREQ(maj, min) 0
+#  endif
+#endif
+
+/* rawmemchr and dup3 are non-portable GNU glibc extension
+ * copy prototyes instead of #define _GNU_SOURCE before all headers
  * to limit exposed definitions to standards-compliant definitions */
-#if defined(__GLIBC__) && __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 1
+#if __GLIBC_PREREQ(2,1)
 extern void *rawmemchr (__const void *__s, int __c)
      __THROW __attribute_pure__ __nonnull ((1));
 #define RAWMEMCHR(s,c,z) rawmemchr(s,c)
 #else
 #define RAWMEMCHR(s,c,z) memchr(s,c,z)
+#endif
+#if __GLIBC_PREREQ(2,9)
+/*(need _XOPEN_SOURCE=700 define O_CLOEXEC, but vfork() removed from SUSv7)
+ *(since dup3() is glibc extension, also copy the glibc O_CLOEXEC definition)*/
+#ifndef O_CLOEXEC 
+#define O_CLOEXEC 02000000
+#endif
+int dup3(int oldfd, int newfd, int flags);
 #endif
 
 /* module contains both client and server code
@@ -285,8 +302,7 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
     /* receive argv and stdfds
      * (require at least 8 bytes (sizeof(hdr)) sent with initial msg) */
     r = -1;
-    if (   cxt->fd<=STDERR_FILENO  /* should not happen; see main() */
-        ||  1!=retry_poll_fd(cxt->fd, POLLIN, 1000) /* block up to one second */
+    if (    1!=retry_poll_fd(cxt->fd, POLLIN, 1000) /* block up to one second */
         || (r = proxyexec_stdfds_recv_dup2(cxt->fd, iov,
                                            sizeof(iov)/sizeof(struct iovec)))
              < (ssize_t)sizeof(hdr)) {
@@ -585,7 +601,7 @@ proxyexec_client (const int argc, char ** const restrict argv)
 int  __attribute__((nonnull))
 main (int argc, char *argv[])
 {
-    int sfd, cfd, daemon = false, supervised = false;
+    int sfd, cfd, dup2fd, log_info = 1, daemon = false, supervised = false;
     struct proxyexec_context cxt;
     char *sockpath = NULL;
     char path[PATH_MAX];
@@ -618,18 +634,20 @@ main (int argc, char *argv[])
         perror("putenv");
         return EXIT_FAILURE;
     }
-    while ((sfd = getopt(argc,argv,"dhs:F")) != -1
+    while ((sfd = getopt(argc,argv,"dhqs:F")) != -1
            || !daemon || NULL == sockpath || optind == argc) {
       process_optind: /* goto label */
         switch (sfd) {
           case 'd': daemon = true; break;
           case 'F': supervised = true; break;
+          case 'q': log_info = 0; break;   /* quiet; skip logging connect info*/
           case 's': sockpath = optarg; break;/*"/var/run/proxyexec/.../socket"*/
           default:  fprintf(stderr, "\nerror: invalid arguments\n");/*fallthru*/
           case 'h': fprintf((sfd == 'h' ? stdout : stderr), "\n"
-            "  proxyexec -h                                 help\n"
-            "  proxyexec -d [-F] -s <sock> <cmd> [args]*    daemon mode\n"
-            "  proxyexec -c [cmd] [args]*                   client mode\n\n");
+            "  proxyexec -h                                       help\n"
+            "  proxyexec -d [-F] [-q] -s <sock> <cmd> [args]*     daemon mode\n"
+            "  proxyexec -c [cmd] [args]*                         client mode\n"
+            "\n");
                     return (sfd == 'h' ? EXIT_SUCCESS : EXIT_FAILURE);
         }
     }
@@ -649,16 +667,50 @@ main (int argc, char *argv[])
 
     /* proxyexec redirects stderr to client before exec of target.
      * dup stderr to higher fd to ensure errors go to daemon stderr,
-     * (and not back to client) (do this before bsock_daemon_init()) */
+     * (and not back to client) (do this before bsock_daemon_init())
+     * (similarly, openlog before fd close()s in bsock_daemon_init()) */
     if ((sfd = dup(STDERR_FILENO)) <= STDERR_FILENO)
         return EXIT_FAILURE;
-    fcntl(sfd, F_SETFD, fcntl(sfd, F_GETFD, 0) | FD_CLOEXEC);
-    bsock_syslog_setlogfd(sfd);
-    bsock_syslog_setlevel(BSOCK_SYSLOG_PERROR_NOSYSLOG);
+    if (!supervised)
+        nointr_close(sfd);
+    else {
+        fcntl(sfd, F_SETFD, fcntl(sfd, F_GETFD, 0) | FD_CLOEXEC);
+        bsock_syslog_setlogfd(sfd);
+        bsock_syslog_setlevel(BSOCK_SYSLOG_PERROR_NOSYSLOG);
+    }
     bsock_syslog_openlog("proxyexec", LOG_NOWAIT|LOG_ODELAY, LOG_DAEMON);
 
     if (!bsock_daemon_init(supervised, false)) /*(false:skip ctrlbuf sz check)*/
         return EXIT_FAILURE;
+
+    /* ensure file descriptors are open to {STDIN,STDOUT,STDERR}_FILENO
+     * so that sfd is higher (avoid extra work in client session)
+     * bsock_daemon_init() close()s STDIN_FILENO, STDOUT_FILENO, and,
+     * if !supervised, also STDERR_FILENO */
+    do {
+        cfd = open("/dev/null", O_RDWR, 0);  /* not retrying on EINTR; lazy */
+        if (-1 == cfd)
+            return EXIT_FAILURE;
+    } while (cfd < STDERR_FILENO);
+    if (cfd > STDERR_FILENO)
+        nointr_close(cfd);
+
+    /* proxyexec unix domain socket init; sets FD_CLOEXEC */
+    sfd = bsock_daemon_init_socket(sockpath, geteuid(), getegid(), 0666);
+    if (-1 == sfd || sfd <= STDERR_FILENO)
+        return EXIT_FAILURE;
+
+    /* close std fds to avoid extra work in client session */
+    nointr_close(STDIN_FILENO);
+    nointr_close(STDOUT_FILENO);
+    nointr_close(STDERR_FILENO);
+
+    /* determine to which fd to dup2 cfd in client session
+     * (expecting original stderr or openlog on fd 4, and sfd on fd 5) */
+    dup2fd = 6;
+    struct stat st;
+    while (0 == fstat(dup2fd, &st))  /* find next fd to return EBADF */
+        ++dup2fd;
 
     /* set SIGCHLD handler to ignore (master process does not need to reap) */
     struct sigaction act;
@@ -669,21 +721,6 @@ main (int argc, char *argv[])
         bsock_syslog(errno, LOG_ERR, "sigaction");
         return EXIT_FAILURE;
     }
-
-    /* proxyexec unix domain socket init; sets FD_CLOEXEC */
-    sfd = bsock_daemon_init_socket(sockpath, geteuid(), getegid(), 0666);
-    if (-1 == sfd)
-        return EXIT_FAILURE;
-
-    /* ensure file descriptors are open to {STDIN,STDOUT,STDERR}_FILENO
-     * so that accept() fd is higher (avoid extra work in client session) */
-    do {
-        cfd = open("/dev/null", O_RDWR, 0);  /* not retrying on EINTR; lazy */
-        if (-1 == cfd)
-            return EXIT_FAILURE;
-    } while (cfd < STDERR_FILENO);
-    if (cfd > STDERR_FILENO)
-        nointr_close(cfd);
 
     /* preallocate proxyexec_ctrlbuf; implicit copy-on-write in child procs */
     if (!proxyexec_ctrlbuf_alloc())
@@ -723,15 +760,27 @@ main (int argc, char *argv[])
         }
 
         /* log all connections to (or instantiations of) daemon */
-        bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u %s",
-                     (uint32_t)cxt.uid, (uint32_t)cxt.gid, sockpath);
+        if (log_info)
+            bsock_syslog(0, LOG_INFO, "connect: uid:%u gid:%u %s",
+                         (uint32_t)cxt.uid, (uint32_t)cxt.gid, sockpath);
 
         if (0 == fork()) {
-            cxt.fd = cfd;
-            fcntl(cfd, F_SETFD, fcntl(cfd, F_GETFD, 0) | FD_CLOEXEC);
-          #if MSG_DONTWAIT == 0
-            fcntl(cfd, F_SETFL, fcntl(cfd, F_GETFL, 0) | O_NONBLOCK);
+            /*assert(cfd <= STDERR_FILENO);*//* expecting cfd == 0 */
+          #if __GLIBC_PREREQ(2,9)
+            cxt.fd = dup3(cfd, dup2fd, O_CLOEXEC);
+          #else
+            cxt.fd = dup2(cfd, dup2fd);
           #endif
+            if (-1 == cxt.fd) {
+                bsock_syslog(errno, LOG_ERR, "dup2/3");
+                _exit( errno );
+            }
+          #if !__GLIBC_PREREQ(2,9)
+            fcntl(cxt.fd, F_SETFD, fcntl(cxt.fd, F_GETFD, 0) | FD_CLOEXEC);
+          #endif
+            if (!MSG_DONTWAIT)
+                fcntl(cxt.fd, F_SETFL, fcntl(cxt.fd, F_GETFL, 0) | O_NONBLOCK);
+            nointr_close(cfd);
             _exit( proxyexec_child_session(&cxt) );
         }
         nointr_close(cfd);

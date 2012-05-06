@@ -91,7 +91,7 @@ proxyexec: CFLAGS+=-DPROXYEXEC_SOCKET_DIR='"$(PROXYEXEC_SOCKET_DIR)"'
 endif
 proxyexec: LDFLAGS+=-L $(BSOCK_LIBDIR) -lbsock
 proxyexec: proxyexec.o
-	$(CC) -o $@ $(RPATH) $(LDFLAGS) $^
+	$(CC) -o $@ $(RPATH) $^ $(LDFLAGS)
 
 .PHONY: install install-headers install-doc
 install: proxyexec

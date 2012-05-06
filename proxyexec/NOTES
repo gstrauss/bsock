@@ -74,15 +74,15 @@ used as an amplifier to cause a denial-of-service (DoS), due to proxyexec
 forking a target process for each request received on the socket.  (Forking a
 process is much more expensive than is connecting to a socket.)  proxyexec
 does log the uid, gid, and socketpath of each request and so the misbehaving
-account(s) can more easily be identified.  This type of attack is similar to
-fork bombing a machine but is mentioned here because resource limits on number
-of processes on a requesting account restrict the origin account, but do not
-restrict the account running the proxyexec daemon, unless resource limits are
-also applied to the account running the proxyexec daemon.  If the daemon is
-serving multiple accounts, restricting the number of processes allowed by the
-daemon account can avoid resource exhaustion on the machine at the cost of
-possibly reducing the availability of the specific service provided by the
-daemon.
+account(s) can more easily be identified (unless proxyexec -d -q was used;
+-q is not recommended).  This type of attack is similar to fork bombing a
+machine but is mentioned here because resource limits on number of processes
+on a requesting account restrict the origin account, but do not restrict the
+account running the proxyexec daemon, unless resource limits are also applied
+to the account running the proxyexec daemon.  If the daemon is serving multiple
+accounts, restricting the number of processes allowed by the daemon account can
+avoid resource exhaustion on the machine at the cost of possibly reducing the
+availability of the specific service provided by the daemon.
 
 proxyexec does not currently provide a mechanism to limit the number of
 outstanding requests (i.e. number of running child processes), but might
