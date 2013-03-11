@@ -498,15 +498,28 @@ proxyexec_client (const int argc, char ** const restrict argv)
      * If this is a security concern, consider using sshd_config ChrootDirectory
      * (or replacing wordexp() with code that performs only word splitting) */
     wordexp_t cmd = { .we_wordc = (size_t)argc, .we_wordv = argv };
-    const char * restrict ssh_original_command;
+    const char *command_string = NULL;
     int fd = -1, status = EXIT_FAILURE;
-    if (   NULL != (ssh_original_command = getenv("SSH_ORIGINAL_COMMAND"))
-        || NULL != (ssh_original_command = getenv("SSH2_ORIGINAL_COMMAND"))) {
-        /* (error if argc non-zero here and SSH[2]?_ORIGINAL_COMMAND is set) */
-        if (0 != argc || 0 != wordexp(ssh_original_command, &cmd, WRDE_NOCMD)) {
-            cmd.we_wordc = 0;
-            ssh_original_command = NULL;
+
+    /* Note: argc,argv are remaining values after main() removes proxyexec -c */
+    if (1 == argc) {
+        /* argc should be one and argv[0] contain single string of command,args
+         * if /usr/sbin/proxyexec is user shell (e.g. in /etc/passwd or LDAP) */
+        command_string = argv[0];
+    }
+    else if (   NULL != (command_string = getenv("SSH_ORIGINAL_COMMAND"))
+             || NULL != (command_string = getenv("SSH2_ORIGINAL_COMMAND"))) {
+        /* argc should be zero if proxyexec executed from authorized_keys via
+         * command="/usr/sbin/proxyexec -c" and SSH[2]?_ORIGINAL_COMMAND set */
+        if (0 != argc) {
+            fputs("Invalid argument\n", stderr);
+            return EXIT_FAILURE;
         }
+    }
+
+    if (NULL != command_string && 0 != wordexp(command_string,&cmd,WRDE_NOCMD)){
+        cmd.we_wordc = 0;
+        command_string = NULL;
     }
 
     do {
@@ -591,7 +604,7 @@ proxyexec_client (const int argc, char ** const restrict argv)
     if (-1 != fd)
         nointr_close(fd);
 
-    if (NULL != ssh_original_command)
+    if (NULL != command_string)
         wordfree(&cmd);
 
     return status;
