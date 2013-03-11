@@ -31,9 +31,9 @@
  * code is now nearly identical to openssh/openbsd-compat/bindresvport.c
  * The main difference is that bsock_bindresvport.c DOES NOT use a
  * crytographically secure mechanism for generating random start port, and
- * is therfore more susceptible to random spoofing attacks than is openbsd
+ * is therefore more susceptible to random spoofing attacks than is openbsd
  * bindresvport_sa().  bsock_bindresvport_sa() is also tailored for use by
- * bsock application, requiring pthread mutex around device open.
+ * bsock application.  A prior version used pthread mutex around device open.
  *
  * opessh/openbsd-compat/bindresvport.c contains the following license:
  */
@@ -80,7 +80,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
-#include <pthread.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -135,29 +134,14 @@ bsock_bindresvport_random_port (void)
      * (Note: read() not protected with mutex since reading random bytes!)
      * (arc4random() would be even better defense against random spoofing)
      * (getpid() and time() are poorer, more predictable choices) */
-    static pthread_mutex_t devurandom_mutex = PTHREAD_MUTEX_INITIALIZER;
-    static volatile int ufd = -1;
-    int fd = ufd;
-    int r = -1;
+    static int fd = -1;
+    int r;
     if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
-        r = -1;
-        if (0 == pthread_mutex_trylock(&devurandom_mutex)) {
-            fd = ufd; /* re-check volatile ufd after obtaining mutex */
-            if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
-                /* race condition around close and reopen (between threads);
-                 * another thread might read from original ufd, which could
-                 * be opened by another thread to another file.  However,
-                 * reopen should be rare, if ever, after initial open.
-                 * Full safety would employ mutex around all read() in fn.*/
-                ufd = -1;
-                if (-1 != fd)
-                    while (0 != close(fd) && errno == EINTR) ;
-                fd = ufd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
-                if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int))
-                    r = -1;
-            }
-            pthread_mutex_unlock(&devurandom_mutex);
-        } /* (use less random getpid() ^ time() if obtaining mutex fails) */
+        if (-1 != fd)
+            while (0 != close(fd) && errno == EINTR) ;
+        fd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
+        if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int))
+            r = -1;
     }
     if (-1 != r)
         r ^= (((r>>4)&0xF000)|((r>>12)&0xF00)|((r>>20)&0xF0)|((r>>28)&0xF));
