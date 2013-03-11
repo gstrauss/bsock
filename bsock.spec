@@ -1,5 +1,5 @@
 %define name bsock
-%define version 0.07
+%define version 0.08
 
 Name:    %{name}
 Version: %{version}

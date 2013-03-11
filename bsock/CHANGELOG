@@ -1,5 +1,16 @@
 bsock change log
 
+bsock v0.08 (2013.03.11)
+- proxyexec: improve cmd string expansion behavior for proxyexec user shell
+
+bsock v0.07 (2012.05.06)
+- factoring code for future event-based bsock daemon
+- add interface for caller to pass ctrlbuf so that it can be large and reused
+  (used by proxyexec to avoid warning if /proc/sys/net/core/optmem_max is
+   larger than bsock 10KB default buffer for socket recvmsg ancillary data)
+- proxyexec: -q flag to skip logging proxyexec connect info
+- proxyexec: perf: reduce number of syscalls made during file descriptor setup
+
 bsock v0.06 (2012.04.02)
 - security: avoid SO_REUSEADDR for bsock.resvaddr; see bsock/NOTES for details
 
