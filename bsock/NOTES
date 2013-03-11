@@ -237,9 +237,17 @@ References:
   Linux Socket Programming by Example - Warren Gay
     "17. Passing Credentials and File Descriptors"
   authbind  (Ian Jackson, 1998)
-    http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind
+    http://www.chiark.greenend.org.uk/ucgi/~ian/git/authbind.git/
+    http://www.chiark.greenend.org.uk/ucgi/~ian/git?p=authbind.git;a=blob;f=debian/control
   portreserve  (Tim Waugh, 2003)
     http://cyberelk.net/tim/software/portreserve/
+
+Other projects discovered after bsock and proxyexec were written:
+  privbind
+    https://github.com/pflanze/privbind
+    http://sourceforge.net/projects/privbind/
+  userv
+    http://www.chiark.greenend.org.uk/~ian/userv/
 
 
 Alternative ideas:

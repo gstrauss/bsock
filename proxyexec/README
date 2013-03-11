@@ -47,3 +47,5 @@ News
 
 2012.03.29 CloudLinux is piloting proxyexec in CloudLinux CageFS 3.2 beta.
 http://www.cloudlinux.com/blog/clnews/beta-cagefs-32-say-goodbye-to-suid-scripts.php
+2012.05.30 CloudLinux use of proxyexec supplants setuid binaries in CageFS 3.5
+http://www.cloudlinux.com/blog/clnews/cagefs-35-released.php
