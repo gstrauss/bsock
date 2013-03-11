@@ -290,7 +290,7 @@ bsock_daemon_msg_control_max (void)
      * (see bsock_unix.h for more details) */
     long optmem_max = BSOCK_ANCILLARY_DATA_MAX;
     ssize_t r;
-    const int fd = open("/proc/sys/net/core/optmem_max", O_RDONLY, 0);
+    const int fd = open("/proc/sys/net/core/optmem_max",O_RDONLY|O_NONBLOCK,0);
     char buf[32];
     if (-1 != fd) {
         if ((r = read(fd, buf, sizeof(buf)-1)) >= 0) {

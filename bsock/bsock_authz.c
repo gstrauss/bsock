@@ -221,7 +221,7 @@ bsock_authz_config (void)
 
     do {
         struct stat st;
-        if (-1 == (fd = open(BSOCK_CONFIG, O_RDONLY, 0))) {
+        if (-1 == (fd = open(BSOCK_CONFIG, O_RDONLY|O_NONBLOCK, 0))) {
             bsock_syslog(errno, LOG_ERR, BSOCK_CONFIG);
             break;
         }
