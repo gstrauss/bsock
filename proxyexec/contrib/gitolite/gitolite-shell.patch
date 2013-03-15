@@ -1,22 +1,40 @@
 --- gitolite-shell
 +++ gitolite-shell.new
-@@ -14,6 +14,15 @@ use Gitolite::Conf::Load;
- use strict;
- use warnings;
- 
-+# convert proxyexec (https://github.com/gstrauss/bsock) input to gitolite-shell
-+if (exists $ENV{PROXYEXEC_UID}) {
-+    # Set SSH_ORIGINAL_COMMAND from @ARGV.  Note: original quoting not preserved
-+    # (not bothering to quote since Gitolite::Common::_system() bypasses shell)
-+    $ENV{SSH_ORIGINAL_COMMAND} = "@ARGV"; undef @ARGV;
-+    $ARGV[0] = getpwuid($ENV{PROXYEXEC_UID})
-+      || _die "invalid user (uid $ENV{PROXYEXEC_UID})";
-+}
-+
- # the main() sub expects ssh-ish things; set them up...
+@@ -23,6 +23,8 @@ use warnings;
  my $id = '';
  if ( exists $ENV{G3T_USER} ) {
-@@ -116,8 +125,8 @@ sub parse_soc {
+     $id = in_file();    # file:// masquerading as ssh:// for easy testing
++} elsif ( exists $ENV{PROXYEXEC_UID} ) {
++    $id = in_proxyexec();
+ } elsif ( exists $ENV{SSH_CONNECTION} ) {
+     $id = in_ssh();
+ } elsif ( exists $ENV{REQUEST_URI} ) {
+@@ -74,6 +76,24 @@ sub in_http {
+     return 'http';
+ }
+ 
++sub in_proxyexec {
++    # convert input from proxyexec (https://github.com/gstrauss/bsock)
++    # discard 'gitolite' literal arg if provided; some proxyexec setups might
++    # require gitolite commands be run as 'gitolite <cmd>' to be recognized
++    shift @ARGV if ($ARGV[0] eq 'gitolite');
++    # gitolite expects SSH_ORIGINAL_COMMAND to be set to command and args,
++    # so set SSH_ORIGINAL_COMMAND to the parameters sent through proxyexec
++    # Note: original quoting is not preserved by wordexp() in proxyexec client
++    # (not bothering to quote since Gitolite::Common::_system() bypasses shell)
++    $ENV{SSH_ORIGINAL_COMMAND} = "@ARGV"; undef @ARGV;
++    # set @ARGV to single arg: username
++    $ARGV[0] = getpwuid($ENV{PROXYEXEC_UID})
++      || _die "invalid user (uid $ENV{PROXYEXEC_UID})";
++    # treat proxyexec as ssh-like for logging purposes
++    # (although some legitimate proxyexec uses might not have SSH_CONNECTION)
++    return in_ssh();
++}
++
+ sub in_ssh {
+     my $ip;
+     ( $ip = $ENV{SSH_CONNECTION} || '(no-IP)' ) =~ s/ .*//;
+@@ -141,8 +161,8 @@ sub parse_soc {
      $soc ||= 'info';
  
      my $git_commands = "git-upload-pack|git-receive-pack|git-upload-archive";
