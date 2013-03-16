@@ -5,10 +5,24 @@ From http://sitaramc.github.com/gitolite/ :
 
 
 
-Patching gitolite:
+gitolite v3 proxyexec INPUT trigger:
+
+gitolite v3 provides a trigger mechanism for plugins.
+ProxyExec.pm is an INPUT trigger to translate args from proxyexec
+into SSH_ORIGINAL_COMMAND and username arg expected by gitolite.
+# installation notes for ProxyExec.pm gitolite INPUT trigger:
+# - copy ProxyExec.pm to gitolite/src/lib/Gitolite/Triggers/ProxyExec.pm
+# - define extension in rc file ($ENV{HOME}/.gitolite.rc) before ENABLE => [ ...
+#      NON_CORE => "
+#          ProxyExec INPUT :: before Shell
+#      ",
+# - add 'ProxyExec', to ENABLE list in .gitolite.rc (near system admin stuff)
+
+
+gitolite v2 patching:
 
 To avoid an intermediate script to translate proxyexec command execution to
-input expected by gl-auth-command or gitolite-shell, patch gitolite as follows.
+input expected by gitolite v2 gl-auth-command, patch gitolite as follows.
 Note: part of the patch is required to relax a regex in gitolite which looks
 for single quotes around the repo argument, since the single quotes are removed
 by command line word expansion that is performed in the proxyexec client.
@@ -20,14 +34,9 @@ by command line word expansion that is performed in the proxyexec client.
 
 $ git clone https://github.com/sitaramc/gitolite.git
 $ cd gitolite/src
+$ patch gl-auth-command \
+    < $REPO/bsock/proxyexec/contrib/gitolite/gl-auth-command.patch
 
-# (gitolite v2 only)
-#$ patch gl-auth-command \
-#    < $REPO/bsock/proxyexec/contrib/gitolite/gl-auth-command.patch
-
-# (gitolite v3 only)  (recommended)
-$ patch gitolite-shell \
-    < $REPO/bsock/proxyexec/contrib/gitolite/gitolite-shell.patch
 
 
 Continue and follow the rest of the gitolite installation instructions.

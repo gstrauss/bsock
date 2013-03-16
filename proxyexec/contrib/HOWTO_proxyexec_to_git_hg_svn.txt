@@ -62,7 +62,7 @@ the specialized shell, or by an intermediate wrapper shell script which sets
 SSH_ORIGINAL_COMMAND to the command line arguments, looks up PROXYEXEC_UID
 (in /etc/passwd, LDAP, ...) to obtain the username, and executes the target
 specialized shell, passing username as an argument.  (see sample scripts below)
-(see proxyexec/contrib/gitolite/ subdir for gitolite patch)
+(see proxyexec/contrib/gitolite/README for ProxyExec.pm gitolite INPUT trigger)
 
 Configure user accounts (other than 'scmadmin') to have shell
   /usr/sbin/proxyexec
@@ -94,9 +94,9 @@ fi
 #!/bin/sh
 if [ -n "$PROXYEXEC_UID" ]; then
     username="`/usr/bin/getent passwd '$PROXYEXEC_UID' | cut -d: -f1`"
-    exec /usr/bin/svnserve -t -r /home/scmadmin/repos --tunnel-user="$username"
+    exec /usr/bin/svnserve -t -r /u/scmadmin/svnrepos --tunnel-user="$username"
 else
-    exec /usr/bin/svnserve -t -r /home/scmadmin/repos
+    exec /usr/bin/svnserve -t -r /u/scmadmin/svnrepos
 fi
 
 
@@ -123,3 +123,7 @@ A: Help yourself: use alternate ssh key for access to shared source control
    For svn, set ~svn/.ssh/authorized_keys with
      command="/usr/bin/svnserve -t --tunnel-user=<username>" <public key ...>
    and access the server with 'svn ls svn+ssh://svn@<server>/...'
+   Separate accounts need not be used if scmadmin is the target account and
+   different keys are set in ~scmadmin/.ssh/authorized_keys to trigger
+   different commands.  The end user would set up machine aliases in the
+   local ~/.ssh/config to have git, hg, and svn use the appropriate key.
