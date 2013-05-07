@@ -1,26 +1,26 @@
 proxyexec can be used as a conduit to shared source control repositories --
 e.g. git, hg, svn -- which are owned by a single unix account on the server.
 
-For the examples below, let us use the account 'scmadmin', though separate
+For the examples below, let us use the account 'vcsadmin', though separate
 accounts could be used for each source control system, if desired.
 
 Traditional shared source control access through ssh authentication is
-accomplished via ssh keys in ~scmadmin/.ssh/authorized_keys, whose use results
+accomplished via ssh keys in ~vcsadmin/.ssh/authorized_keys, whose use results
 in execution of a specialized shell to access the source control system.
 Using proxyexec as the user shell allows ssh and basic account management,
 e.g. /etc/passwd or LDAP, to handle authorization in lieu of managing ssh keys
-in the scmadmin account.  Each proxyexec daemon listens to a named unix domain
+in the vcsadmin account.  Each proxyexec daemon listens to a named unix domain
 socket and executes the specialized shell to access the source control system.
 Each user is assigned /usr/sbin/proxyexec as the shell on the machine hosting
 the repositories.
 
 
-Create 'scmadmin' user and 'scmadmin' group, and install bsock (proxyexec) pkgs
+Create 'vcsadmin' user and 'vcsadmin' group, and install bsock (proxyexec) pkgs
 (commands differ between unix operating systems and distros)
 (bsock RPMs install into /usr/lib, /usr/sbin, and /var)
 (bsock build from source installs into /usr/local/{lib,sbin,var} by default)
 
-  /usr/sbin/useradd --user-group scmadmin
+  /usr/sbin/useradd --user-group vcsadmin
   yum install bsock bsock-libs
 
 Create dirs in /var/run/proxyexec/ for proxyexec unix domain sockets
@@ -28,7 +28,7 @@ Create dirs in /var/run/proxyexec/ for proxyexec unix domain sockets
 git (via gitolite)
 ---
   mkdir                   /var/run/proxyexec/gitolite
-  chgrp scmadmin:scmadmin /var/run/proxyexec/gitolite
+  chgrp vcsadmin:vcsadmin /var/run/proxyexec/gitolite
   chmod 2755              /var/run/proxyexec/gitolite
   ln -s gitolite          /var/run/proxyexec/git-receive-pack
   ln -s gitolite          /var/run/proxyexec/git-upload-pack
@@ -37,13 +37,13 @@ git (via gitolite)
 hg (Mercurial)
 --
   mkdir                   /var/run/proxyexec/hg
-  chgrp scmadmin:scmadmin /var/run/proxyexec/hg
+  chgrp vcsadmin:vcsadmin /var/run/proxyexec/hg
   chmod 2755              /var/run/proxyexec/hg
 
 svn (Subversion)
 ---
   mkdir                   /var/run/proxyexec/svnserve
-  chgrp scmadmin:scmadmin /var/run/proxyexec/svnserve
+  chgrp vcsadmin:vcsadmin /var/run/proxyexec/svnserve
   chmod 2755              /var/run/proxyexec/svnserve
 
 Configure specialized shell commands to access git, hg, and svn repos.
@@ -64,39 +64,39 @@ SSH_ORIGINAL_COMMAND to the command line arguments, looks up PROXYEXEC_UID
 specialized shell, passing username as an argument.  (see sample scripts below)
 (see proxyexec/contrib/gitolite/README for ProxyExec.pm gitolite INPUT trigger)
 
-Configure user accounts (other than 'scmadmin') to have shell
+Configure user accounts (other than 'vcsadmin') to have restricted shell:
   /usr/sbin/proxyexec
 Add /usr/sbin/proxyexec to /etc/shells (optional)
 
 Set up a cron job to run once a minute to execute a simple shell script
 which checks if proxyexec daemons are running, or else starts them.
-* * * * * /home/scmadmin/bin/cron/proxyexec.cron
+* * * * * /home/vcsadmin/bin/cron/proxyexec.cron
 
 
-#/home/scmadmin/bin/cron/proxyexec.cron
+#/home/vcsadmin/bin/cron/proxyexec.cron
 
 #!/bin/sh
 if ! [ -S /var/run/proxyexec/gitolite/socket ]; then
-  cd /home/scmadmin && \
+  cd /home/vcsadmin && \
     /usr/sbin/proxyexec -d -s /var/run/proxyexec/gitolite/socket -- \
-        /home/scmadmin/gitolite/src/gitolite-shell
+        /home/vcsadmin/gitolite/src/gitolite-shell
 fi
 if ! [ -S /var/run/proxyexec/svnserve/socket ]; then
   cd / && \
     /usr/sbin/proxyexec -d -s /var/run/proxyexec/svnserve/socket -- \
-        /home/scmadmin/bin/cron/svnserve-wrapper
+        /home/vcsadmin/bin/cron/svnserve-wrapper
 fi
 
 
-# /home/scmadmin/bin/cron/svnserve-wrapper
-# (optional '-r /home/scmadmin/svnrepos' assumes location of svn repositories)
+# /home/vcsadmin/bin/cron/svnserve-wrapper
+# (optional '-r /home/vcsadmin/svnrepos' assumes location of svn repositories)
 
 #!/bin/sh
 if [ -n "$PROXYEXEC_UID" ]; then
     username="`/usr/bin/getent passwd '$PROXYEXEC_UID' | cut -d: -f1`"
-    exec /usr/bin/svnserve -t -r /u/scmadmin/svnrepos --tunnel-user="$username"
+    exec /usr/bin/svnserve -t -r /u/vcsadmin/svnrepos --tunnel-user="$username"
 else
-    exec /usr/bin/svnserve -t -r /u/scmadmin/svnrepos
+    exec /usr/bin/svnserve -t -r /u/vcsadmin/svnrepos
 fi
 
 
@@ -104,12 +104,12 @@ fi
 
 Q: What if I have a full shell on the machine hosting the shared repositories?
 A: Help yourself: use alternate ssh key for access to shared source control
- - Create ~self/.ssh/scmadmin and scmadmin.pub key on local machine
- - Add scmadmin.pub key in ~self/.ssh/authorized_keys on server
+ - Create ~self/.ssh/vcsadmin and vcsadmin.pub key on local machine
+ - Add vcsadmin.pub key in ~self/.ssh/authorized_keys on server
    with ssh key command as '/usr/sbin/proxyexec -c'
- - On local machine (containing ~/.ssh/scmadmin and ~/.ssh/scmadmin.pub):
+ - On local machine (containing ~/.ssh/vcsadmin and ~/.ssh/vcsadmin.pub):
    $ ssh-agent /bin/bash
-   $ ssh-add ~/.ssh/scmadmin
+   $ ssh-add ~/.ssh/vcsadmin
    $ git pull ...
    $ hg pull ...
    $ svn co ...
@@ -118,12 +118,12 @@ A: Help yourself: use alternate ssh key for access to shared source control
    and have the command= associated with the key run the appropriate command to
    access each type of repository, e.g.
    For git, set ~git/.ssh/authorized_keys with
-     command="/home/scmadmin/gitolite/src/gitolite-shell <username>" <pubkey...>
+     command="/home/vcsadmin/gitolite/src/gitolite-shell <username>" <pubkey...>
    and access the server with 'git clone git+ssh://git@<server>/...'
    For svn, set ~svn/.ssh/authorized_keys with
      command="/usr/bin/svnserve -t --tunnel-user=<username>" <public key ...>
    and access the server with 'svn ls svn+ssh://svn@<server>/...'
-   Separate accounts need not be used if scmadmin is the target account and
-   different keys are set in ~scmadmin/.ssh/authorized_keys to trigger
+   Separate accounts need not be used if vcsadmin is the target account and
+   different keys are set in ~vcsadmin/.ssh/authorized_keys to trigger
    different commands.  The end user would set up machine aliases in the
    local ~/.ssh/config to have git, hg, and svn use the appropriate key.

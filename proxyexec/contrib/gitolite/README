@@ -28,7 +28,7 @@ for single quotes around the repo argument, since the single quotes are removed
 by command line word expansion that is performed in the proxyexec client.
 
 
-# In hosting account (e.g. 'scmadmin' or 'git'),
+# In hosting account (e.g. 'vcsadmin' or 'git'),
 # download gitolite, patch, and install
 # (set $REPO to path to directory holding bsock.git clone)
 
