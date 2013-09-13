@@ -95,7 +95,7 @@ bsock_bind_send_addr_and_recv (const int fd,
     int errnum = 0;
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(errnum) };
     if (!MSG_DONTWAIT)
-        fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);
+        (void)fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);
     if (bsock_addrinfo_send(sfd, ai, fd)
         &&  1 == retry_poll_fd(sfd, POLLIN, BSOCK_POLL_TIMEOUT)
         && -1 != bsock_unix_recv_fds(sfd, &rfd, &nrfd, &iov, 1)) {
@@ -107,8 +107,8 @@ bsock_bind_send_addr_and_recv (const int fd,
                 do { errnum = dup2(rfd, fd);
                 } while (errnum == -1 && (errno == EINTR || errno == EBUSY));
                 if (0 == (errnum = (errnum == fd) ? 0 : errno)) {
-                    fcntl(fd, F_SETFL, flflags);
-                    fcntl(fd, F_SETFD, fdflags);
+                    (void)fcntl(fd, F_SETFL, flflags);
+                    (void)fcntl(fd, F_SETFD, fdflags);
                 }
             }
             nointr_close(rfd);
@@ -149,7 +149,7 @@ bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
             || (sv[0] != STDIN_FILENO && 0 != close(sv[0]))
             || (sv[1] != STDIN_FILENO && 0 != close(sv[1])))
             _exit(errno);
-        fcntl(STDIN_FILENO, F_SETFD, 0);/* unset all fdflags, incl FD_CLOEXEC */
+        (void)fcntl(STDIN_FILENO, F_SETFD, 0);/*unset fdflags, incl FD_CLOEXEC*/
         execve(args[0], args, environ);
         _exit(errno); /*(not reached unless execve() failed)*/
     }

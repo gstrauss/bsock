@@ -399,7 +399,9 @@ bsock_resvaddr_config (void)
         ar->elt_count = lineno;  /* actual num elements in table */
         bsock_resvaddr_alloc = ar;
 
-        poll(NULL, 0, 1000); /* yield in case other threads reading old table */
+        /* yield in case other threads reading old table */
+        while (poll(NULL, 0, 1000) != 0)
+            ;
 
     } while (0);
 

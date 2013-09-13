@@ -282,7 +282,7 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
     if (c->fd != *fd) {
         /* poll()d before recv above, so can defer O_NONBLOCK to here */
         if (!MSG_DONTWAIT)
-            fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
+            (void)fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
         rc = (bsock_unix_send_fds(c->fd, &nfd, (-1 != nfd), &iov, 1)
               == (ssize_t)iov.iov_len)
           ? EXIT_SUCCESS
@@ -511,7 +511,7 @@ bsock_thread_event_loop (const int sfd, pthread_attr_t * const restrict attr)
                           return EXIT_SUCCESS;
               default:    /* temporary process/system resource issue */
                           bsock_syslog(errno, LOG_ERR, "accept");
-                          poll(NULL, 0, 10); /* pause 10ms and continue */
+                          (void)poll(NULL, 0, 10); /* pause 10ms and continue */
                           continue;
             }
         }

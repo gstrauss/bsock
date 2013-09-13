@@ -225,7 +225,7 @@ static void
 bsock_daemon_atexit (void)
 {
     if (0 == bsock_daemon_socket_bound && getpid() == bsock_daemon_pid)
-        unlink(bsock_daemon_socket_path);
+        (void)unlink(bsock_daemon_socket_path);
 }
 
 int  __attribute__((nonnull))
@@ -273,12 +273,15 @@ bsock_daemon_init_socket (const char * const restrict sockpath,
         bsock_syslog(errno, LOG_ERR, "socket,bind,listen");
         return -1;
     }
-    fcntl(sfd, F_SETFD, fcntl(sfd, F_GETFD, 0) | FD_CLOEXEC);
+    (void)fcntl(sfd, F_SETFD, fcntl(sfd, F_GETFD, 0) | FD_CLOEXEC);
 
     if (0 == chown(sockpath, uid, gid) && 0 == chmod(sockpath, mode))
         return sfd;
 
     bsock_syslog(errno, LOG_ERR, "chown,chmod");
+    (void)unlink(bsock_daemon_socket_path);
+    bsock_daemon_socket_bound = -1;
+    nointr_close(sfd);
     return -1;
 }
 

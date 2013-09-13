@@ -290,7 +290,7 @@ bsock_authz_config (void)
         authz_hash->addr  = (int *)(authz_hash->ai+n);
         memset(authz_hash->table, '\0', sizeof(struct addrinfo *) * table_sz);
         memset(authz_hash->addr,  '\0', sizeof(struct sockaddr_storage) * n);
-        if (0 != bsock_authz_config_parse(authz_hash, buf)) {
+        if (NULL == buf || 0 != bsock_authz_config_parse(authz_hash, buf)) {
             free(authz_hash);
             authz_hash = NULL;
         }
@@ -308,7 +308,8 @@ bsock_authz_config (void)
         /* pause 1 sec for simple and coarse (not perfect) mechanism to give
          * other threads accessing hash time to finish, else might crash.
          * (could instead grab mutex around all bsock_authz_hash accesses) */
-        poll(NULL, 0, 1000);
+        while (poll(NULL, 0, 1000) != 0)
+            ;
         free(p);
     }
 }
