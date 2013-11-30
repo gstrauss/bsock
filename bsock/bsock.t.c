@@ -1,6 +1,8 @@
 /*
  * bsock.t.c - sample client code to obtain sockets from bsock daemon
  *
+ * (BSD 3-clause license)
+ *
  * Copyright (c) 2011, Glue Logic LLC. All rights reserved. code()gluelogic.com
  *
  * Redistribution and use in source and binary forms, with or without

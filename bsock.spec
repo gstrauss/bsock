@@ -7,7 +7,7 @@ Release: 1%{?dist}
 Summary: bsock - bind() sockets to restricted ports for lower-privilege daemons
 
 Group:		Systems Environment/Daemons
-License:	BSD
+License:	LGPLv2+
 Vendor:		Glue Logic LLC
 URL:		https://github.com/gstrauss/bsock/
 Source0:	bsock-%{version}.tar.gz
