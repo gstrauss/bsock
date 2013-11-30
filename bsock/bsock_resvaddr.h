@@ -29,6 +29,8 @@
 #ifndef INCLUDED_BSOCK_RESVADDR_H
 #define INCLUDED_BSOCK_RESVADDR_H
 
+#include "plasma/plasma_attr.h"
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -44,7 +46,8 @@ extern "C" {
 /* use ai->ai_flags for bsock flags since otherwise unused by bsock */
 #define BSOCK_FLAGS_REBIND AI_PASSIVE  /* close() and re-bind() resv addr */
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_resvaddr_fd (const struct addrinfo * const restrict ai);
 
 void

@@ -26,6 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <plasma/plasma_attr.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <dlfcn.h>
@@ -41,7 +43,8 @@ int bindresvport  (const int, struct sockaddr_in * restrict);
 int bindresvport6 (const int, struct sockaddr_in6 * restrict);
 
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t);
-static int  __attribute__((nonnull))
+__attribute_nonnull__
+static int
 bind_rtld_findnext (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
     bind_rtld_next = (int(*)(int,const struct sockaddr *,socklen_t))(uintptr_t)
@@ -53,7 +56,9 @@ bind_rtld_findnext (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t) =
   bind_rtld_findnext;
 
-static int  __attribute__((nonnull))  __attribute__((noinline))
+__attribute_noinline__
+__attribute_nonnull__
+static int
 bsock_preload_bind (const int sockfd, const struct sockaddr *addr,
                     const socklen_t addrlen)
 {

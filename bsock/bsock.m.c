@@ -26,6 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <plasma/plasma_attr.h>
+#include <plasma/plasma_stdtypes.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -37,7 +40,6 @@
 #include <netdb.h>
 #include <sched.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,19 +114,21 @@
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
-static int  __attribute__((noinline))
+__attribute_noinline__
+static int
 retry_poll_fd (const int fd, const short events, const int timeout)
 {
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
     int n; /*EINTR results in retrying poll with same timeout again and again*/
-    do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
+    retry_eintr_do_while(n = poll(&pfd, 1, timeout), -1 == n);
     if (0 == n) errno = ETIME; /* specific for bsock; not generic */
     return n;
 }
 
-static void  __attribute__((nonnull))
+__attribute_nonnull__
+static void
 bsock_cleanup_close (void * const arg)
 {
     const int fd = *(int *)arg;
@@ -158,7 +162,8 @@ bsock_thread_table_init (void)
     bsock_thread_elts[BSOCK_THREAD_MAX-1].next = NULL;
 }
 
-static struct bsock_client_st *  __attribute__((nonnull))
+__attribute_nonnull__
+static struct bsock_client_st *
 bsock_thread_table_query (const struct bsock_client_st * const c)
 {
     const uid_t uid = c->uid;
@@ -169,7 +174,8 @@ bsock_thread_table_query (const struct bsock_client_st * const c)
     return t;
 }
 
-static struct bsock_client_st *  __attribute__((nonnull))
+__attribute_nonnull__
+static struct bsock_client_st *
 bsock_thread_table_add (struct bsock_client_st * const c)
 {
     /* (not checking for multiple-add of same uid (do not do that)) */
@@ -184,7 +190,8 @@ bsock_thread_table_add (struct bsock_client_st * const c)
     return (*next = t);
 }
 
-static void  __attribute__((nonnull))
+__attribute_nonnull__
+static void
 bsock_thread_table_remove (struct bsock_client_st * const c)
 {
     /* (removes only first uid found if multiple (should not happen)) */
@@ -203,7 +210,8 @@ bsock_thread_table_remove (struct bsock_client_st * const c)
     }
 }
 
-static int  __attribute__((nonnull))
+__attribute_nonnull__
+static int
 bsock_client_handler (struct bsock_client_st * const restrict c,
                       struct addrinfo * const restrict ai,
                       int * const restrict fd)
@@ -309,7 +317,8 @@ uint32_to_str(uint32_t u, char * const buf)
     return (int)(out - buf);
 }
 
-static void  __attribute__((noinline))
+__attribute_noinline__
+static void
 bsock_infostr (char * restrict infobuf,
                const int fd, const uid_t uid, const gid_t gid)
 {
@@ -339,7 +348,8 @@ bsock_infostr (char * restrict infobuf,
     infobuf[0] = '\0';
 }
 
-static void  __attribute__((nonnull))
+__attribute_nonnull__
+static void
 bsock_cleanup_client (void * const arg)
 {
     struct bsock_client_st * const c = (struct bsock_client_st *)arg;
@@ -352,7 +362,8 @@ bsock_cleanup_client (void * const arg)
     }
 }
 
-static void *  __attribute__((nonnull))
+__attribute_nonnull__
+static void *
 bsock_client_thread (void * const arg)
 {
     struct bsock_client_st c; /* copy so that not referencing hash entry */
@@ -405,7 +416,9 @@ bsock_client_thread (void * const arg)
     return NULL;  /* end of thread; identical to pthread_exit() */
 }
 
-static void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+static void
 bsock_sigaction_sighup (void)
 {
     /* efficiency: keep databases open (advantageous for nss_mcdb module) */
@@ -423,7 +436,8 @@ bsock_sigaction_sighup (void)
     endservent();
 }
 
-static void  __attribute__((nonnull))
+__attribute_nonnull__
+static void
 bsock_sigaction (sigset_t * const restrict sigs, const int signo)
 {
     switch (signo) {
@@ -441,7 +455,9 @@ bsock_sigaction (sigset_t * const restrict sigs, const int signo)
     }
 }
 
-static void  __attribute__((nonnull))  __attribute__((noreturn))
+__attribute_nonnull__
+__attribute_noreturn__
+static void
 bsock_sigwait (void * const arg)
 {
     sigset_t * const sigs = (sigset_t *)arg;
@@ -473,7 +489,9 @@ bsock_thread_signals (void)
         bsock_syslog(errnum, LOG_ERR, "pthread_create");
 }
 
-static void  __attribute__((noinline))  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+static void
 bsock_client_send_errno (const int fd, int errnum)
 {
     /* one-shot response; send buffer should be empty and should not block */
@@ -553,8 +571,10 @@ bsock_thread_event_loop (const int sfd, pthread_attr_t * const restrict attr)
 }
 
 /* one-shot mode; handle single request and exit */
+__attribute_cold__
+__attribute_noinline__
+__attribute_nonnull__
 static int
-  __attribute__((nonnull))  __attribute__((noinline))  __attribute_cold__
 bsock_client_once (const int argc, char ** const restrict argv)
 {
     struct bsock_client_st m;
@@ -646,7 +666,8 @@ bsock_client_once (const int argc, char ** const restrict argv)
     return rc;
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 main (int argc, char *argv[])
 {
     int sfd, opt, daemon = false, supervised = false;

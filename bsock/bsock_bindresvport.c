@@ -138,7 +138,7 @@ bsock_bindresvport_random_port (void)
     int r;
     if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int)) {
         if (-1 != fd)
-            while (0 != close(fd) && errno == EINTR) ;
+            retry_eintr_while(0 != close(fd));
         fd = open("/dev/urandom", O_RDONLY|O_NONBLOCK);
         if (-1 == fd || read(fd, &r, sizeof(int)) != sizeof(int))
             r = -1;
@@ -150,7 +150,8 @@ bsock_bindresvport_random_port (void)
     return(IPPORT_RESERVEDSTART + (r % (IPPORT_RESERVED-IPPORT_RESERVEDSTART)));
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa)
 {
     /* (code below honors sin_addr or sin6_addr, if specified) */

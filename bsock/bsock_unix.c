@@ -51,9 +51,10 @@
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_unix_socket_connect (const char * const restrict sockpath)
 {
     /* connect to unix domain socket */
@@ -81,7 +82,8 @@ bsock_unix_socket_connect (const char * const restrict sockpath)
     return -1;
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_unix_socket_bind_listen (const char * const restrict sockpath,
                                int * const restrict bound)
 {
@@ -127,7 +129,8 @@ bsock_unix_socket_bind_listen (const char * const restrict sockpath,
     return -1;
 }
 
-static void  __attribute__((nonnull (1)))
+__attribute_nonnull_x__((1))
+static void
 bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
                            int * const restrict rfds,
                            unsigned int * const restrict nrfdsp)
@@ -161,7 +164,9 @@ bsock_unix_recv_ancillary (struct msghdr * const restrict msg,
         *nrfdsp = nrfd;
 }
 
-static ssize_t  __attribute__((nonnull (4)))  __attribute__((noinline))
+__attribute_noinline__
+__attribute_nonnull_x__((4))
+static ssize_t
 bsock_unix_recv_fds_msghdr (const int fd,
                             int * const restrict rfds,
                             unsigned int * const restrict nrfds,
@@ -170,7 +175,7 @@ bsock_unix_recv_fds_msghdr (const int fd,
     /* receive and return file descriptor(s) sent over unix domain socket */
     /* 'man cmsg' provides example code */
     ssize_t r;
-    do { r = recvmsg(fd, msg, MSG_DONTWAIT); } while (-1==r && errno==EINTR);
+    retry_eintr_do_while(r = recvmsg(fd, msg, MSG_DONTWAIT), -1 == r);
     if (r < 1) {  /* EOF (r=0) or error (r=-1) */
         if (0 == r && 0 == errno) errno = EPIPE;
         return -1;
@@ -187,7 +192,8 @@ bsock_unix_recv_fds_msghdr (const int fd,
     return r;
 }
 
-ssize_t  __attribute__((nonnull (4)))
+__attribute_nonnull_x__((4))
+ssize_t
 bsock_unix_recv_fds (const int fd,
                      int * const restrict rfds,
                      unsigned int * const restrict nrfds,
@@ -209,7 +215,8 @@ bsock_unix_recv_fds (const int fd,
     return bsock_unix_recv_fds_msghdr(fd, rfds, nrfds, &msg);
 }
 
-ssize_t  __attribute__((nonnull (4,6)))
+__attribute_nonnull_x__((4,6))
+ssize_t
 bsock_unix_recv_fds_ex (const int fd,
                         int * const restrict rfds,
                         unsigned int * const restrict nrfds,
@@ -232,7 +239,8 @@ bsock_unix_recv_fds_ex (const int fd,
     return bsock_unix_recv_fds_msghdr(fd, rfds, nrfds, &msg);
 }
 
-ssize_t  __attribute__((nonnull (4)))
+__attribute_nonnull_x__((4))
+ssize_t
 bsock_unix_send_fds (const int fd,
                      const int * const restrict sfds,
                      unsigned int nsfds,
@@ -268,8 +276,7 @@ bsock_unix_send_fds (const int fd,
         cmsg->cmsg_len     = msg.msg_controllen = CMSG_LEN(nsfds); /*data*/
     }
 
-    do { w = sendmsg(fd, &msg, MSG_DONTWAIT|MSG_NOSIGNAL);
-    } while (-1 == w && errno == EINTR);
+    retry_eintr_do_while(w=sendmsg(fd,&msg,MSG_DONTWAIT|MSG_NOSIGNAL), -1 == w);
     return w;
     /* (caller might choose not to report errno==EPIPE or errno==ECONNRESET) */
 }
@@ -277,7 +284,8 @@ bsock_unix_send_fds (const int fd,
 #ifdef __linux__
 /* obtain peer credentials
  * (requires Linux getsockopt SO_PEERCRED or BSD-style getpeereid() support) */
-static inline int  __attribute__((nonnull))
+__attribute_nonnull__
+static inline int
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
     struct ucred { pid_t pid; uid_t uid; gid_t gid; }; /*or define _GNU_SOURCE*/
@@ -294,7 +302,8 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 #ifdef __sun__
 /* obtain peer credentials using getpeerucred() (Solaris 10) */
 #include <ucred.h>
-static inline int  __attribute__((nonnull))
+__attribute_nonnull__
+static inline int
 getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 {
     ucred_t *ucred;
@@ -312,7 +321,8 @@ int getpeereid (int, uid_t * __restrict__, gid_t * __restrict__);
 #endif
 
 #ifndef __hpux
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_unix_getpeereid (const int s,
                        uid_t * const restrict euid,
                        gid_t * const restrict egid)
@@ -320,10 +330,11 @@ bsock_unix_getpeereid (const int s,
     return getpeereid(s, euid, egid);
 }
 #else  /* unsupported on HP-UX */
-int  __attribute__((nonnull))
-bsock_unix_getpeereid (const int s  __attribute__((unused)),
-                       uid_t * const restrict euid  __attribute__((unused)),
-                       gid_t * const restrict egid  __attribute__((unused)))
+__attribute_nonnull__
+int
+bsock_unix_getpeereid (const int s  __attribute_unused__,
+                       uid_t * const restrict euid  __attribute_unused__,
+                       gid_t * const restrict egid  __attribute_unused__)
 {
     return -1;  /* unsupported on HP-UX */
 }
@@ -331,7 +342,8 @@ bsock_unix_getpeereid (const int s  __attribute__((unused)),
 
 
 #if 0 /* sample code */
-ssize_t  __attribute__((nonnull))
+__attribute_nonnull__
+ssize_t
 bsock_unix_recvmsg (const int fd,
                     struct iovec * const restrict iov,
                     const size_t iovlen)
@@ -340,7 +352,8 @@ bsock_unix_recvmsg (const int fd,
     return bsock_unix_recv_fds(fd, NULL, NULL, iov, iovlen);
 }
 
-ssize_t  __attribute__((nonnull))
+__attribute_nonnull__
+ssize_t
 bsock_unix_sendmsg (const int fd,
                     struct iovec * const restrict iov,
                     const size_t iovlen)

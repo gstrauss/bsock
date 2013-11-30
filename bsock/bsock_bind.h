@@ -29,6 +29,8 @@
 #ifndef INCLUDED_BSOCK_BIND_H
 #define INCLUDED_BSOCK_BIND_H
 
+#include "plasma/plasma_attr.h"
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -41,7 +43,8 @@
 extern "C" {
 #endif
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai);
 
 #ifdef __cplusplus

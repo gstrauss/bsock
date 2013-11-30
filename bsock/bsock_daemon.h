@@ -29,8 +29,8 @@
 #ifndef INCLUDED_BSOCK_DAEMON_H
 #define INCLUDED_BSOCK_DAEMON_H
 
-#include <sys/types.h>
-#include <stdbool.h>
+#include "plasma/plasma_attr.h"
+#include "plasma/plasma_stdtypes.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,7 +42,8 @@ bsock_daemon_setuid_stdinit (void);
 bool
 bsock_daemon_init (const int supervised, const bool check);
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_daemon_init_socket (const char * const restrict sockpath, /*(persistent)*/
                           const uid_t uid, const gid_t gid,
                           const mode_t mode);

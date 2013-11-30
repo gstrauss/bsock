@@ -29,6 +29,8 @@
 #ifndef INCLUDED_BSOCK_BINDRESVPORT_H
 #define INCLUDED_BSOCK_BINDRESVPORT_H
 
+#include "plasma/plasma_attr.h"
+
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -36,7 +38,8 @@
 extern "C" {
 #endif
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa);
 
 #ifdef __cplusplus

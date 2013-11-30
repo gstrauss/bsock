@@ -80,7 +80,7 @@ $(bsock_sobjs):  CFLAGS+=-fpic
 bsock_preload.o: CFLAGS+=-fpic
 
 PTHREAD_FLAGS?=-pthread -D_THREAD_SAFE
-%.o: CFLAGS+=-std=c99 -D_XOPEN_SOURCE=600 $(PTHREAD_FLAGS) -DNDEBUG -I.
+%.o: CFLAGS+=-std=c99 -D_XOPEN_SOURCE=600 $(PTHREAD_FLAGS) -DNDEBUG -I. -I..
 %.o: %.c
 	$(CC) -o $@ $(CFLAGS) -c $<
 
@@ -135,7 +135,7 @@ bsock.t: bsock.t.o libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) $^
 
 # (Note: not currently installing libbsock.so with any version suffix)
-.PHONY: install install-suid install-headers install-doc
+.PHONY: install install-suid install-headers install-headers-plasma install-doc
 BSOCK_MODE=0550
 install-suid: BSOCK_MODE=4550
 install-suid: install ;
@@ -150,9 +150,14 @@ install: bsock libbsock.so libbsock_preload.so
           (/bin/touch $(BSOCK_CONFIG) && \
            /bin/chmod 0644 $(BSOCK_CONFIG))
 install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h \
-                 bsock_daemon.h bsock_syslog.h
+                 bsock_daemon.h bsock_syslog.h | install-headers-plasma
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock
 	/usr/bin/install -m 0444 -p $^ $(PREFIX)/include/bsock/
+install-headers-plasma: ../plasma/plasma_attr.h \
+                        ../plasma/plasma_feature.h \
+                        ../plasma/plasma_stdtypes.h
+	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock/plasma
+	/usr/bin/install -m 0444 -p $^ $(PREFIX)/include/bsock/plasma/
 install-doc: CHANGELOG COPYING FAQ INSTALL NOTES README
 	/bin/mkdir -p -m 0755 $(BSOCK_DOC_DIR)
 	/usr/bin/install -m 0444 -p $^ $(BSOCK_DOC_DIR)
@@ -173,3 +178,6 @@ bsock_daemon.o: bsock_daemon.h bsock_syslog.h bsock_unix.h
 bsock_resvaddr.o: bsock_addrinfo.h bsock_resvaddr.h bsock_syslog.h
 bsock_unix.o: bsock_unix.h
 bsock_syslog.o: bsock_syslog.h
+%.o: ../plasma/plasma_attr.h \
+     ../plasma/plasma_feature.h \
+     ../plasma/plasma_stdtypes.h

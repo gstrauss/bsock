@@ -29,6 +29,8 @@
 #ifndef INCLUDED_BSOCK_AUTHZ_H
 #define INCLUDED_BSOCK_AUTHZ_H
 
+#include "plasma/plasma_attr.h"
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -41,7 +43,8 @@
 extern "C" {
 #endif
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_authz_validate (struct addrinfo * const restrict ai,
                       const uid_t uid, const gid_t gid);
 

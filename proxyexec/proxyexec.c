@@ -35,6 +35,8 @@
  *   Alternatively, login session limits by user might be employed.
  */
 
+#include <plasma/plasma_attr.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -113,14 +115,15 @@ int dup3(int oldfd, int newfd, int flags);
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
-static int  __attribute__((noinline))
+__attribute_noinline__
+static int
 retry_poll_fd (const int fd, const short events, const int timeout)
 {
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
     int n; /*EINTR results in retrying poll with same timeout again and again*/
-    do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
+    retry_eintr_do_while(n = poll(&pfd, 1, timeout), -1 == n);
     if (0 == n) errno = ETIME; /* specific for bsock; not generic */
     return n;
 }
@@ -155,7 +158,9 @@ struct proxyexec_context {
   const char *path;
 };
 
-static int  __attribute__((nonnull))  __attribute__((pure))
+__attribute_pure__
+__attribute_nonnull__
+static int
 proxyexec_env_cmp (const void *x, const void *y)
 {
     const struct proxyexec_env_st * const restrict a =
@@ -165,7 +170,9 @@ proxyexec_env_cmp (const void *x, const void *y)
     return a->sz < b->sz ? -1 : a->sz > b->sz ? 1 : memcmp(a->s, b->s, a->sz);
 }
 
-static inline bool  __attribute__((nonnull))  __attribute__((pure))
+__attribute_pure__
+__attribute_nonnull__
+static inline bool
 proxyexec_env_allowed (const char * const restrict s, const size_t sz)
 {
     const struct proxyexec_env_st e = { .s = s, .sz = sz };
@@ -174,7 +181,8 @@ proxyexec_env_allowed (const char * const restrict s, const size_t sz)
                    sizeof(struct proxyexec_env_st), proxyexec_env_cmp) != NULL;
 }
 
-static bool  __attribute__((nonnull))
+__attribute_nonnull__
+static bool
 proxyexec_argv_env_parse (char *b, char * const e,
                           char ** const restrict argv, const uint32_t argc)
 {
@@ -224,7 +232,8 @@ proxyexec_ctrlbuf_alloc (void)
     }
 }
 
-static ssize_t  __attribute__((nonnull))
+__attribute_nonnull__
+static ssize_t
 proxyexec_stdfds_recv_dup2 (int fd, struct iovec * const restrict iov,
                             const size_t iovlen)
 {
@@ -250,7 +259,8 @@ proxyexec_stdfds_recv_dup2 (int fd, struct iovec * const restrict iov,
     return r;
 }
 
-static int  __attribute__((nonnull))
+__attribute_nonnull__
+static int
 proxyexec_fork_exec (char ** const restrict argv)
 {
     /* set SIGCHLD handler to default (not ignored, as is done in parent) */
@@ -274,13 +284,15 @@ proxyexec_fork_exec (char ** const restrict argv)
         nointr_close(STDIN_FILENO);
         nointr_close(STDOUT_FILENO);
         nointr_close(STDERR_FILENO);
-        while (-1 == waitpid(pid, &status, 0) && errno == EINTR) ;
+        retry_eintr_while(-1 == waitpid(pid, &status, 0));
     }
 
     return status;
 }
 
-static int  __attribute__((nonnull))  __attribute__((noinline))
+__attribute_noinline__
+__attribute_nonnull__
+static int
 proxyexec_child_session (struct proxyexec_context * const restrict cxt)
 {
     /* Note: leaks memory upon failure, but free() skipped since program exits*/
@@ -397,7 +409,8 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
  * client
  */
 
-static ssize_t  __attribute__((nonnull))
+__attribute_nonnull__
+static ssize_t
 proxyexec_stdfds_send (const int fd,
                        struct iovec * const restrict iov, const size_t iovlen)
 {
@@ -405,7 +418,8 @@ proxyexec_stdfds_send (const int fd,
     return bsock_unix_send_fds(fd, sfds, sizeof(sfds)/sizeof(int), iov, iovlen);
 }
 
-static size_t  __attribute__((nonnull))
+__attribute_nonnull__
+static size_t
 proxyexec_env_serialize (char * const restrict buf, const size_t sz)
 {
     /*(future: consider different algorithm if proxyexec_envs[] has many elts)*/
@@ -427,7 +441,8 @@ proxyexec_env_serialize (char * const restrict buf, const size_t sz)
     return total;
 }
 
-static bool  __attribute__((nonnull))
+__attribute_nonnull__
+static bool
 proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
                          char * const restrict envbuf, size_t envbufsz)
 {
@@ -488,7 +503,8 @@ proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
     return rc;
 }
 
-static int  __attribute__((nonnull))
+__attribute_nonnull__
+static int
 proxyexec_client (const int argc, char ** const restrict argv)
 {
     /* Syntax check and perform shell expansion if SSH[2]?_ORIGINAL_COMMAND.
@@ -611,7 +627,8 @@ proxyexec_client (const int argc, char ** const restrict argv)
 }
 
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 main (int argc, char *argv[])
 {
     int sfd, cfd, dup2fd, log_info = 1, daemon = false, supervised = false;

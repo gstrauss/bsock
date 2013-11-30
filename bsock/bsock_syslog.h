@@ -29,30 +29,7 @@
 #ifndef INCLUDED_BSOCK_SYSLOG_H
 #define INCLUDED_BSOCK_SYSLOG_H
 
-#include <sys/types.h>  /*(for __GNUC_PREREQ(), if available)*/
-
-#ifndef __has_attribute
-#define __has_attribute(x) 0
-#endif
-#ifndef __GNUC_PREREQ
-#  ifdef __GNUC_PREREQ__
-#    define __GNUC_PREREQ __GNUC_PREREQ__
-#  elif defined __GNUC__ && defined __GNUC_MINOR__
-#    define __GNUC_PREREQ(maj, min) \
-       ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
-#  else
-#    define __GNUC_PREREQ(maj, min) 0
-#  endif
-#endif
-
-#if __GNUC_PREREQ(4,3) || __has_attribute(cold)
-#ifndef __attribute_cold__
-#define __attribute_cold__  __attribute__ ((cold))
-#endif
-#endif
-#ifndef __attribute_cold__
-#define __attribute_cold__
-#endif
+#include "plasma/plasma_attr.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,17 +41,26 @@ enum {
   BSOCK_SYSLOG_PERROR_NOSYSLOG = 2
 };
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_syslog_setlevel (const int level);
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_syslog_setlogfd (const int fd);
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility);
 
-void  __attribute_cold__  __attribute__((format(printf,3,4)))
+__attribute_cold__
+__attribute_noinline__
+__attribute_format__((printf,3,4))
+void
 bsock_syslog (const int errnum, const int priority,
               const char * const restrict fmt, ...);
 

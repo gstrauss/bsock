@@ -36,13 +36,13 @@
 #include <poll.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
+
+#include <plasma/plasma_stdtypes.h>
 
 #include <bsock_addrinfo.h>
 #include <bsock_syslog.h>
@@ -55,22 +55,13 @@
 #define BSOCK_RESVADDR_CONFIG BSOCK_CONFIG".resvaddr"
 #endif
 
-#ifndef __has_attribute
-#define __has_attribute(x) 0
-#endif
-#if (defined(__GNUC__) && __GNUC_PREREQ(4,3)) || __has_attribute(cold)
-#ifndef __attribute_cold__
-#define __attribute_cold__  __attribute__((cold))
-#endif
-#endif
-#ifndef __attribute_cold__
-#define __attribute_cold__
-#endif
-
+/* GPS: should this be noinline elsewhere, too? or document how used in this
+ * file as on less-used code paths; maybe mark this cold, too */
 /* nointr_close() - make effort to avoid leaking open file descriptors */
-static int  __attribute__((noinline))
+__attribute_noinline__
+static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
 struct bsock_resvaddr {
     struct bsock_resvaddr *next;
@@ -106,7 +97,8 @@ bsock_resvaddr_count (void)
   #define __builtin_expect(x,y) (x)
   #endif
 #endif
-static uint32_t  __attribute__((nonnull))
+__attribute_nonnull__
+static uint32_t
 bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 {
     const unsigned char * restrict addr = (const unsigned char *)ai->ai_addr;
@@ -117,7 +109,9 @@ bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
     return h;
 }
 
-static int  __attribute__((nonnull))  __attribute__((noinline))
+__attribute_noinline__
+__attribute_nonnull__
+static int
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd)
 {
@@ -165,7 +159,8 @@ bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
     return *tfd;
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
 {
     const uint32_t h = bsock_resvaddr_hash(ai);
@@ -191,7 +186,10 @@ struct bsock_resvaddr_cleanup {
     struct bsock_resvaddr_alloc *ar;
 };
 
-static void  __attribute__((nonnull))  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+__attribute_nonnull__
+static void
 bsock_resvaddr_cleanup (void * const arg)
 {
     struct bsock_resvaddr_cleanup * const cleanup =
@@ -238,7 +236,9 @@ bsock_resvaddr_cleanup (void * const arg)
 /* XXX: future
  * bsock_resvaddr_config() and bsock_authz_config() should share parsing code */
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_resvaddr_config (void)
 {
     FILE *cfg;

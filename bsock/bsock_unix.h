@@ -29,6 +29,8 @@
 #ifndef INCLUDED_BSOCK_UNIX_H
 #define INCLUDED_BSOCK_UNIX_H
 
+#include "plasma/plasma_attr.h"
+
 #include <sys/types.h>
 #include <sys/uio.h>
 
@@ -67,21 +69,25 @@ extern "C" {
 #define BSOCK_ANCILLARY_DATA_MAX 10240
 #endif
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_unix_socket_connect (const char * const restrict sockpath);
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_unix_socket_bind_listen (const char * const restrict sockpath,
                                int * const restrict bound);
 
-ssize_t  __attribute__((nonnull (4)))
+__attribute_nonnull_x__((4))
+ssize_t
 bsock_unix_recv_fds (const int fd,
                      int * const restrict rfds,
                      unsigned int * const restrict nrfds,
                      struct iovec * const restrict iov,
                      const size_t iovlen);
 
-ssize_t  __attribute__((nonnull (4,6)))
+__attribute_nonnull_x__((4,6))
+ssize_t
 bsock_unix_recv_fds_ex (const int fd,
                         int * const restrict rfds,
                         unsigned int * const restrict nrfds,
@@ -90,14 +96,16 @@ bsock_unix_recv_fds_ex (const int fd,
                         char * const restrict ctrlbuf,
                         const size_t ctrlbuf_sz);
 
-ssize_t  __attribute__((nonnull (4)))
+__attribute_nonnull_x__((4))
+ssize_t
 bsock_unix_send_fds (const int fd,
                      const int * const restrict sfds,
                      unsigned int nsfds,
                      struct iovec * const restrict iov,
                      const size_t iovlen);
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_unix_getpeereid (const int s,
                        uid_t * const restrict euid,
                        gid_t * const restrict egid);

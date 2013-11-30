@@ -26,6 +26,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <plasma/plasma_attr.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -35,7 +37,8 @@
 #include <bsock_addrinfo.h>
 #include <bsock_bind.h>
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 main (int argc, char *argv[])
 {
     int nfd;

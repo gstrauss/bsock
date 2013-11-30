@@ -37,12 +37,12 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 
 extern char **environ;
+
+#include <plasma/plasma_stdtypes.h>
 
 #include <bsock_addrinfo.h>
 #include <bsock_unix.h>
@@ -69,19 +69,21 @@ extern char **environ;
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
-static int  __attribute__((noinline))  /*(most client time is spent waiting)*/
+__attribute_noinline__  /*(most client time is spent waiting)*/
+static int
 retry_poll_fd (const int fd, const short events, const int timeout)
 {
     struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
     int n; /*EINTR results in retrying poll with same timeout again and again*/
-    do { n = poll(&pfd, 1, timeout); } while (-1 == n && errno == EINTR);
+    retry_eintr_do_while(n = poll(&pfd, 1, timeout), -1 == n);
     if (0 == n) errno = ETIME; /* specific for bsock; not generic */
     return n;
 }
 
-static int  __attribute__((nonnull))
+__attribute_nonnull__
+static int
 bsock_bind_send_addr_and_recv (const int fd,
                                const struct addrinfo * const restrict ai,
                                const int sfd)
@@ -124,7 +126,8 @@ bsock_bind_send_addr_and_recv (const int fd,
     return errnum;
 }
 
-static bool  __attribute__((nonnull))
+__attribute_nonnull__
+static bool
 bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
 {
     /* (ai->ai_next is ignored) */
@@ -156,7 +159,7 @@ bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
     else if (-1 != pid) { /* parent */
         nointr_close(sv[0]);
         errnum = bsock_bind_send_addr_and_recv(fd, ai, sv[1]);
-        while (pid != waitpid(pid,NULL,0) && errno == EINTR) ;
+        retry_eintr_while(pid != waitpid(pid,NULL,0));
         /* reap child process but ignore exit status; program might be ignoring
          * SIGCHLD or might have custom SIGCHLD handler, either of which would
          * prevent waitpid() above from reliably obtaining child status */
@@ -171,7 +174,8 @@ bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
     return (0 == errnum);
 }
 
-static bool  __attribute__((nonnull))
+__attribute_nonnull__
+static bool
 bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
 {
     int errnum;
@@ -196,7 +200,8 @@ bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
     return (0 == errnum);
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai)
 {
     /* (return value 0 for success, -1 upon error; match return value of bind())

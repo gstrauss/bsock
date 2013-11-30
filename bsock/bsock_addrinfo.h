@@ -29,10 +29,11 @@
 #ifndef INCLUDED_BSOCK_ADDRINFO_H
 #define INCLUDED_BSOCK_ADDRINFO_H
 
-#include <sys/types.h>
+#include "plasma/plasma_attr.h"
+#include "plasma/plasma_stdtypes.h"
+
 #include <sys/socket.h>
 #include <netdb.h>
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,21 +67,25 @@ struct bsock_addrinfo_strs {
 
 /* ai->ai_addr must be provided containing usable storage of len ai->ai_addrlen
  * (recommended: #include <sys/socket.h> and use struct sockaddr_storage) */
-bool  __attribute__((nonnull))
+__attribute_nonnull__
+bool
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
                          const struct bsock_addrinfo_strs *
                            const restrict aistr);
 
-bool  __attribute__((nonnull))
+__attribute_nonnull__
+bool
 bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
                        struct bsock_addrinfo_strs * const aistr,
                        char * const restrict buf, const size_t bufsz);
 
-bool  __attribute__((nonnull))
+__attribute_nonnull__
+bool
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str);
 
-bool  __attribute__((nonnull (2,3)))
+__attribute_nonnull_x__((2,3))
+bool
 bsock_addrinfo_recv_ex (const int fd,
                         struct addrinfo * const restrict ai,
                         int * const restrict rfd,
@@ -90,7 +95,8 @@ bsock_addrinfo_recv_ex (const int fd,
 #define bsock_addrinfo_recv(fd, ai, rfd) \
         bsock_addrinfo_recv_ex((fd),(ai),(rfd),0,0)
 
-bool  __attribute__((nonnull))
+__attribute_nonnull__
+bool
 bsock_addrinfo_send (const int fd,
                      const struct addrinfo * const restrict ai, const int sfd);
 

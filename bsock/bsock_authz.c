@@ -45,13 +45,13 @@
 #include <pwd.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
+
+#include <plasma/plasma_stdtypes.h>
 
 #include <bsock_addrinfo.h>
 #include <bsock_syslog.h>
@@ -60,22 +60,10 @@
 #error "BSOCK_CONFIG must be defined"
 #endif
 
-#ifndef __has_attribute
-#define __has_attribute(x) 0
-#endif
-#if (defined(__GNUC__) && __GNUC_PREREQ(4,3)) || __has_attribute(cold)
-#ifndef __attribute_cold__
-#define __attribute_cold__  __attribute__((cold))
-#endif
-#endif
-#ifndef __attribute_cold__
-#define __attribute_cold__
-#endif
-
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
 struct bsock_authz_hash_st {
     uid_t mask;
@@ -86,7 +74,8 @@ struct bsock_authz_hash_st {
 
 static struct bsock_authz_hash_st * restrict bsock_authz_hash;
 
-static bool  __attribute__((nonnull))
+__attribute_nonnull__
+static bool
 bsock_authz_valid (const struct addrinfo * const restrict ai,
                    const uid_t uid, const gid_t gid)
 {
@@ -107,7 +96,8 @@ bsock_authz_valid (const struct addrinfo * const restrict ai,
     return ((errno = EACCES), false);
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_authz_validate (struct addrinfo * const restrict ai,
                       const uid_t uid, const gid_t gid)
 {
@@ -143,7 +133,9 @@ bsock_authz_validate (struct addrinfo * const restrict ai,
     return false;
 }
 
-static int  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+static int
 bsock_authz_config_parse (struct bsock_authz_hash_st* const restrict authz_hash,
                           char * const restrict buf)
 {
@@ -210,7 +202,9 @@ bsock_authz_config_parse (struct bsock_authz_hash_st* const restrict authz_hash,
 /* XXX: future
  * bsock_resvaddr_config() and bsock_authz_config() should share parsing code */
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_authz_config (void)
 {
     char * restrict buf = NULL;

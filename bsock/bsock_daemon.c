@@ -34,7 +34,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
@@ -42,13 +41,15 @@
 
 extern char **environ; /* avoid #define _GNU_SOURCE for visibility of environ */
 
+#include <plasma/plasma_stdtypes.h>
+
 #include <bsock_syslog.h>
 #include <bsock_unix.h>
 
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
-{ int r; do { r = close(fd); } while (r != 0 && errno == EINTR); return r; }
+{ int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
 bool
 bsock_daemon_setuid_stdinit (void)
@@ -75,13 +76,14 @@ bsock_daemon_setuid_stdinit (void)
 }
 
 static void
-bsock_daemon_sa_ignore (int signum __attribute__((unused)))
+bsock_daemon_sa_ignore (int signum  __attribute_unused__)
 {   /*(handler gets reset to SIG_DFL by execve(); SIG_IGN would be inherited)*/
     /* ignore signal */
 }
 
-static void  __attribute__((noreturn))
-bsock_daemon_sa_handler (int signum __attribute__((unused)))
+__attribute_noreturn__
+static void
+bsock_daemon_sa_handler (int signum  __attribute_unused__)
 {
     exit(EXIT_SUCCESS);  /* executes atexit() handlers */
 }
@@ -228,7 +230,8 @@ bsock_daemon_atexit (void)
         (void)unlink(bsock_daemon_socket_path);
 }
 
-int  __attribute__((nonnull))
+__attribute_nonnull__
+int
 bsock_daemon_init_socket (const char * const restrict sockpath,
                           const uid_t uid, const gid_t gid, const mode_t mode)
 {

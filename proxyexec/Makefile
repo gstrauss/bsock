@@ -105,6 +105,9 @@ clean: clean-proxyexec
 clean-proxyexec:
 	$(RM) proxyexec proxyexec.o
 
-proxyexec.o: $(BSOCK_INCLUDE)/bsock/bsock_daemon.h \
-             $(BSOCK_INCLUDE)/bsock/bsock_syslog.h \
-             $(BSOCK_INCLUDE)/bsock/bsock_unix.h
+proxyexec.o: $(BSOCK_INCLUDE)/bsock/bsock_daemon.h      \
+             $(BSOCK_INCLUDE)/bsock/bsock_syslog.h      \
+             $(BSOCK_INCLUDE)/bsock/bsock_unix.h        \
+             $(BSOCK_INCLUDE)/plasma/plasma_attr.h      \
+             $(BSOCK_INCLUDE)/plasma/plasma_feature.h   \
+             $(BSOCK_INCLUDE)/plasma/plasma_stdtypes.h

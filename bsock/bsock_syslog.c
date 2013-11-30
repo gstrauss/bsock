@@ -43,19 +43,25 @@ static int bsock_syslog_logfd = STDERR_FILENO;
 static const char *bsock_syslog_ident;
 static size_t bsock_syslog_identlen = 0;
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_syslog_setlevel (const int level)
 {
     bsock_syslog_level = level;
 }
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_syslog_setlogfd (const int fd)
 {
     bsock_syslog_logfd = fd;
 }
 
-void  __attribute_cold__
+__attribute_cold__
+__attribute_noinline__
+void
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility)
 {
@@ -65,7 +71,10 @@ bsock_syslog_openlog (const char * const ident,
     bsock_syslog_identlen = (NULL != ident) ? strlen(ident) : 0;
 }
 
-void  __attribute_cold__  __attribute__((format(printf,3,4))) 
+__attribute_cold__
+__attribute_noinline__
+__attribute_format__((printf,3,4))
+void
 bsock_syslog (const int errnum, const int priority,
               const char * const restrict fmt, ...)
 {
