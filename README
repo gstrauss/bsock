@@ -8,6 +8,8 @@ removes the requirement that many daemons start with root privileges in order
 to bind to assigned ports.
 
 The bsock daemon listens for requests on a local unix domain socket.
+ 
+libbsock.so provides reusable bsock and bpoll interfaces.
 
 
 
@@ -21,3 +23,12 @@ service program running under a single account.
 proxyexec handles client/server communication by passing argv and stdin,
 stdout, stderr fds over unix domain socket between processes owned by
 different users.
+
+
+
+bpoll - bookkeeping poll interface
+
+bpoll provides a thin and portable abstraction interface using historical poll
+semantics to detect ready events on socket, pipe, and other descriptors.
+bpoll aims to provide a bookeeping event polling framework to encapsulate a
+variety of poll implementations provided by different platforms.

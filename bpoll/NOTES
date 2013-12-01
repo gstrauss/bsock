@@ -1,0 +1,1266 @@
+Introduction:
+-------------
+
+bpoll - bookkeeping poll interface
+
+bpoll provides a thin and portable abstraction interface using historical
+poll semantics to detect ready events on socket, pipe, and other descriptors.
+
+bpoll makes addition, removal, and modification as cheap as possible because
+multiple additions, modifications and removals may be made between each poll.
+Where possible, updates are deferred and combined, often into a single update
+performed at poll time.
+
+
+Interfaces:
+-----------
+
+bpollelt_t - element tracking descriptor interest and readiness state
+bpollset_t - bookkeeping set of bpollelt_t and cache of kernel state
+
+basic operations: 
+  create, init, add, modify, remove, poll, destroy, and data accessors
+
+bpoll_mechanisms ()
+  return bitmask of BPOLL_M_* supported on the current OS platform
+
+bpoll polling mechanisms (can be bitwise-'or'd ('|') together)
+  BPOLL_M_NOT_SET        poll mechanism not set
+  BPOLL_M_POLL           poll or select (all)
+  BPOLL_M_DEVPOLL        /dev/poll      (Solaris)
+  BPOLL_M_EPOLL          epoll          (Linux)
+  BPOLL_M_KQUEUE         kqueue         (FreeBSD, NetBSD, OpenBSD, MacOSX)
+  BPOLL_M_EVPORT         event port     (Solaris)
+  BPOLL_M_POLLSET        pollset        (AIX)
+
+bpoll_create (vdata, fn_cb_event, fn_cb_close, fn_mem_alloc, fn_mem_free)
+  create basic bpollset structure
+  (separate routine from bpoll_init() so that a cleanup can be registered
+    (i.e. bpoll_destroy()) before opening /dev/poll, kqueue, epoll, etc.)
+  all parameters are optional and can be NULL
+    vdata is void pointer to user data; passed to fn_mem_alloc(), fn_mem_free()
+    fn_cb_event is callback for ready events on each bpollelt
+    fn_cb_close is callback for when bpollelt is removed from bpollset
+                and BPOLL_FL_CLOSE is set in the bpollelt
+    fn_mem_alloc is memory allocation routine; malloc is used internally if NULL
+    fn_mem_free  is memory free routine; free is used internally if NULL
+  return pointer to allocated bpollset on success, NULL on failure and errno set
+
+bpoll_init (bpollset, flags, limit, queue_sz, block_sz)
+  initialize bpollset structure
+    flags        init flags: bitmask of poll mechanism preferences
+                 BPOLL_M_NOT_SET is equivalent to bpoll_mechanisms();
+                 both result in "choose a mechanism for me"
+    limit        maximum number of fds to support in bpollset
+    queue_sz     maximum number of pending events before submitting to kernel;
+                 maximum number of ready events returned each bpoll_poll()
+    block_sz     additional memory to allocate into bpollelt->udata
+                 (convenience, data locality, avoids extra memory management)
+  return 0 for success, errno for failure
+
+bpoll_enable_thrsafe_add (bpollset)
+  initialize bpollset to take locks around add and remove from bpollset
+  return 0 for success, errno = EINVAL for failure
+    EINVAL if poll mechanism is BPOLL_M_POLL (thread-safe add not available)
+             (poll(), select() do not support modifying fd set from one thread
+              while another thread is polling kernel for events in that fd set)
+           if bpollset size <= BPOLL_FD_THRESH (currently 8)
+           if not compiled with -D_THREAD_SAFE
+
+bpoll_kernel (bpollset, timespec)
+  poll kernel for ready events
+  return number of ready events found on success,
+         0 if timeout, -1 and errno set on failure (very similar to poll())
+                       -1 and EINTR if interrupted by signal
+
+bpoll_process (bpollset)
+  process each bpollelt with pending event(s) (called after bpoll_kernel())
+  (allows caller to do something between bpoll_kernel and bpoll_process())
+  run fn_cb_event() (if set in bpoll_create())
+  else store ready events in bpollelt results list
+  return nfound; same value as bpoll_kernel()
+
+bpoll_poll (bpollset, timespec)
+  convenience: call bpoll_kernel() and bpoll_process()
+
+bpoll_destroy (bpollset)
+  clean up bpollset and release allocated memory
+
+bpoll_flush_pending (bpollset)
+  flush bpollset deferred changes to kernel, including pending close() of fds
+  (manually triggers that which occurs upon bpoll_poll() or bpoll_kernel())
+  return 0 for success, errno for failure
+
+
+bpoll_elt_init (bpollset, bpollelt, fd, fdtype, flags)
+  initialize bpollelt (allocated from bpollset if bpollelt is NULL)
+    fd      file descriptor
+    fdtype  type of file descriptor (BPOLL_FD_*)
+    flags   options (BPOLL_FL_*)
+  return pointer to bpollelt on success, NULL on failure and errno set
+
+bpoll element file descriptor type
+  BPOLL_FD_NOT_SET       descriptor type is not set
+  BPOLL_FD_SOCKET        descriptor is socket
+  BPOLL_FD_PIPE          descriptor is pipe
+  BPOLL_FD_FILE          descriptor is file
+  BPOLL_FD_EVENT         descriptor is eventfd
+  BPOLL_FD_SIGNAL        descriptor is signalfd
+  BPOLL_FD_TIMER         descriptor is timerfd
+  BPOLL_FD_INOTIFY       descriptor is inotify fd
+
+bpoll element bit flags
+  BPOLL_FL_ZERO          no flags set
+  BPOLL_FL_CLOSE         close fd upon removal from bpollset
+
+bpoll_elt_add (bpollset, bpollelt, events)
+  add bpollelt to bpollset with given event interest (BPOLL*)
+  return 0 on success, errno on failure
+
+bpoll_elt_modify (bpollset, bpollelt, events)
+  modify event interest (BPOLL*) for bpollelt
+  return 0 on success, errno on failure
+
+bpoll_elt_remove (bpollset, bpollelt)
+  queue bpollelt for removal (and optional close() of BPOLL_FL_CLOSE is set)
+  (deferred until bpoll_poll(), bpoll_kernel() or bpoll_flush_pending())
+  return 0 on success, errno on failure
+
+bpoll_elt_destroy (bpollset, bpollelt)
+  destroy bpollelt; intended for use only in error case if bpoll_elt_add() fails
+
+bpoll_elt_get (bpollset, fd)
+  retrieve bpollelt from bpollset for given fd
+
+bpoll_elt_modify_by_fd (bpollset, fd, events)
+  convenience: call bpoll_elt_modify() with result from bpoll_elt_get()
+
+bpoll_elt_remove_by_fd (bpollset, fd)
+  convenience: call bpoll_elt_remove() with result from bpoll_elt_get()
+
+bpoll_elt_add_immed (bpollset, bpollelts, nelts, events)
+  add bpollelts to kernel immediately
+  (e.g. safely add bpollelts to bpollset in different thread)
+  (used with bpollset after bpoll_enable_thrsafe_add())
+  (bpollelts must not already be part of bpollset; not checked)
+    bpollelts  list of bpollelts
+    nelts      pointer to number of bpollelts in list
+               (number of bpollelts successfully added is returned in pointer)
+    events     event interest (same interest applied to all bpollelts in list)
+  return 0 on success, errno on failure (though check nelts for partial success)
+                       ENOSPC if bpollset limit hit (but check partial success)
+
+bpoll_elt_rearm_immed (bpollset, bpollelts, nelts, events)
+  rearm bpollelts in kernel immediately (for use with BPOLLDISPATCH)
+  (e.g. when bpollelts processed in different thread from bpollset dispatcher)
+  (bpollelts must be part of bpollset and have had event returned; not checked)
+    bpollelts  list of bpollelts
+    nelts      pointer to number of bpollelts in list
+               (number of bpollelts successfully rearmed is returned in pointer)
+    events     event interest (same interest applied to all bpollelts in list)
+  return 0 on success, errno on failure (though check nelts for partial success)
+
+bpoll_elt_get_fd (bpollelt)            get bpollelt tracked descriptor (fd)
+bpoll_elt_get_events (bpollelt)        get bpollelt events interest
+bpoll_elt_get_revents (bpollelt)       get bpollelt events ready
+bpoll_elt_get_flags (bpollelt)         get bpollelt flags (e.g. BPOLL_FL_CLOSE)
+bpoll_elt_get_udata (bpollelt)         get bpollelt user data
+bpoll_elt_set_udata (bpollelt, vdata)  set bpollelt user data
+bpoll_elt_clear_revents (bpollelt)     clear bpollelt revents
+
+bpoll_get_is_full (bpollset)           boolean check if bpollset at capacity
+bpoll_get_nelts_avail (bpollset)       number slots available until capacity
+bpoll_get_nelts (bpollset)             get bpollset bpollelt num tracked
+bpoll_get_nfound (bpollset)            get bpollset results num (-1 on error)
+bpoll_get_results (bpollset)           get bpollset results list
+bpoll_get_vdata (bpollset)             get bpollset user data
+bpoll_set_vdata (bpollset)             set bpollset user data
+bpoll_get_sigmask (bpollset)           get signal mask (Linux only)
+bpoll_set_sigmask (bpollset,maskp)     set signal mask (Linux only)
+
+
+Implementation Notes:
+---------------------
+
+bpoll provides a fairly raw set of interfaces.  To yield the best results,
+please cooperate with the constraints provided by bpoll and build workflows
+that match expectations.  (Notably, be sure not to close descriptors out from
+underneath bpoll.)  The document contains random snippets of notes.
+
+For simplicity and raw performance, the bpoll interfaces perform actions in
+chunks, do not employ locking by default, and therefore have no locking
+overhead (with the exception of the power-2 block allocator which locks on
+very rare occasions that additional memory needs to be allocated).  Each
+bpollset is intended to be used by independent threads, though limited
+locking can be enabled by calling bpoll_enable_thrsafe_add() on the bpollset
+for some usage models.  Still, caller must provide lock protection if using
+the same bpollset in multiple threads, though such usage is not recommended.
+When used in a threaded environment, bpoll scales best when each thread has
+its own independent bpollset, populated with a set of descriptors by routines
+which pass the listen socket or by some routine which accepts and distributes
+connections.  There are a number of approaches by which to do this.  See the
+section "Scaling Considerations".  An excellent write-up of some of the design
+parameters that should be considered can be found at
+(http://pl.atyp.us/content/tech/servers.html).
+
+bpoll aims to provide a portable poll()-style interface to various event
+mechanisms.  The typical POLL* flags map to BPOLL* flags.  However, even in
+the case of poll() implementations, not all flags are implemented, or have
+the same behavior.  BPOLLIN (POLLIN) and BPOLLOUT (POLLOUT) are as close as
+they come to portable but even then BPOLLOUT might not be valid for certain
+types of file descriptors.  Similarly, some flags may (or may not) be ignored
+if passed in as desired events -- e.g. BPOLLERR, BPOLLHUP, BPOLLNVAL -- though
+those flags might be returned in revents.  In general, bpoll does not mask out
+flags and instead passes user-provided flags through to the underlying event
+mechanisms.  This provides access to optional features and does not appear to
+cause any harm.  Still, callers attempting to write portable code should treat
+these features as optional, and should not require them for proper operation.
+
+Caller must call bpoll_create() and bpoll_init() before bpoll_elt_add().
+fn_mem_alloc is expected to set errno (e.g. ENOMEM) if it returns NULL
+  (required by Unix98 standard for malloc(), calloc(), realloc())
+
+Caller must be prepared to handle EINTR when using bpoll_poll(),
+because timeout < 0 can only be interrupted by a signal, and so we do not
+want to automatically restart the call if EINTR is received.  Other types
+of errors are probably not recoverable, so bpoll_destroy(bpollset) should 
+be called.
+
+Caller must call bpoll_destroy() when finished with bpollset or memory
+and possibly descriptor (kqueue, /dev/poll, epoll, event port) will leak
+(Caller may instead call bpoll_init() to reinitialize the bpollset for reuse)
+
+The bpollset queue_sz is specified as an argument to bpoll_init().  This value
+is used for memory allocation for pending queue size and bpoll internal cache
+of results from the kernel.  The queue_sz can be any positive value up to the
+limit value that was passed to bpoll_init().  If queue_sz is zero or > limit,
+then queue_sz is set to be the same as limit.  (For poll/select mechanism,
+queue_sz is ignored and the value of limit is used for memory allocation.)
+In order to reduce latency between events being ready and those events being
+processed, it is recommended that this value be set to 32 or 64, or some other
+value that is determined from performance testing.  Choosing an appropriate
+processing chunk size will almost surely outperform the extreme values of one
+or thousands.
+
+bpollelt_t * is efficiently allocated by passing NULL as bpollelt_t * arg to
+bpoll_elt_init() and is the recommended way to allocate struct bpollelt_t.
+After allocation, caller can call bpoll_elt_add() and bpoll_elt_remove().
+Calling bpoll_elt_remove() releases the bpollelt_t back to the pool, so it
+is not to be reused.  Call bpoll_elt_init() to obtain a new bpollelt_t.
+bpoll_destroy() cleans up memory allocated for bpollset.
+
+It is a mistake to call bpoll_elt_remove() more than once on the same
+bpollelt unless the bpollelt was allocated by caller and follows a separate
+bpoll_elt_add().  Caller can bpoll_elt_modify() with events = 0 to
+(temporarily) disable without removing bpollelt from bpollset.  Separately,
+it is also a mistake to bpoll_elt_add_immed() a bpollelt to a bpollset in
+a different thread if the bpollelt was marked for removal from the bpollset
+and has not yet been flushed to kernel (also implies that bpollelt does not
+have BPOLL_FL_CLOSE flag set).  It is best to just avoid attempting to reuse
+fds this way; this situation does not occur in any recommended bpoll usage
+model.
+
+Commit of adds/removes to bpollset are deferred where possible.  Therefore,
+it is recommended that caller allow bpollset to manage bpollelt memory, and
+to manage close() (BPOLL_FL_CLOSE) on descriptors that are part of bpollset.
+Both of these are determined for each descriptor with call to bpoll_elt_init().
+Caller can trigger a flush of pending changes with bpoll_flush_pending().
+If caller provides bpollelt memory, caller must not reuse bpollelt, or free the
+associated memory, until after the next call to bpoll_poll() or bpoll_kernel()
+or bpoll_flush_pending().
+
+A bpollelt must have bpollelt->fd and bpollelt->fdtype initialized via
+bpoll_elt_init() before passing the bpollelt to bpoll_elt_add() (which fills
+bpollelt->events, bpollelt->revents)  (If fdtype is unknown, caller might
+call fstat() on descriptor to find out, but if that is too expensive, then
+BPOLL_FD_SOCKET is generally a good choice.)  Additionally, bpollelt->udata
+optionally contains (void *) to user data ("udata" -- whatever caller wants).
+After bpoll_elt_remove(), bpollelt should not be reused if allocated from
+bpollset.  Call bpoll_elt_init() to obtain a new bpollelt.  If bpollelt was
+not allocated from bpollset, caller must wait until after next successful call
+to bpoll_poll(), bpoll_kernel(), or bpoll_flush_pending() on the bpollset from
+which the bpollelt was removed, and then bpoll_elt_init() must still be called
+on the bpollelt to re-initialize the bpollelt before it can be reused.
+
+To find if an fd is part of a bpollset_t, use bpoll_elt_get(bpollset, fd)
+and check non-NULL.  (This effectively implements /dev/poll DP_ISPOLLED)
+Likewise, to find current set of events polled, get the bpollelt_t
+and then bpoll_elt_get_events(bpollelt) (bpollelt passed must not be NULL).
+(Note that bpoll framework defers the commit of bpollelt->events for certain
+ polling mechanisms, so the operating system might not yet have been told
+ about consumer's interest in the flags set in bpollelt->events.)
+
+A bpollelt_t can only be a member of one bpollset_t at a time and may
+not be added multiple times to the same bpollset_t.  No effort is made to
+detect if bpollelt_t is already a member of a different bpollset_t
+because that would require the caller to initialize (semi-)private elements
+of the bpollelt_t.  One or more bpollset_t will be corrupted if an
+bpollelt_t already in a bpollset_t is added to another bpollset_t!
+
+For efficiency, bpollset_t prepares bookkeeping structures for use in 
+poll(), select(), or ...(whatever is supported to poll for ready descriptors)
+Therefore, do not change the state of an bpollelt_t that has been added to
+a bpollset_t (e.g. closing or changing a socket to a pipe or other file
+descriptor) because this will corrupt the bpollset_t cache (and the file
+descriptor may be reused elsewhere).  Remove a bpollelt_t from the bpollset_t
+before closing it, bpoll_flush_pending() and re-add bpollelt_t after opening
+or reopening the new file/socket/pipe on the same descriptor.  Failure to
+remove a closed fd may result in POLLNVAL being returned immediately, even if
+there are no events being polled for on the fd (pollfd.events == 0).  This may
+result in spinning and excessive CPU usage because the fd will always be ready
+immediately.
+
+bpoll bookkeeping stipulates that caller has an obligation to not close() fd
+out from underneath bpoll.  bpoll manages the fd while it is part of the
+bpollset and defers close() of fd (when BPOLL_FL_CLOSE is set) until after fd
+has been removed from kernel poll mechanism.  When BPOLL_FL_CLOSE is set,
+caller can combine with bpollset fn_cb_close() hook to be informed when
+bpollset close()s the descriptor.  If BPOLL_FL_CLOSE is not set, then caller
+must not close() fd until after successful bpoll_poll(), bpoll_kernel(), or
+bpoll_flush_pending().  Note that since bpoll defers close(), it is not
+possible for caller to accidentally add a different connection with same
+fd number to bpollset since the original fd has not been close()d yet.
+
+These routines aim to be reentrant and thread-safe, though multiple threads
+must use a mutex, semaphore, or other lock if they intend to call these
+routines on the _same_ bpollset_t.  Using diffent bpollset_t's in different
+threads is thread-safe, but calling routines on the _same_ bpollset_t from
+other threads is not thread-safe.  Since most callers will not need the
+locks, this overhead has been avoided and left up to the caller.  (If there
+is sufficient need, I'll add a mutex element to the bpollset_t structure and
+will add an API that implements locking around appropriate bpoll function
+calls if the mutex pointer is not NULL).
+
+bpoll_poll() and bpoll_kernel() time param is pointer to struct timespec.
+Some polling mechanisms have millisecond resolution, some have microsecond
+resolution, and some have nanosecond resolution.  If pointer is NULL, this
+is equivalent to infinite poll (no timeout).  Anything else is passed with
+as much precision as accepted by the polling mechanism.  Intended usage is
+to set timeout once with one of the macros bpoll_timespec_from_sec_nsec() or
+bpoll_timespec_from_msec(), and then to pass bpoll_timespec(bpollset) as the
+second parameter to bpoll_poll() or bpoll_kernel().  Any of the above macros
+can be specified as the second argument to these routines to set the timeout
+at the same time as the call to bpoll_poll() or bpoll_kernel(), without the
+need to maintain a separate struct timespec.
+
+Similar to the unix poll(), all descriptors with pending events should be
+checked after each call to bpoll_kernel().  Those with errors should be
+removed from the bpollset_t and handled as appropriate (or else the next
+poll might return immediately with the same errors conditions).
+Always handle all bpollset->nfound events since an error event might
+be returned for an fd even if the requested events on an fd is none
+(pollfd.events == 0 (zero)).  Also, depending on the underlying fdtype and poll
+mechanism, events may be lost if not handled before another call to poll.
+
+Recommended: use fcntl(fd, F_SETFL, O_NONBLOCK) on pipes, sockets, fifos, etc.
+(Also set F_SETFD FD_CLOEXEC, as appropriate, on descriptors added to bpollset.)
+Using non-blocking I/O to handle events is strongly recommended, but is the
+caller's prerogative.  In some cases reported on the internet (independent of
+bpoll), various mechanisms might report spurious events, or report events that
+have been delivered to another thread.  If descriptors are blocking, then
+a spurious event might cause a thread to hang until the next event occurs.
+Use non-blocking I/O and avoid this, e.g. set O_NONBLOCK on listen() sockets
+to avoid possible blocking accept().  See accept4() on Linux for an efficient
+way to set SOCK_NONBLOCK and SOCK_CLOEXEC during the accept4().
+
+Linux documents that spurious wakeups are possible with corrupt network data:
+From man select(2) on Linux:
+       Under Linux, select() may report a socket file descriptor as "ready for
+       reading",  while nevertheless a subsequent read blocks.  This could for
+       example happen when data has arrived but  upon  examination  has  wrong
+       checksum and is discarded.  There may be other circumstances in which a
+       file descriptor is spuriously reported as ready.  Thus it may be  safer
+       to use O_NONBLOCK on sockets that should not block.
+
+Use accessor macros in bpoll.h (e.g. bpoll_elt_clear_revents()) instead of
+directly accessing members of struct bpollset_t, just in case these accessors
+later turn into functions.
+
+pselect() (in POSIX.1-2001) and ppoll() (Linux-only) and epoll_pwait()
+(also Linux-only) have better timer precision than does select() and support
+atomically changing and restoring the signal mask for execution of the kernel
+poll.  man pselect(2) on Linux and see Description for reasons to use ppoll(),
+pselect(), and epoll_pwait().  bpoll uses these signal safe interfaces where
+available, but the sigmask is not enabled unless caller allocates persistent
+storage (not on stack) and assigns to bpollset with bpoll_set_sigmask().
+Typical use involves initializing the mask with sigemptyset().  Signal
+manipulation is -not- emulated for platforms and polling mechanism without
+native support.)  Note that in addition to POSIX.1-2001 pselect(), some
+operating systems provide alternative ways to handle signals, such as
+signalfd(2) on Linux.
+
+When using bpoll callbacks to process events (fn_cb_event()) there is an extra
+argument of an int.  This is the extra data provided by queue.  It is -1 for
+all other mechanisms.  If it is not -1, the callback is welcome to put the
+extra info to good use.  'man kevent' for more info about this filter-specific
+data.
+
+kqueue provides a special mode for FIFOs by which the state of the FIFO can be
+reset after the last writer closes its connection to the FIFO.  kqueue sets
+EV_EOF and this must be cleared with EV_CLEAR before an EVFILT_READ filter will
+return when a new writer connects.  bpoll provide not special support for this,
+but caller can change bpollelt state of BPOLLET (off->on->off or on->off->on)
+to have bpollset send BPOLLET (mapped to EV_CLEAR) to kernel to reset the FIFO.
+Portable code will close() the FIFO and re-open() it to estable new connection,
+e.g. by removing the bpollelt from the bpollset, re-open()ing the FIFO, and
+adding new bpollelt to bpollset.
+
+There is wildly different behavior from different event mechanisms after a fork.
+Therefore, it is recommended that bpoll_destroy(bpollset) be run in forked
+children, and that the bpollset not be reused in children.  Instead, a new
+bpollset should be created.  (There are ways to recover the bpollset after
+fork, but these have not been implemented.  Might do so if there are sufficient
+requests.)  Some examples of differences: Solaris event ports are still valid,
+but do not permit the child to remove an fd from the event port.  For epoll,
+descriptors are still valid in the child, but must be replaced in epoll set
+since an underlying identifier for the descriptor has changed from perspective
+of epoll.  YMMV.  (Might use pthread_atfork() to scaffold detection of fork)
+
+Metrics and logging is better done by application or at a layer above bpoll.
+
+
+Origins of yet another event framework
+
+bpoll is yet another event framework when numerous, well respected event
+frameworks such as libev and libevent already exist (see References below).
+So why was bpoll written?  The original code was written around 2003 after
+reading papers about libevent, and was written towards the Apache Portable
+Runtime (APR) and a custom Apache module for CGI.  bpoll was originally named
+ppoll (for "portable poll") but was renamed after Linux kernel added pselect
+and ppoll in 2004.  libev was created years later in 2007.  Now, even more
+years have passed and this author still finds bpoll as a useful base layer for
+event handing (as evidenced by the bpoll integration into bsock) and efficient
+scaling to multiple threads (available, even though not used by bsock).
+
+bpoll is not as featureful as libev or libevent.  bpoll provides a lower-level
+abstraction with a poll-based interface, but does not provide timers, signal
+handlers, and buffered I/O layers (e.g. non-blocking access to read/write of a
+file from/to disk, which otherwise might be an unintended blocking operation).
+Some similar features might be layered on top of bpoll in the future.
+
+
+Event processing (overview)
+
+When a bpollset is created with bpoll_create(), either a callback routine is
+provided to handle events (fn_cb_event) or NULL is passed.  When bpoll_poll()
+is called, if fn_cb_event is not NULL, then it will be called for each
+bpollelt with ready event(s).  If fn_cb_event is NULL, then an array of 
+bpoll_get_nfound(bpollset) bpollelts with ready event(s) can be retrieved with 
+bpoll_get_results(bpollset).  (Return value of bpoll_poll() is also nfound.)
+Caller can then walk the array and call routine(s) to handle each bpollelt.
+
+If bpollset fn_cb_event is NULL, caller must bpoll_elt_clear_revents(bpollelt)
+after processing ready event(s) reported by that bpollelt Upon an error
+condition (BPOLLERR), caller should instead call bpoll_elt_remove().
+
+If bpollset fn_cb_event is NULL, it is possible (although highly unlikely) for
+bpoll_poll() to return -1 with ENOMEM, yet bpoll_get_nfound() is > 0.  If this
+is the case, then caller should handle ENOMEM as appropriate and recover by
+calling bpoll_process().
+
+There does not appear to be any appreciable difference in performance between
+processing events via callback or via array of events as the processing costs
+using system calls often far exceed function call overhead of the callback.
+(YMMV.)  The array of bpollelts gives the caller a view into all ready
+elements in the set returned, including both read and write filters if both
+were returned in the kqueue result set.  On the other hand, the callback is
+more OO-style, and in the case of kqueue provides some additional information,
+depending on the filter, though the callback might be called on the same
+bpollelt more than once if there are multiple filters (i.e. read and write)
+set for the underlying fd.  In other words, the callback is invoked while
+bpoll is processing results from kernel, rather than after bpoll has processed
+all results from the kernel.
+
+Aside: bpoll_poll() bpoll_kernel() bpoll_process() routines must not be called
+from within callbacks, or while processing the bpollelt results list, or else
+the results could be corrupted.  Calling other routines is permitted,
+including all bpoll_elt_*() routines.
+
+
+Small scale usage (small number of descriptors)
+
+A simple poll() may be more efficient than more advanced mechanisms
+(kqueue, /dev/poll, epoll, event ports, pollset) for a small number of file
+descriptors (e.g. <= 8).  Similarly, depending on the number of active file
+descriptors, poll might outperform more advanced mechanisms like epoll.
+  http://sheddingbikes.com/posts/1280829388.html
+  http://jacquesmattheij.com/Poll+vs+Epoll+once+again
+Caller should test a specific application on a specific platform and then
+choose appropriate poll mechanism with bpoll_init() even when more advanced
+poll mechanisms are available.
+
+
+bpoll level-triggered and edge-triggered (BPOLLET) behavior
+
+Level-triggered I/O is ready as long as data is waiting on pipe or socket.
+  Traditional poll() semantics are level-triggered.
+Edge-triggered I/O only signals readiness upon change in status,
+  e.g. data where there was previously none, 
+       or, on some platforms, arrival of a new data packet.
+
+Edge-triggered behavior is possible in epoll (EPOLLET) and kqueue (EV_CLEAR),
+via BPOLLET event flag.  The flag is ignored for other event I/O frameworks.
+Note that, edge-triggered might also fire event for arrival of new data.
+For both these reasions, care should be used when employing edge-triggered
+behavior in code intended to be portable, e.g. by draining all ready events
+on each returned descriptor or by using BPOLLDISPATCH (see below).  It is a
+common misconception to think that edge-triggered behavor is needed when
+behavior actually desired is one-shot event notification: BPOLLDISPATCH --
+report once, then cease reporting future events.  BPOLLET can be used with
+BPOLLDISPATCH.
+
+
+bpoll thread-safe, dispatch mode (BPOLLDISPATCH), a.k.a. one-shot mode
+
+A thread-safe, edge-triggered, lockless, non-blocking event I/O framework
+(e.g. Solaris event ports (not edge-triggered, but dissociated upon events),
+or epoll EPOLLET|EPOLLONESHOT, or kqueue EV_CLEAR|EV_DISPATCH, or AIO) might
+be slightly more performant than the default level-triggered bpoll when in a
+multi-CPU environment where bpoll is used with one thread thread polling and
+queueing ready events for other threads to handle (resulting in user space
+context-switch to another thread to handle the event).  However, this cost
+is frequently lost in the larger cost of processing events (and if not, then
+why not handle the event with bpoll in a single thread?).
+
+Even so, bpoll supports the native one-shot modes with BPOLLDISPATCH set
+in event flags, and provides emulation for mechanisms without native support.
+epoll, kqueue, and event ports natively support an interface by which a file
+descriptor is disabled in the bpollset when an event is returned, until the
+caller rearms descriptor.  For kqueue, bpoll will disable the complementary
+filter if both read and write filters are set on an fd and only one is
+dispatched.  devpoll and pollset dispatch is always emulated.
+
+Regardless, bpoll is likely to scale best with one bpollset per thread, and
+adding each new bpollelt to one of the bpollsets via the thread-safe
+bpoll_elt_add_immed(), and then only when needing to add from another thread.
+Distributing the work to multiple threads and letting each handle a smaller
+set of active fds reduces context switches between threads.
+
+Another useful scenario using BPOLLDISPATCH with bpoll_elt_rearm_immed() is
+when there are multiple threads, each with its own bpollset, and then one or
+more listen() sockets are marked BPOLLDISPATCH.  One thread accept()s
+connections from the ready listen() socket and then performs a
+bpoll_elt_rearm_immed() for the same fd, but different bpollelt that is in a
+bpollset in a different thread.  The next time there are connections ready to
+accept() on the listen() socket, that other thread will accept() them and then
+pass the listen() socket again.  (If employed for this limited use, then
+bpoll_enable_thrsafe_add() need not be enabled.)
+
+bpoll is written to be highly performant on a single CPU and is not written
+to be called from multiple threads simultaneously, with the exception of the
+thread-safe interfaces bpoll_elt_add_immed() and bpoll_elt_rearm_immed().
+If for some reason other operations need to be performed on the same bpollset
+by different threads, caller should wrap other bpoll interfaces with
+appropriate locking constructs.  bpoll routines are reentrant and so bpoll
+routines can be used concurrently with different bpollsets.  When using
+threads, the recommended use of bpoll is to have one independent bpollset per
+thread, and to use bpoll_elt_add_immed() from other threads to inject fds into
+each bpollset.  BPOLLDISPATCH can be set when one thread retrieve ready events
+and queues for other threads to handle the bpollelt.  The (other) thread that
+handles the bpollelt can bpoll_elt_add_immed() after ready event is handled.
+
+If read and write to same fd are independent flows, then caller might set up
+separate threads which handle separate bpollsets containing separate bpollelts
+to same fd, one for read and one for write.  Alternatively, dup() the fd and
+have bpollelt for one fd monitor read and bpollelt for other fd monitor write.
+This would permit independent event dispatch for the independent flows.
+
+Further BPOLLDISPATCH and threading caveats
+
+Thread-safe code can be more challenging to write than single-threaded code.
+One bpollset per thread is recommended, but if a single bpollset is shared
+among threads, or if a bpollelt is shared between threads, then extra care
+must be taken so that bpoll bookkeeping is accurate, especially with regards
+to bpoll deferred removal and bpoll_*_immed routines, or else race conditions
+can occur that may result in undefined behavior from bpoll.  Make sure not to
+bpoll_elt_rearm_immed() a bpollelt that is scheduled for removal by making
+sure that two threads are not operating on the same bpollelt at the same time.
+Internally for devpoll and pollset, a dispatched bpollelt is scheduled for
+removal to emulate being dispatched, but this removal is deferred.  Similarly,
+kqueue events are scheduled to disable complementary filters if both read and
+write interest are indicated, but only one has been dispatched.  Therefore,
+bpollset owner must call bpoll_flush_pending() prior to handing off bpollelts
+for processing by another thread, i.e. by calling bpoll_flush_pending() prior
+to processing the results list from bpoll_get_results().  In this usage, the
+bpollset fn_cb_event should not be used.  (If using multiple threads, the
+results list should be copied prior to handing off the bpollset.)
+
+Change in event interest on an fd, with the change deferred in the pending
+queue in a bpollset, might race with a call to bpoll_elt_rearm_immed() in a
+different thread.  Ensure this does not happen by making sure that only one
+thread can operate on an fd and bpollelt for that fd between calls to
+bpoll_poll() or bpoll_flush_pending(), e.g. by having a lock on the bpollset
+and then calling bpoll_flush_pending() before releasing the lock.  It is not
+enough to check prior to making a change since there is still a time-of-check
+vs time-of-use (ToC-ToU) race condition.  When using bpoll_kernel() and
+bpoll_process() instead of bpoll_poll(), do not modify bpollelt events between
+bpoll_kernel() and bpoll_process() or bpoll bookkeeping might be misled.
+bpoll_process() is a separate routine to allow for handling asynchronous
+signals with minimum delay after bpoll_kernel().  bpoll_process() also allows
+for recovery in the event of ENOMEM while running bpoll_process().
+
+
+Some More Detailed Design Decision Notes:
+
+bpoll APIs do not attempt to map all polling APIs into a single API.
+Although it does so for select(), poll(), and /dev/poll, the superior design
+of kqueue is not shoe-horned into a poll()-style interface, nor are some
+features of epoll, or event ports.  (In addition to sockets and pipes,
+FIFOs are handled, too, but must be removed from bpollset and re-added
+after receiving EOF for portability, even though kqueue will reset a FIFO
+if given flag EV_CLEAR.)
+
+bpoll supports (without any special modifications) the Linux fd extensions:
+eventfd, signalfd, inotify, and timerfd descriptors which can be polled
+(man eventfd(2), signalfd(2), inotify(7), timerfd_create(2)).
+Similar features are provided with Solaris event ports.
+
+Mapping SIGIO into this API is not attempted.  This is a library, and signals
+are global to a program.  Libraries should not modify signal handling without
+very good reason.  (Theoretically, SIGIO+callbacks could be worked into API)
+Incorporating other AIO is also not explicitly attempted, even if some of the
+event frameworks wrapped by bpoll can support AIO.  (POSIX aio_* can be used
+with signalfd on Linux, and signalfd can be used with bpoll.  EVFILT_AIO can
+be used with *BSD kqueue.)  Note some mechanisms do not support polling
+filesystem fds for non-blocking read I/O.  Directly polling filesystem fd for
+non-blocking read or write is not portable and may result in busy loop or in
+blocking behavior when reading or writing to fd.  In case of epoll, using
+epoll_ctl() to attempt to add descriptor to a filesystem file results in
+EPERM.
+
+Linux epoll is level-triggered by default to be compatible with poll().
+kqueue and epoll support edge-triggered with EV_CLEAR and EPOLLET, and
+bpoll supports them with BPOLLET flag.  On other platforms, edge-triggered
+behavior can be simulated by caller by always draining all ready events
+until EAGAIN or EWOULDBLOCK, or until caller closes pipe or socket.
+
+Some poll mechanisms will automatically remove an fd from the kernel cache
+when the fd is close()d, but only if there are no other copies of the fd,
+e.g. via dup() or fork().  Others might not, and will return an error for
+the descriptor (and might return user-private data pointing to a bpollelt).
+For these reasons, bpoll always attempts to remove an fd from the kernel
+cache, and defers all bpollelt reclaims until the next call to bpoll_poll()
+or bpoll_kernel() or bpoll_flush_pending() so that any events will be on
+a valid descriptor that has not been reused, and private user data such as
+bpollelt memory should still be valid.  Therefore, caller should avoid
+close()ing fds and reusing removed bpollelt until after next call to
+bpoll_poll() or bpoll_kernel() or bpoll_flush_pending().  Most callers
+should prefer to use bpollelt allocated from bpollset, to not reuse the
+bpollelt, and to set the BPOLL_FL_CLOSE flag on the bpollelt so that
+bpollset will take care of calling close() on the fd after removing it from
+the kernel cache.  A bpollset callback function for close() will be called
+instead, if provided.  Again, if caller does not use BPOLL_FL_CLOSE flag,
+then caller must not close() an fd associated with a bpollelt removed from
+a bpollset until after the next call to bpoll_poll() or bpoll_kernel() or
+bpoll_flush_pending().
+
+For speed (and laziness), this API keeps an array indexed by fd number when
+the number of fds in the bpollset (hinted at bpollset create time) exceeds
+the constant BPOLL_FD_THRESH, which is arbitrarily defined to 8.  This can
+be wasteful of memory in cases where only a handful (but > BPOLL_FD_THRESH)
+of high-numbered fds are used, especially if the program uses multiple
+bpollset_t's, each with only a few fds (> BPOLL_FD_THRESH), which happen
+to be high-numbered.  (Using fd 1023 when > BPOLL_FD_THRESH fds are allowed
+in the bpollset_t will cause an 4 KB allocation on systems with 32-bit
+pointers, and 8 KB on systems with 64-bit pointers.  Not terrible, but it can
+add up.)  If memory use becomes an issue, a hash can be used instead of a
+fd-indexed array, trading some performance for lower memory usage.  This
+memory usage is by no means huge and is unlikely to present a problem
+in practice.  (Depending on need, consumer can recompile with adjusted
+BPOLL_FD_THRESH.)
+
+bpoll callbacks for bpoll_fn_mem_alloc_t and bpoll_fn_mem_free_t take an
+additional parameter over standard malloc() and free().  bpoll was
+originally intended to plug into APR and Apache 2, and the first parameter
+to fn_mem_alloc() and fn_mem_free() enables passing of apr_pool_t *.
+apr_palloc() can be directly used for bpoll_fn_mem_alloc_t.
+
+Pre-emptive apology: bpolls attempts to keep structures small and to map the
+bpoll interface as directly as possible (with as thin a layer as possible) onto
+native poll implementations.  This has led to some overloading and 'cleverness'
+in code.  If maintenance and bugs prove difficult, future revisions might
+reduce the complexity.  Therefore, please avoid accessing elements of the
+bpollset_t and bpollelt_t structures directly -- use the accessors in bpoll.h.
+
+Related, bpoll.c is almost 4000 lines of code and contains all the supported
+polling mechanisms (poll/select, kqueue, evport, /dev/poll, pollset, epoll).
+Separate files could have been used for each mechanism and each mechanism could
+have provided a dispatch table (set of function pointers) for various actions.
+However, this author found that keeping the code together made for easier
+cross-reference between mechanisms while coding internal data structures within
+each action.  Also, using separate files would reduce inlining in tight loops
+where lots of core bpoll code is shared.  This might change in the future.
+
+
+Design differences between bpoll and libev, libevent:
+
+bpoll bookkeeping stipulates that caller should not close() fds out from
+underneath bpoll.  This allows bpoll to efficiently track and manage
+descriptors.
+
+By contrast, libev attempts to be more flexible and jumps through expensive
+contortions to handle error conditions.  To detect spurious events, libev
+keeps a generation counter and also compares returned events to desired
+events, though it should be noted that some of these spurious events result
+from libev doing nothing when caller requests to remove an fd from an ev
+descriptor set.  If spurious events are detected, libev creates a new kernel
+poll instance and resubmits all members of the original ev descriptor set.
+Similarly, libev might excessively re-submit events to kernel when attempting
+to recover from file descriptors close()d and the re-opened outside of libev
+purview.  These actions permit libev to recover in the face of fork() and file
+descriptors close()d behind its back, but incur expense and overhead that
+bpoll avoids.
+
+A bpollset provides a single (optional) callback fn_cb_event() to be called
+on bpollelt with ready event(s).  This helps keep each bpollelt_t structure
+smaller than those used by libev and libevent.  On the other hand, rather than
+a single callback per bpollset, libev provides a callback per descriptor and
+libevent provides read, write, and error callbacks per descriptor.  Both of
+these extensions could be implemented by the caller storing per-descriptor
+function pointers in a structure in bpollelt user data, processing the
+results list and calling the per-descriptor callbacks, in lieu of the
+per-bpollset fn_cb_event().
+
+libev and libevent provide timer and signal frameworks, and libevent provides
+a bufferevent I/O framework, whereas bpoll leaves these up to the application.
+If added to bpoll in the future, such features would likely be separate layers
+on top of existing bpoll interfaces.  (One sample implementation for expiring
+idle connections can be found in bsock.m.c simple doubly-linked list.)
+
+libev and libevent implement locking for thread-safe access, whereas bpoll
+does not use locking in its default usage model.  See section "Scaling
+Considerations" for discussion of various usage models.
+
+When a descriptor has an error condition, bpollelt contains BPOLLERR in
+returned events.  libev sets EV_READ or EV_WRITE, depending on the declared
+event interest, and libevent sets both EV_READ|EV_WRITE.  (The bpoll behavior
+might change in the future to match that of libev or libevent if this author
+is convinced by others that doing so is more portable behavior.)
+
+
+Future possible enhancements
+----------------------------
+
+- portable (optional) interfaces to managing timers, signal handlers, and
+  buffered I/O which use the best mechanisms available on each platform.
+- kqueue
+  Might add a field to bpollelt to record EV_EOF for EVFILT_{READ,WRITE}
+    (keep EV_EOF state and provide means to EV_CLEAR the state?)
+  Does kqueue support POLLPRI?  How is priority data for read detected?
+- epoll
+  See about testing bpoll performance with epoll_ctlv experiment in
+  http://www.kernel.org/doc/ols/2004/ols2004v1-pages-215-226.pdf
+  The paper measured only throughput, not reduction in CPU usage due
+  to fewer system calls.
+- Solaris select() instead of poll()
+  Might default to select() or pselect() on Solaris, where poll() implemented
+  with select().  (Many other platforms implement select() with poll())
+
+
+Reference documentation
+------------------------
+
+SUSv2 poll spec
+  http://www.opengroup.org/onlinepubs/007908799/xsh/poll.html
+SUSv3 poll spec
+  http://pubs.opengroup.org/onlinepubs/009695399/functions/poll.html
+
+Kqueue: A generic and scalable event notification facility
+http://people.freebsd.org/~jlemon/papers/kqueue.pdf
+
+The Event Completion Framework for the Solaris Operating System (Solaris 10+)
+http://developers.sun.com/solaris/articles/event_completion.html
+
+Using the devpoll (/dev/poll) Interface in the Solaris OS
+  (Solars 7+, IRIX, HPUX)
+http://developers.sun.com/solaris/articles/using_devpoll.pdf
+Polling Made Efficient in the Solaris 7 OS
+http://developers.sun.com/solaris/articles/polling_efficient.html
+poll(7d) man page
+
+Linux epoll (kernel 2.6+)
+epoll(7) man page
+Comparing and Evaluating epoll, select, and poll Event Mechanisms
+http://www.kernel.org/doc/ols/2004/ols2004v1-pages-215-226.pdf
+
+AIX pollset (AIX 6.1+)
+http://publib.boulder.ibm.com/infocenter/aix/v7r1/index.jsp?topic=%2Fcom.ibm.aix.basetechref%2Fdoc%2Fbasetrf1%2Fpollset.htm
+
+poll() and EOF
+http://www.greenend.org.uk/rjk/2001/06/poll.html
+
+Performance tests
+http://www.kegel.com/c10k.html
+http://bulk.fefe.de/scalability/
+http://pl.atyp.us/content/tech/servers.html
+Microbenchmark comparing poll, kqueue, and /dev/poll - 24 Oct 2000
+http://www.kegel.com/dkftpbench/Poller_bench.html
+Paper: Exploring the Performance of Select-based Internet Servers
+http://www.hpl.hp.com/techreports/2001/HPL-2001-314.html
+poll() vs /dev/poll
+http://developers.sun.com/solaris/articles/polling_efficient_devpollperf.c
+  note to self: should create random() run sequence before beginning timings
+poll vs epoll on Linux
+http://lse.sourceforge.net/epoll/index.html
+http://sheddingbikes.com/posts/1280829388.html
+http://jacquesmattheij.com/Poll+vs+Epoll+once+again
+
+Other Event Libraries
+libevent: http://monkey.org/~provos/libevent/
+libev: http://software.schmorp.de/pkg/libev.html
+libev and libevent benchmark: http://libev.schmorp.de/bench.html
+
+Not implemented in bpoll (MS Windows is not my itch)
+Microsoft Windows I/O Completion Ports
+http://msdn.microsoft.com/en-us/library/aa365198%28VS.85%29.aspx
+  (A single thread can be associated with, at most, one I/O completion port.)
+Microsoft select()
+http://msdn.microsoft.com/en-us/library/ms740141%28v=vs.85%29.aspx
+  (limited to sockets-only)
+  (unlike traditional unix select(), an empty fdset (not NULL) is an error)
+Microsoft Synchronization and Overlapped Input and Output
+http://msdn.microsoft.com/en-us/library/ms686358%28VS.85%29.aspx
+Microsoft WSAAsyncSelect function
+http://msdn.microsoft.com/en-us/library/ms741540%28v=vs.85%29.aspx
+Microsoft WSAWaitForMultipleEvents function
+http://msdn.microsoft.com/en-us/library/ms742219(v=vs.85).aspx
+Microsoft Using Pipes
+http://msdn.microsoft.com/en-us/library/aa365799%28v=vs.85%29.aspx
+Named Pipe Server Using Overlapped I/O
+http://msdn.microsoft.com/en-us/library/aa365603%28v=vs.85%29.aspx
+
+Think you've mastered the art of server performance? Think again.
+Poul-Henning Kamp
+http://queue.acm.org/detail.cfm?id=1814327
+
+Scaling on multi-core machines
+CPU address bus saturation due to broadcast snoops
+http://www.cse.wustl.edu/ANCS/2007/slides/Bryan%20Veal%20ANCS%20Presentation.pdf
+http://www.cse.wustl.edu/ANCS/2007/papers/p57.pdf
+Overhead of multi-core virtual machines
+(shows current scaling inefficiencies above quad-core on Linux KVM)
+http://www.phoronix.com/scan.php?page=article&item=linux_kvm_scaling&num=2
+
+"High-Performance Request-Handling Programs" is a really lousy title -Jeff Darcy
+http://pl.atyp.us/content/tech/servers.html
+  data copies
+  context switches
+  memory allocation
+  lock contention
+http://pl.atyp.us/wordpress/index.php/2010/07/its-faster-because-its-c/
+http://blog.dynatrace.com/2010/06/15/top-10-performance-problems-taken-from-zappos-monster-and-co/
+
+
+Scaling Considerations (many descriptors and multi-core systems)
+----------------------
+
+There has been plenty of discussion over many years about how best to scale
+daemon processes.  This is an attempt to briefly summarize a few options with
+a presupposition of non-blocking I/O and event-based frameworks.  The more
+optimal strategies tend to efficiently distribute the load while at the same
+time minimizing context switches and lock contention.
+
+  (cps)   connection rate per second
+  (rps)   request rate per second
+  (acost) accept() connection cost (CPUcore-seconds)
+  (rcost) process request cost (CPUcore-seconds)
+  (ncpu)  number of CPU cores
+
+Given:
+
+- each accept()ed connection (a) has a cost in CPUcore-seconds (acost)
+- each request (r) requires processing cost in CPUcore-seconds (rcost)
+  (initial model assumes each request has about the same cost)
+- one or more requests (r) per connection (c)
+  (simplest case: one request per connection)
+
+Case 1: 1 CPUcore > cps*acost + rps*rcost
+
+A single CPUcore can accept() new connections and processes requests faster
+than incoming connections and requests.  In this case, a single-threaded
+daemon suffices.  For other situations, different approaches can be applied
+to handle larger loads.
+
+Case 2: 1 CPUcore < cps*acost + rps*rcost
+
+A single CPUcore is unable to accept() quickly enough to keep up with incoming
+connections or a single CPUcore can accept() new connections faster than
+incoming connections, but a single core is not powerful enough to handle all
+incoming connections and process all requests.  In either case, the load must
+be distributed to multiple CPU cores.
+
+
+Approach A: Single-threaded daemon on single-core machine
+A single-threaded daemon on a single-core is often optimal for Case 1.
+
+Approach B: Connection load balancer
+A load balancer distributes connections to multiple single-core machines
+(or IP addresses/ports on the same multi-core machine).  This is an extension
+of Approach A.  It is usable when requests are independent or if a shared
+database-like store keeps session and other shared information.
+
+Approach C: Multiple accept() threads (or processes)
+Multipe threads or processes can each accept() and handle requests on
+connections that each thread accept()s.  This approach can result in a
+thundering herd (http://en.wikipedia.org/wiki/Thundering_herd_problem),
+but may be acceptable for a small number of threads (<= 4).
+
+Approach D: Speculative non-blocking accept() in multiple threads
+One thread always poll()s listen socket and adds new connections to itself
+and to other threads.  Other threads speculatively perform non-blocking
+accept()s between handling requests, and each thread handles requests it
+accept()s.  This tends to have similar costs to the thundering herd, but
+might be part of an adaptive mechanism based on accept() load.
+
+Approach E: Dedicated accept() thread(s)
+A single accept() thread often sufficies when 1 CPUcore > cps*acost.
+(notable exception: any single request must be handled within certain
+ timeframe which is shorter than listen backlog (acost * len) + rcost)
+Otherwise, additional accept() threads are required.  accept()ed connections
+are placed in a queue and one or more threads in a thread pool processes
+connections in the queue.  (Avoid one thread per connection or one thread per
+request.)  Each accept() thread could have its own queue and thread pool to
+service the connections.  Also, the pipeline could be extended further.
+For example, in a simple request/response (HTTP/1.0), one or more threads
+could collect a full request from a connection before dispatching the
+now-ready request to other thread(s) for processing.  Note that dividing
+request handling into stages handled by different threads results in multiple
+context switches between threads when handling any single request.
+
+Approach F: Token-ring accept()
+As long as the common scenario holds where 1 CPUcore > cps*acost, multiple
+threads can coordinate so that one thread accept()s a block of waiting
+connections and then signals another thread to poll and accept() the next
+block.  The first thread then handles the connections it accept()ed.  This
+can be an effective way to delegate the load so that after accept(), each
+thread handles a portion of connections independently from other threads,
+thereby minimizing context switches.  (If 1 CPUcore < cps*acost, there
+could be two or more independent rings competing on accept() (or the load
+should be balanced to additional machines).  Since the kernel ultimately
+must serialize access to the connection queue for a given socket, one or
+a small number of competing accept() should be able to keep up with the
+incoming connection load.  Keeping up with processing requests should be
+the bottleneck.)  Threads able to handle new connections can add themselves
+to the ring via an atomic pointer swap so that the listen() thread can
+efficiently determine the next thread to which to pass the listen() socket.
+(The receiving thread might not be sleeping waiting for new connections, and
+ so should do a limited amount of non-blocking work before poll()ing kernel.)
+
+Approach G: Token-ring accept() + overlapping accept()
+To further lower latency when accept()ing new connections, consider the
+scenario where a thread is waiting on a set of descriptors which includes
+the listen()ing socket.  When the thread wakes up from poll()ing, the thread
+should first handle ready existing descriptors before accept()ing new
+connections.  This is done in order to avoid livelock and starvation
+conditions, but doing so may add latency before new connections are
+accept()ed.  Upon waking up from poll(), a thread might instead immediately
+accept() a small (limited) number of new connections, and then pass the
+listen() socket to another thread, doing accept() prior to handling ready
+existing connections. The thread might also accept() a small number of
+connections (e.g. 4 or 8 or 16), pass the listen() socket to another thread,
+and continue to accept() up to a slighly higher limit (e.g. 32 or 64).  The
+second thread would do the same, reducing the latency to accept() a burst of
+new connections.  Alternatively or in conjunction, the thread with the
+listen() socket could set a volatile flag upon returning from poll() to
+indicate that listen() socket is ready for accept().  (The flag could instead
+be set after accept()ing a small number of connections if there are
+potentially more waiting, if there are so many threads that setting the flag
+immediately results in excess kernel contention.)  For threads processing
+ready connections, these other threads could check this flag after handling
+ready connections and prior to going back to kernelt poll().  If the flag was
+set, these other threads would also attempt accept(), and the first thread to
+get EAGAIN would unset the flag.  Threads that reach accept() chunk limit
+without receiving EAGAIN would leave the flag set.  Given a sufficient number
+of threads, there is a high probability that a few of the threads will check
+the flag and help quickly accept() the new connection, but without triggering
+a thundering herd.  To reduce the chance of contention even further, the
+threads could check the volatile flag before each accept() or small number of
+accept() (e.g. 4), including the initial thread.  The initial thread could
+then seek out another thread to which to hand off the listen() socket.  If no
+available threads, then might adaptively spin up new threads -- up to a limit.
+If at limit, see Overload section below.
+
+Approach H...: Adaptive and/or Hybrid Strategies and/or Other...
+
+Multiple poll mechanisms are often available on modern platforms
+e.g. poll/select, kqueue, event ports, /dev/poll, pollsets, epoll
+Finding the optimal mechanism for a specific application varies depending on
+actual usage patterns observed in reality (in production).  Benchmark in a
+test environment and/or perform real-world trials and measure the results.
+
+Optionally, applications can be written to be adaptive in which poll
+mechanisms are used, maintaining multiple descriptor sets.  A number of
+experiments have found that poll is faster than other more advanced poll
+mechanisms when the descriptor set is very small, as well as when the number
+of active descriptors in a set crosses a certain threshold.  Zed A. Shaw found
+this active-total ratio (ATR) to be 0.6 where poll performance became faster
+than epoll.  http://sheddingbikes.com/posts/1280829388.html  Jacques Mattheij
+found the ATR ratio to decrease to 0.5 in favor of poll as total number of fds
+increased.  http://jacquesmattheij.com/Poll+vs+Epoll+once+again
+A mitigating factor that appears to favor the more advanced poll mechanisms is
+to set a limit on the number of events received, e.g. 32 or 64, instead of
+attempting to retrieve thousands of ready events at once (no comparison
+benchmarked available at the moment).  Setting a limit on results returned is
+not available with poll or select.
+
+There are many other ways to slice and dice tasks among multiple CPU cores.
+Please write code () gluelogic.com with good strategies that can be written
+here.
+
+Overall, keep in mind that there are many moving parts between the kernel and
+application(s).  Many good algorithms are n-log-n, but still not constant or
+linear.  Measure each application under load to find an optimal depth (number
+CPU cores) and width (number virtual/real machines) to handle a large
+workload, and balance against resource usage costs (e.g. many smalls VMs tend
+to consume more memory and disk than fewer, larger VMs due to duplication of
+data).
+
+With respect to bpoll:
+Approaches A, B, C can employ lock-free bpollsets
+Approaches D, E    can employ thread-safe bpollsets with bpoll_elt_add_immed()
+                   and bpoll_elt_rearm_immed() after enabling bpollset locking
+                   add/remove (bpoll_enable_thrsafe_add()).  Other operations
+                   between threads on the same bpollset (e.g. modify, remove
+                   of bpollelt or waiting for events on bpollset) are not
+                   thread-safe.
+Approaches F, G    can employ lock-free bpollsets with bpoll_elt_rearm_immed()
+                   only on listen() socket which is part of all bpollsets, but
+                   has interest events as 0 for all but one thread at a time.
+Approach   H       can employ lock-free bpollsets just as Approaches F, G and
+                   can have multiple bpollsets per thread, one using poll and
+                   a second using an advanced poll mechanism.
+
+The handling of timing out idle connections is not discussed here, this can be
+handled efficiently if managed independent by each bpollset.
+
+One straightforward implementation of Approach E is to create a number of
+threads equivalent to number of cores on the machine, each thread with its
+own bpollset.  Make a single thread responsible for listen()ing sockets, to
+perform accept(), and to distribute the accept()ed connections to bpollsets of
+other threads based on application policy.  The master thread could implement
+max connection count per thread before the master thread starts response to
+control overload.  Threads should not operate upon or modify same descriptor
+at same time unless threads provide their own synchronization mechanism for
+use of that descriptor.
+
+For Approach H using two bpollsets per thread, active sockets (measured over
+a short time interval) would be put into the bpollset using poll, and
+less-active or idle connections would be put into the bpollset using a
+different mechanism such as epoll.  The bpollset using poll would include the
+epoll fd for the bpollset using epoll.  (libev highlights need to use Linux
+kernel >= 2.6.32 for embedding epoll fd and having ready event on epoll fd
+reported reliably.)
+
+Overload:
+
+When limits preset by application have been reached,  or if accept() fails
+with EMFILE or ENFILE, application should respond in a controlled way to help
+alleviate the situation.  If ENFILE, then the limit preset by the application
+is too high.  If EMFILE, then the limit preset by the application is too low.
+To avoid spew, serialize reporting and report condition once every n seconds.  
+Then, if an application has pre-provisioned an excess file descriptor to, say,
+/dev/null for this explicit recovery purpose, the excess fd can be closed,
+the application can do a defined chunk size of accept() and immediate close()
+of connections, and re-open the excess file descriptor, and then go back to
+check the kernel for other ready work to do.  If the overload condition still
+exists, the kernel will return immediately and the above should be repeated.
+If an excess fd is not available for any reason, the application should
+report the error, sleep for a short period of time, and then go back to check
+the kernel for ready existing connections to be processed.
+
+On overload condition may occur if limits preset by an application are too
+high.  One condition that might occur is "receive livelock", wherein the
+server spends too much time receiving (or dropping) new connections and not
+making forward progress on existing connections.  By the time the server gets
+around to handling existing connections, too much time has elapsed and the
+client may have given up.  The solution here is to lower the connection limit
+to what can be handled by the server and to trigger overload recovery sooner.
+
+In the case of bpoll, each bpollset has a limit configured by the application.
+Calling application can check bpoll_get_nelts_avail(bpollset) or can check
+bpoll_get_is_full(bpollset) prior to accept() and can respond accordingly if
+the bpollset is full, e.g. by checking if other threads can accept(), or if
+not, then performing an accept() and immediately close() on a chunk of new
+connections.  Prior to accept()/close(), thread can run bpoll_flush_pending()
+to close() connections for which the close() was deferred.  This is useful
+only if accept()ing new connections occurs after processing of existing ready
+connections, which might add latency prior to accept() unless other threads
+are also helping to accept().  Other threads helping accept() should accept()
+if space is available in a bpollset, but otherwise should prefer to allow the
+thread holding the listen() socket to perform destructive action in the face
+of overload conditions.
+
+The purpose of the destructive accept() and then immediate close() in the face
+of overload is to communicate an error state upstream to a load balancer, if
+present, as well as to prevent stale connections from building up in the
+listen backlog as the connections wait to be handled.  See also the section
+"The special problem of accept()ing when you can't"
+in http://cvs.schmorp.de/libev/ev.pod
+See section "Behave sensibly on overload" in http://www.kegel.com/c10k.html
+
+In an overload condition, another option to reduce load is to expire idle
+connections more quickly, especially those that have not yet sent initial
+data (depending on the protocol, e.g. HTTP), which might occur in a DDoS
+attack.  The application would need to track idle connections,
+e.g. by marking active connections, or by putting idle connections in a
+separate queue.
+
+Other performance tweaks:
+
+For some protocols, it may be advantageous to speculatively recv() immediately
+following accept() instead of first poll()ing socket for readiness.  This is
+especially true for TCP sockets supporting TCP_DEFER_ACCEPT or SO_ACCEPTFILTER.
+However, these options are better used behind a reverse proxy balancer where
+the reverse proxy balancer drops connections that take too long to send
+initial data (e.g. some types of DDoS attacks).
+
+http://nbonvin.wordpress.com/2011/03/24/serving-small-static-files-which-server-to-use/
+"G-WAN does not use TCP_DEFER_ACCEPT because it prevents a server from cutting quickly enough established connections that do not send data - making your server vulnerable to the kind of massive DoS attacks that gwan.ch had to go through those two last years."
+
+Linux kernel tweaks
+
+# tcp_tw_reuse is recommended for most web services
+# tcp_tw_recycle is additionally recommended for benchmarking and load tests
+#   but care should be taken and testing done before introducing into production
+#   especially when used with load balancers
+# http://www.speedguide.net/articles/linux-tweaking-121
+# http://alpha-leonis.lids.mit.edu/~beracah/blog/2011/06/06/tweaking-scooty-puff-sr-the-doombringer-to-83000-requests-per-second/
+
+$ echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse         # (boolean, default: 0)
+$ echo 1 > /proc/sys/net/ipv4/tcp_tw_recycle       # (avoid use in production)
+$ echo 30 > /proc/sys/net/ipv4/tcp_fin_timeout     # (lower tcp timeout)
+$ echo 500 512000 64 2048 > /proc/sys/kernel/sem   # (process semaphores)
+$ echo "1024 65535" > /proc/sys/net/ipv4/ip_local_port_range #(increase # ports)
+
+# modify /etc/security/limits.conf
+httpd soft nofile 101000  # or even try 200000
+httpd hard nofile 101000  # or even try 200000
+
+# "Performance Scalability of a Multi-Core Web Server", Nov 2007
+# Bryan Veal and Annie Foong, Intel Corporation
+# see Table 1 for network settings and evaluate (e.g. you might want syncookies)
+# http://www.cse.wustl.edu/ANCS/2007/papers/p57.pdf
+
+$ echo 8192 > /proc/sys/net/ipv4/tcp_max_syn_backlog
+# See http://www.blogabc.net/i460_linux_network_optimize_with_sysctl.htm
+
+# There many, many parameters that can be tuned for an enterprise server.
+# One (of many) pages with a brief summary:
+# http://www.performancewiki.com/linux-tuning.html
+
+# When performing benchmarking and load tests on a laptop on Linux,
+# be sure to check the setting of the CPU scaling_governor or all
+# CPU cores.
+
+$ echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+$ echo performance > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
+# ...
+
+Interaction with firewalls
+Know how host firewall (and external firewalls) affect application performance
+Test and benchmark performance with and without host firewall enabled.
+One example is iptables conntracking:
+http://www.ogre.com/node/372 suggests testing with connection tracking
+disabled and evaluating if the host firewall requires connection tracking.
+$ iptables -t raw -I OUTPUT -j NOTRACK
+$ iptables -t raw -I PREROUTING -j NOTRACK
+
+TCP Slow Start
+http://www.isi.edu/lsam/publications/phttp_tcp_interactions/node2.html#SECTION00024000000000000000
+Google and Microsoft cheat on TCP slow-start
+http://blog.benstrong.com/2010/11/google-and-microsoft-cheat-on-slow.html
+
+Buffer bloat
+http://www.bufferbloat.net/
+http://en.wikipedia.org/wiki/Bufferbloat
+
+
+/* using bpoll in Apache httpd modules  (old notes copied here and updated)
+ *
+ * (add error checking, especially on memory allocations)
+ * (apache and apr manage their own memory pools and close() descriptors,
+ *  so probably want to let them continue to allocate bpollelt and close fd
+ *  when it cleans up pool, instead of using the features of bpoll.  Therefore,
+ *  use BPOLL_FL_ZERO instead of BPOLL_FL_CLOSE since to avoid redundant
+ *  close() since apr_file_t/apr_socket_t have their own cleanups that close())
+ *
+ *   bpollset_t *bpollset = bpoll_create(pool, fn_cb_event, apr_palloc, NULL);
+ *   apr_pool_cleanup_register(pool, bpollset, bpoll_destroy, bpoll_destroy);
+ *   bpoll_init(bpollset, ...);
+ *   //[...]
+ *
+ *   int fd;
+ *   apr_file_os_get(apr_file_t *f, &fd);
+ *   bpollelt_t *bpollelt =
+ *     bpoll_elt_init(bpollset, NULL, fd,
+ *                    f->is_pipe ? BPOLL_FD_PIPE : BPOLL_FD_FILE,
+ *                    BPOLL_FL_ZERO);
+ *   // (or)
+ *   int fd;
+ *   apr_file_os_get(apr_socket_t *s, &fd);
+ *   bpollelt_t *bpollelt =
+ *     bpoll_elt_init(bpollset, NULL, fd, BPOLL_FD_SOCKET, BPOLL_FL_ZERO);
+ *
+ *   // (optionally store something in bpollelt->udata)
+ *
+ *   bpoll_elt_add(bpollset, bpollelt, events);
+ *
+ *   //[...]
+ *
+ *   bpoll_poll(bpollset, timeout);
+ *
+ *   //[...]
+ *
+ *   // (not necessary to run bpoll_elt_remove(bpollset, bpollelt);)
+ *   apr_pool_cleanup_run(pool, bpollset, bpoll_destroy);
+ */
+
+
+Rudimentary state table for each mechanism  (or at least the start of a table)
+------------------------------------------
+kqueue
+  add events = 0        kernel add EV_DISABLE
+  modify to events = 0  kernel mod EV_DISABLE
+  modify from events=0  kernel mod
+  after event returned  no action
+  after event dispatch  kernel mod EV_DISABLE complementary filter
+                          (only if read/write interest and only one is ready)
+epoll
+  add events = 0        kernel add
+  modify to events = 0  kernel mod events = 0
+  modify from events=0  kernel mod
+  after event returned  no action
+  after event dispatch  no action
+evport
+  add events = 0        no kernel submit
+  modify to events = 0  no kernel submit (deferred associate is skipped)
+                        pending submit of other events should be cancelled
+                        prior associate will need to trigger disassociate
+  modify from events=0  kernel associate
+  after event returned  no action
+  after event dispatch  no action
+devpoll
+  add events = 0        no kernel submit  (currently submitting in add_immed)
+  modify to events = 0  kernel remove
+  modify from events=0  kernel add
+  after event returned  no action
+  after event dispatch  kernel remove     (in lieu of setting events = 0)
+  ??? could special-case events = 0 in immed, but why bother ???
+  ??? events=0 does not make sense for immed and no harm adding w/o oneshot ???
+pollset
+  add events = 0        no kernel submit  (currently submitting in add_immed)
+  modify to events = 0  kernel remove
+  modify from events=0  kernel add
+  after event returned  no action
+  after event dispatch  kernel remove     (in lieu of setting events = 0)
+  ??? could special-case events = 0 in immed, but why bother ???
+  ??? events=0 does not make sense for immed and no harm adding w/o oneshot ???
+poll/select
+  add events = 0        config add
+  modify to events = 0  config mod
+  modify from events=0  config mod
+  after event returned  no action
+  after event dispatch  config mod
+
+When events = 0, it is theoretically possible that an event might be returned
+if there is an error condition on the fd, despite interest events = 0.

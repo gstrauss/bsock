@@ -1,0 +1,12 @@
+bpoll - bookkeeping event poller
+
+README  - summary (this file)
+COPYING - copyright/license
+NOTES   - technical details (if interested)
+
+bpoll provides a thin and portable abstraction interface using historical poll
+semantics to detect ready events on socket, pipe, and other descriptors.
+bpoll aims to provide a bookeeping event polling framework to encapsulate a
+variety of poll implementations provided by different platforms.
+
+libbsock.so provides reusable bsock and bpoll interfaces.

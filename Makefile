@@ -15,3 +15,5 @@ clean: clean-all
 clean-all:
 	$(MAKE) -C proxyexec --no-print-directory clean
 	$(MAKE) -C bsock --no-print-directory clean
+	$(MAKE) -C bpoll --no-print-directory clean
+	$(MAKE) -C plasma --no-print-directory clean

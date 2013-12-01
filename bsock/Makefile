@@ -115,11 +115,23 @@ ifeq ($(OSNAME),SunOS)
   LDFLAGS+=-lsocket -lrt
 endif
 
+../plasma/libplasma.a: ../plasma/plasma_attr.h     \
+                       ../plasma/plasma_feature.h  \
+                       ../plasma/plasma_stdtypes.h \
+                       ../plasma/plasma_atomic.c   \
+                       ../plasma/plasma_atomic.h   \
+                       ../plasma/plasma_membar.h
+	$(MAKE) -C ../plasma --no-print-directory
+../bpoll/bpoll.o: ../bpoll/bpoll.h
+	$(MAKE) -C ../bpoll --no-print-directory
+# (bpoll.o and objects in libplasma.a are built with -fpic)
+bpoll_sobjs= ../bpoll/bpoll.o ../plasma/libplasma.a
+
 ifeq ($(OSNAME),Linux)
 libbsock.so: LDFLAGS+=-Wl,-soname,$(@F)
 endif
 libbsock.so: LDFLAGS+= -ldl
-libbsock.so: $(bsock_sobjs)
+libbsock.so: $(bsock_sobjs) $(bpoll_sobjs)
 	$(CC) -o $@ $(LDFLAGS) -shared -fpic $^
 ifeq ($(OSNAME),Linux)
 libbsock_preload.so: LDFLAGS+=-Wl,-soname,$(@F)
@@ -128,7 +140,7 @@ libbsock_preload.so: LDFLAGS+= libbsock.so -ldl
 libbsock_preload.so: bsock_preload.o | libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) -shared -fpic $^
 
-bsock: LDFLAGS+=$(PTHREAD_FLAGS)
+bsock: LDFLAGS+=$(PTHREAD_FLAGS) -lrt
 bsock: bsock.m.o bsock_authz.o bsock_bindresvport.o bsock_resvaddr.o libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) $^
 
@@ -151,8 +163,8 @@ install: bsock libbsock.so libbsock_preload.so
 	[ -f $(BSOCK_CONFIG) ] || \
           (/bin/touch $(BSOCK_CONFIG) && \
            /bin/chmod 0644 $(BSOCK_CONFIG))
-install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h \
-                 bsock_daemon.h bsock_syslog.h | install-headers-plasma
+install-headers: bsock_addrinfo.h bsock_bind.h bsock_unix.h bsock_daemon.h \
+                 bsock_syslog.h ../bpoll/bpoll.h | install-headers-plasma
 	/bin/mkdir -p -m 0755 $(PREFIX)/include/bsock
 	/usr/bin/install -m 0444 -p $^ $(PREFIX)/include/bsock/
 install-headers-plasma: ../plasma/plasma_attr.h \
@@ -168,9 +180,11 @@ install-doc: CHANGELOG COPYING FAQ INSTALL NOTES README
 clean: clean-bsock
 clean-bsock:
 	$(RM) $(TARGETS) *.o
+	$(MAKE) -C ../bpoll --no-print-directory clean
+	$(MAKE) -C ../plasma --no-print-directory clean
 
 bsock.m.o: bsock_addrinfo.h bsock_authz.h bsock_bindresvport.h bsock_daemon.h \
-           bsock_resvaddr.h bsock_syslog.h bsock_unix.h
+           bsock_resvaddr.h bsock_syslog.h bsock_unix.h ../bpoll/bpoll.h
 bsock.t.o: bsock_addrinfo.h bsock_bind.h bsock_unix.h
 bsock_addrinfo.o: bsock_addrinfo.h bsock_unix.h
 bsock_authz.o: bsock_addrinfo.h bsock_authz.h bsock_syslog.h

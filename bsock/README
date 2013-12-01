@@ -11,3 +11,5 @@ removes the requirement that many daemons start with root privileges in order
 to bind to assigned ports.
 
 The bsock daemon listens for requests on a local unix domain socket.
+
+libbsock.so provides reusable bsock and bpoll interfaces.

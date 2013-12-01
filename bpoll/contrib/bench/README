@@ -1,0 +1,60 @@
+bpoll microbenchmarking (bench*.c)
+
+Copyright and License for each .c file can be found at the top of each .c file
+and might be different between files in this directory.
+
+Please see http://libev.schmorp.de/bench.html for introduction.
+
+benchev-orig.c  (from http://libev.schmorp.de/bench.html)
+benchev-mod.c   (contains minor mods to benchev-orig.c for clean compilation)
+benchbpoll-v1.c (mods to use bpoll and ev native)
+benchbpoll-v2.c (rewrite for bpoll exclusive use; socket,pipes,splice options)
+
+Prerequisites: install libev libev-devel packages
+
+All bench* programs take optional arguments -n, -a, -w
+  -n   number of pipes/sockets                   (default 100)
+  -a   number of active events (writes) per loop (default 1)
+  -w   number of additional writes per loop      (default 100)
+
+benchev-orig      (modification needed to compile with native ev.h support)
+benchev-mod -e    (run with native ev.h mode instead of event.h compatibility)
+benchbpoll-v1     (run with bpoll)
+
+The parameters passed to benchev-mod and benchbpoll-v1 can make the resulting
+times vary greatly.  benchbpoll-v1 is always the same speed or faster, depending
+on what the parameters are exercising in the microbenchmarks.  The default of
+two loops means that the kernel event mechanism is often dwarfed by read/write
+calls if all ready events are reaped in very few calls to the kernel.  These
+values would simply test the performance of a single-threaded program context
+switching to and from the kernel: bench* -n 10000 -a 1000.  On the other hand,
+benchbpoll-v1 can be *twice* as fast as benchev-mod if there are many calls to
+the kernel event mechanism: bench* -n 10000 -w 1000, mostly due to libev calling
+clock_gettime() before and after every call to the kernel event mechanism
+(which on Linux is epoll_wait()).
+
+As an aside, the second loop re-adds all descriptors and results in EEXIST
+errors for all descriptors.  For benchev-mod, these are all system calls since
+libev attempts to add the descriptor before falling back to modify -- this is a
+feature of libev, even though expensive -- while benchbpoll-v1 avoids the system
+call since the bookkeeping knows the descriptors have already been added to the
+kernel.
+
+Between the extra calls to clock_gettime() and the (sometimes) spurious event
+submission to the kernel, benchbpoll-v1 has less overhead (and is faster) than
+benchev-mod.  Just how much faster depends dramatically on the workload.  YMMV.
+
+Other implementation details that can affect performance are the event mechanism
+(configurable in the code, but not from the command line), e.g. when there is a
+high percentage of ready events, poll can be more performant than epoll.
+Related, limiting the number of ready events returned by the kernel can also
+effect performance.  (See benchbpoll-v2.c code comments.)
+
+benchbpoll-v2 performs 200 loop iterations instead of 2, as the others do.
+Optional DEV_CFLAGS compilation flags that control behavior of benchbpoll-v2:
+  -DUSE_PIPES     (use pipes instead of sockets, the default)
+  -DUSE_SPLICE    (use pipes (USE_PIPES) plus transfer data using splice())
+  -DBENCH_TIMING  (emit timings for each event phase)
+
+
+Future: not yet tested: compilation with gcc -fno-guess-branch-probability
