@@ -37,7 +37,7 @@ extern "C" {
 #endif
 
 __attribute_nonnull__
-int
+EXPORT int
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai);
 
 #ifdef __cplusplus

@@ -62,6 +62,8 @@ else
   LDFLAGS+=$(ABI_FLAGS)
 endif
 
+CFLAGS+=-fvisibility=hidden
+
 bsock.m.o:        CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_DIR='"$(BSOCK_SOCKET_DIR)"'

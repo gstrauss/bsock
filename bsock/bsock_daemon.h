@@ -29,19 +29,19 @@
 extern "C" {
 #endif
 
-bool
+EXPORT bool
 bsock_daemon_setuid_stdinit (void);
 
-bool
+EXPORT bool
 bsock_daemon_init (const int supervised, const bool check);
 
 __attribute_nonnull__
-int
+EXPORT int
 bsock_daemon_init_socket (const char * const restrict sockpath, /*(persistent)*/
                           const uid_t uid, const gid_t gid,
                           const mode_t mode);
 
-size_t
+EXPORT size_t
 bsock_daemon_msg_control_max (void);
 
 #ifdef __cplusplus

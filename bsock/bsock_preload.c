@@ -32,8 +32,8 @@
 
 #include <bsock_bind.h>
 
-int bindresvport  (const int, struct sockaddr_in * restrict);
-int bindresvport6 (const int, struct sockaddr_in6 * restrict);
+EXPORT int bindresvport  (const int, struct sockaddr_in * restrict);
+EXPORT int bindresvport6 (const int, struct sockaddr_in6 * restrict);
 
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t);
 __attribute_nonnull__
@@ -110,21 +110,21 @@ bsock_preload_bind (const int sockfd, const struct sockaddr *addr,
     return bsock_bind_addrinfo(sockfd, &ai);
 }
 
-int
+EXPORT int
 bind (const int sockfd, const struct sockaddr * const restrict addr,
       const socklen_t addrlen)
 {
     return bsock_preload_bind(sockfd, addr, addrlen);
 }
 
-int
+EXPORT int
 bindresvport (const int sockfd, struct sockaddr_in * const restrict sin)
 {
     return bsock_preload_bind(sockfd, (const struct sockaddr *)sin,
                               sizeof(struct sockaddr_in));
 }
 
-int
+EXPORT int
 bindresvport6 (const int sockfd, struct sockaddr_in6 * const restrict sin6)
 {
     return bsock_preload_bind(sockfd, (const struct sockaddr *)sin6,

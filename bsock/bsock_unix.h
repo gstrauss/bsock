@@ -63,16 +63,16 @@ extern "C" {
 #endif
 
 __attribute_nonnull__
-int
+EXPORT int
 bsock_unix_socket_connect (const char * const restrict sockpath);
 
 __attribute_nonnull__
-int
+EXPORT int
 bsock_unix_socket_bind_listen (const char * const restrict sockpath,
                                int * const restrict bound);
 
 __attribute_nonnull_x__((4))
-ssize_t
+EXPORT ssize_t
 bsock_unix_recv_fds (const int fd,
                      int * const restrict rfds,
                      unsigned int * const restrict nrfds,
@@ -80,7 +80,7 @@ bsock_unix_recv_fds (const int fd,
                      const size_t iovlen);
 
 __attribute_nonnull_x__((4,6))
-ssize_t
+EXPORT ssize_t
 bsock_unix_recv_fds_ex (const int fd,
                         int * const restrict rfds,
                         unsigned int * const restrict nrfds,
@@ -90,7 +90,7 @@ bsock_unix_recv_fds_ex (const int fd,
                         const size_t ctrlbuf_sz);
 
 __attribute_nonnull_x__((4))
-ssize_t
+EXPORT ssize_t
 bsock_unix_send_fds (const int fd,
                      const int * const restrict sfds,
                      unsigned int nsfds,
@@ -98,7 +98,7 @@ bsock_unix_send_fds (const int fd,
                      const size_t iovlen);
 
 __attribute_nonnull__
-int
+EXPORT int
 bsock_unix_getpeereid (const int s,
                        uid_t * const restrict euid,
                        gid_t * const restrict egid);

@@ -36,24 +36,24 @@ enum {
 
 __attribute_cold__
 __attribute_noinline__
-void
+EXPORT void
 bsock_syslog_setlevel (const int level);
 
 __attribute_cold__
 __attribute_noinline__
-void
+EXPORT void
 bsock_syslog_setlogfd (const int fd);
 
 __attribute_cold__
 __attribute_noinline__
-void
+EXPORT void
 bsock_syslog_openlog (const char * const ident,
                       const int option, const int facility);
 
 __attribute_cold__
 __attribute_noinline__
 __attribute_format__((printf,3,4))
-void
+EXPORT void
 bsock_syslog (const int errnum, const int priority,
               const char * const restrict fmt, ...);
 
