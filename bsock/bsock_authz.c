@@ -272,6 +272,7 @@ bsock_authz_config (void)
         buf = NULL;
     }
     else {
+        authz_hash->mask  = (uid_t)(table_sz-1);
         authz_hash->table = (struct addrinfo **)(authz_hash+1);
         authz_hash->ai    = (struct addrinfo *)(authz_hash->table+table_sz);
         authz_hash->addr  = (int *)(authz_hash->ai+n);
