@@ -29,7 +29,6 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <poll.h>
-#include <pthread.h>
 #include <netdb.h>
 #include <sched.h>
 #include <signal.h>
@@ -37,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <bsock_addrinfo.h>
@@ -46,6 +46,8 @@
 #include <bsock_resvaddr.h>
 #include <bsock_syslog.h>
 #include <bsock_unix.h>
+
+#include <bpoll/bpoll.h>
 
 #ifndef BSOCK_SYSLOG_IDENT
 #define BSOCK_SYSLOG_IDENT "bsock"
@@ -88,8 +90,8 @@
 #endif
 #endif
 
-/* bsock_client_thread assumes MSG_DONTWAIT support if BSOCK_UNIX_ACCEPTFILTER
- * and this assumption is true for Linux and *BSD, but check here for others
+/* main() assumes MSG_DONTWAIT support if BSOCK_UNIX_ACCEPTFILTER and
+ * this assumption is true for Linux and *BSD, but check here for others
  * (or fcntl c->fd F_SETFL O_NONBLOCK before speculative bsock_addrinfo_recv) */
 #ifndef MSG_DONTWAIT
 #undef BSOCK_UNIX_ACCEPTFILTER
@@ -109,105 +111,143 @@ static int
 nointr_close (const int fd)
 { int r; retry_eintr_do_while(r = close(fd), r != 0); return r; }
 
-__attribute_noinline__
-static int
-retry_poll_fd (const int fd, const short events, const int timeout)
-{
-    struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
-    int n; /*EINTR results in retrying poll with same timeout again and again*/
-    retry_eintr_do_while(n = poll(&pfd, 1, timeout), -1 == n);
-    if (0 == n) errno = ETIME; /* specific for bsock; not generic */
-    return n;
-}
+static volatile sig_atomic_t signalled_hup = true;
 
-__attribute_nonnull__
 static void
-bsock_cleanup_close (void * const arg)
+bsock_sa_handler_sighup (const int signo  __attribute_unused__)
 {
-    const int fd = *(int *)arg;
-    if (-1 != fd)
-        nointr_close(fd);
+    signalled_hup = true; /*set flag to run reconfigure steps when convenient*/
 }
 
-struct bsock_client_st {
-  struct bsock_client_st *next;
-  int fd;
-  uid_t uid;
-  gid_t gid;
-};
+__attribute_cold__
+__attribute_noinline__
+static void
+bsock_sigaction_sighup (void)
+{
+    /* efficiency: keep databases open (advantageous for nss_mcdb module) */
+    /* perform database open in event thread (thread-specific in nss_mcdb)*/
+    setprotoent(1);
+    setservent(1);
+
+    /* refresh table of persistent reserved addresses */
+    bsock_resvaddr_config();
+    /* refresh table of authorized username/address/port */
+    bsock_authz_config();
+
+    endprotoent();
+    endservent();
+}
+
+static time_t epochsec;
+
+static void
+bsock_sa_handler_sigalrm (const int signo  __attribute_unused__)
+{
+    ++epochsec;
+    /* Note: bsock is not concerned with precision less than +/- 1 sec,
+     * or else this signal handler could use clock_gettime() to calculate
+     * drift and timer_gettime() and timer_settime() to adjust.
+     * (clock_gettime(), timer_gettime(), timer_settime() are async-signal-safe)
+     * Would need to modify sigaction() to pass SA_SIGINFO to obtain timer_t,
+     * and to modify the parameters taken by this routine to receive siginfo_t.
+     * In addition, timerfd would be preferred over signal handler to avoid
+     * race condition of signal received right before bpoll_poll(), resulting
+     * in extra interval passing before bpoll_poll() interrupted by SIGALRM.
+     * On the other hand, if we were to be more lax about precision in cleaning
+     * up idle connections, use sigevent SIGEV_THREAD instead of signal handler
+     * and have bpoll_poll() return e.g. once a min instead of once a sec */
+}
 
 /* simple fixed-size statically allocated hash table
- * using statically allocated elements (enforces max threads)
- * accessed read/write while holding mutex
- * (not expecting many simultaneous requests; limiting one thread max per uid)*/
-#define BSOCK_THREAD_TABLE_SZ 32  /* must be power of two */
-#define BSOCK_THREAD_MAX 128
-static pthread_mutex_t bsock_thread_table_mutex = PTHREAD_MUTEX_INITIALIZER;
-static struct bsock_client_st bsock_thread_elts[BSOCK_THREAD_MAX];
-static struct bsock_client_st * bsock_thread_head = bsock_thread_elts;
-static struct bsock_client_st * bsock_thread_table[BSOCK_THREAD_TABLE_SZ];
+ * using statically allocated elements (to enforce max connections)
+ * (not expecting many simultaneous requests; one connection per uid limit)*/
+#define BSOCK_CONNECTION_TABLE_SZ 32  /* must be power of two */
+#define BSOCK_CONNECTION_MAX 128
+struct bsock_uid_table_st {
+    struct bsock_uid_table_st *next;
+    uid_t uid;
+};
+static struct bsock_uid_table_st bsock_uid_elts[BSOCK_CONNECTION_MAX];
+static struct bsock_uid_table_st * bsock_uid_table[BSOCK_CONNECTION_TABLE_SZ];
+static struct bsock_uid_table_st * bsock_uid_head;
 
 static void
-bsock_thread_table_init (void)
+bsock_uid_table_init (void)
 {
-    for (unsigned int i = 0; i < BSOCK_THREAD_MAX-1; ++i)
-        bsock_thread_elts[i].next = &bsock_thread_elts[i+1];
-    bsock_thread_elts[BSOCK_THREAD_MAX-1].next = NULL;
+    bsock_uid_head = bsock_uid_elts;
+    for (unsigned int i = 0; i < BSOCK_CONNECTION_MAX-1; ++i)
+        bsock_uid_elts[i].next = &bsock_uid_elts[i+1];
+    bsock_uid_elts[BSOCK_CONNECTION_MAX-1].next = NULL;
 }
 
-__attribute_nonnull__
-static struct bsock_client_st *
-bsock_thread_table_query (const struct bsock_client_st * const c)
+static bool
+bsock_uid_table_add (const uid_t uid)
 {
-    const uid_t uid = c->uid;
-    struct bsock_client_st *t = 
-      bsock_thread_table[(uid & (BSOCK_THREAD_TABLE_SZ-1))];
+    struct bsock_uid_table_st ** const next =
+      &bsock_uid_table[(uid & (BSOCK_CONNECTION_TABLE_SZ-1))];
+    /* check if uid already in table */
+    struct bsock_uid_table_st *t = *next;
     while (NULL != t && t->uid != uid)
         t = t->next;
-    return t;
+    /* get element from bsock_uid_head if uid not already in table */
+    if (NULL == t && NULL != (t = bsock_uid_head)) {
+        bsock_uid_head = t->next;
+        t->uid  = uid;
+        t->next = *next;
+        *next   = t;
+        return true;
+    }
+    return false;
 }
 
-__attribute_nonnull__
-static struct bsock_client_st *
-bsock_thread_table_add (struct bsock_client_st * const c)
-{
-    /* (not checking for multiple-add of same uid (do not do that)) */
-    struct bsock_client_st ** const next =
-      &bsock_thread_table[(c->uid & (BSOCK_THREAD_TABLE_SZ-1))];
-    struct bsock_client_st * const t = bsock_thread_head;
-    if (NULL == t)
-        return NULL;
-    bsock_thread_head = t->next;
-    memcpy(t, c, sizeof(struct bsock_client_st));
-    t->next = *next;
-    return (*next = t);
-}
-
-__attribute_nonnull__
 static void
-bsock_thread_table_remove (struct bsock_client_st * const c)
+bsock_uid_table_remove (const uid_t uid)
 {
-    /* (removes only first uid found if multiple (should not happen)) */
-    const uid_t uid = c->uid;
-    struct bsock_client_st **prev =
-      &bsock_thread_table[(uid & (BSOCK_THREAD_TABLE_SZ-1))];
-    struct bsock_client_st *t = *prev;
-    /* mark to prevent bsock_cleanup_client taking extra mutex to repeat this */
-    c->next = (struct bsock_client_st *)~(uintptr_t)0;
+    struct bsock_uid_table_st **prev =
+      &bsock_uid_table[(uid & (BSOCK_CONNECTION_TABLE_SZ-1))];
+    struct bsock_uid_table_st *t = *prev;
     while (NULL != t && t->uid != uid)
         t = *(prev = &t->next);
     if (NULL != t) {
         *prev = t->next;
-        t->next = bsock_thread_head;
-        bsock_thread_head = t;
+        t->next = bsock_uid_head;
+        bsock_uid_head = t;
     }
 }
+
+static size_t bsock_ctrlbuf_sz;
+static char *bsock_ctrlbuf;
+
+/* preallocate bsock_ctrlbuf */
+static bool
+bsock_ctrlbuf_alloc (void)
+{
+    bsock_ctrlbuf_sz = bsock_daemon_msg_control_max();
+    bsock_ctrlbuf = malloc(bsock_ctrlbuf_sz);
+    if (bsock_ctrlbuf != NULL)
+        return true;
+    else {
+        bsock_syslog(errno, LOG_ERR, "max ancillary data very "
+          "large (?); error in malloc(%zu)", bsock_ctrlbuf_sz);
+        return false;
+    }
+}
+
+struct bsock_client_st {
+  int fd;
+  int uid_table;
+  uid_t uid;
+  gid_t gid;
+  struct bsock_client_st *tprev;
+  struct bsock_client_st *tnext;
+  time_t tstamp;
+};
 
 __attribute_nonnull__
 static int
 bsock_client_handler (struct bsock_client_st * const restrict c,
                       struct addrinfo * const restrict ai,
-                      int * const restrict fd)
+                      int fd)
 {
     int nfd = -1;
     int rc = EXIT_FAILURE;
@@ -225,18 +265,18 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
             break;
 
         /* check if addr, port already reserved and bound in bsock cache
-         * (Note: *fd is intentionally not set to nfd to avoid cleanup close) */
+         * (Note: fd is intentionally not set to nfd to avoid cleanup close) */
         if (-1 != (nfd = bsock_resvaddr_fd(ai))) {
-            if (c->fd != *fd)
+            if (c->fd != fd)
                 rc = EXIT_SUCCESS;
-            else /* (incompatible (unsupportable) with authbind (c->fd==*fd)) */
+            else  /* (incompatible (unsupportable) with authbind (c->fd==fd)) */
                 errno = EACCES;
             break;
         }
 
         /* create socket (if not provided by client) */
-        if (-1 == *fd) {
-            *fd = nfd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (-1 == fd) {
+            fd = nfd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
             if (-1 == nfd) {
                 bsock_syslog(errno, LOG_ERR, "socket");
                 break;
@@ -248,7 +288,7 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
                       ? ((struct sockaddr_in *)ai->ai_addr)->sin_port
                       : ((struct sockaddr_in6 *)ai->ai_addr)->sin6_port)) {
                 /* bind to reserved port (special-case port == 0) */
-                if (0 == bsock_bindresvport_sa(*fd, ai->ai_addr))
+                if (0 == bsock_bindresvport_sa(fd, ai->ai_addr))
                     rc = EXIT_SUCCESS;
                 else
                     bsock_syslog(errno, LOG_ERR, "bindresvport_sa");
@@ -257,7 +297,7 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
             else {
                 /* set SO_REUSEADDR socket option */
                 flag = 1;
-                if (0 != setsockopt(*fd, SOL_SOCKET, SO_REUSEADDR,
+                if (0 != setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
                                     &flag, sizeof(flag))) {
                     bsock_syslog(errno, LOG_ERR, "setsockopt");
                     break;
@@ -266,7 +306,7 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
         }
 
         /* bind to address */
-        if (0 == bind(*fd, ai->ai_addr, ai->ai_addrlen))
+        if (0 == bind(fd, ai->ai_addr, ai->ai_addrlen))
             rc = EXIT_SUCCESS;
         else
             bsock_syslog(errno, LOG_ERR, "bind");
@@ -279,8 +319,8 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
         flag = EACCES;  /*(iov.iov_base = &flag)*/
 
     /* send 4-byte value in data to indicate success or errno value
-     * (send socket *fd to client if new socket, no poll since only one send) */
-    if (c->fd != *fd) {
+     * (send socket fd to client if new socket, no poll since only one send) */
+    if (c->fd != fd) {
         /* poll()d before recv above, so can defer O_NONBLOCK to here */
         if (!MSG_DONTWAIT)
             (void)fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL, 0) | O_NONBLOCK);
@@ -290,196 +330,36 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
           : EXIT_FAILURE;
         if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
             bsock_syslog(errno, LOG_ERR, "sendmsg");
+        nointr_close(fd);
     }
-    else {
+    else
         rc = flag;  /* authbind: set exit value */
-        *fd = -1;   /* no-op bsock_cleanup_close(fd) since *fd == c->fd */
-    }
 
     return rc;
 }
 
+__attribute_nonnull__
 static int
-uint32_to_str(uint32_t u, char * const buf)
+bsock_client_event (struct bsock_client_st * const restrict c,
+                    struct addrinfo * const restrict ai)
 {
-    char * restrict out = buf;
-    int n = 0;
-    char tmp[10];
-    do { tmp[n++] = '0' + (u % 10); } while ((u /= 10));
-    do { *out++ = tmp[--n]; } while (n);
-    return (int)(out - buf);
-}
-
-__attribute_noinline__
-static void
-bsock_infostr (char * restrict infobuf,
-               const int fd, const uid_t uid, const gid_t gid)
-{
-    /* snprintf() can be expensive so special-case LOG_INFO.
-     * (snprintf() took 1.5 usec with fmtstr below -- as much as a system call!)
-     * snprintf(info, sizeof(info), "fd(%d) uid:%u gid:%u",
-     *          fd, (uint32_t)uid, (uint32_t)gid);
-     * We assume buffer large enough to hold fmtstr plus (3) 10-digit uint32_t,
-     * i.e. our callers pass 64-byte buffer, and fd must not be negative. */
-    infobuf[0] = 'f';
-    infobuf[1] = 'd';
-    infobuf[2] = '(';
-    infobuf += 3 + uint32_to_str((uint32_t)fd, infobuf+3);
-    infobuf[0] = ')';
-    infobuf[1] = ' ';
-    infobuf[2] = 'u';
-    infobuf[3] = 'i';
-    infobuf[4] = 'd';
-    infobuf[5] = ':';
-    infobuf += 6 + uint32_to_str((uint32_t)uid, infobuf+6);
-    infobuf[0] = ' ';
-    infobuf[1] = 'g';
-    infobuf[2] = 'i';
-    infobuf[3] = 'd';
-    infobuf[4] = ':';
-    infobuf += 5 + uint32_to_str((uint32_t)gid, infobuf+5);
-    infobuf[0] = '\0';
-}
-
-__attribute_nonnull__
-static void
-bsock_cleanup_client (void * const arg)
-{
-    struct bsock_client_st * const c = (struct bsock_client_st *)arg;
-    if (-1 != c->fd)
-        nointr_close(c->fd);
-    if (c->next != (struct bsock_client_st *)~(uintptr_t)0) {
-        pthread_mutex_lock(&bsock_thread_table_mutex);
-        bsock_thread_table_remove(c);
-        pthread_mutex_unlock(&bsock_thread_table_mutex);
-    }
-}
-
-__attribute_nonnull__
-static void *
-bsock_client_thread (void * const arg)
-{
-    struct bsock_client_st c; /* copy so that not referencing hash entry */
-    struct sockaddr_storage addr;
-    struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
-      .ai_addrlen = sizeof(addr),
-      .ai_addr    = (struct sockaddr *)&addr
-    };
+    /* receive addrinfo from client and handle request */
+    /* using preallocated buffer avoids MSG_CTRUNC but dictates single thread */
     int fd = -1;
-    char info[64];
-    memcpy(&c, arg, sizeof(struct bsock_client_st));
-    bsock_infostr(info, c.fd, c.uid, c.gid);
-    /* receive addrinfo from client
-     * (NOTE: receiving addrinfo is ONLY place in bsock that can block on
-     *  client input (at this time).  Set timeout for 2000ms (2 sec)) */
-    if (!(/* speculative recv if OS can defer accept() until data ready*/
-          #ifdef BSOCK_UNIX_ACCEPTFILTER
-          bsock_addrinfo_recv(c.fd, &ai, &fd)
-          || ((errno == EAGAIN || errno == EWOULDBLOCK)
-              && 1 == retry_poll_fd(c.fd, POLLIN, 2000)
-              && bsock_addrinfo_recv(c.fd, &ai, &fd))
-          #else
-                 1 == retry_poll_fd(c.fd, POLLIN, 2000)
-              && bsock_addrinfo_recv(c.fd, &ai, &fd)
-          #endif
-         ) ) {
-        ai.ai_addrlen = 0;   /* overloaded flag to send error in response */
-        bsock_syslog(errno, LOG_ERR,
-                     "(uid:%u) recv addrinfo error or invalid addrinfo",
-                     (uint32_t)c.uid);
+    if (!bsock_addrinfo_recv_ex(c->fd,ai,&fd,bsock_ctrlbuf,bsock_ctrlbuf_sz)) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return EAGAIN;       /* socket not ready; must poll for dataready */
+        else {
+            ai->ai_addrlen = 0;  /* overloaded flag to send error in response */
+            bsock_syslog(errno, LOG_ERR,
+                         "(uid:%u) recv addrinfo error or invalid addrinfo",
+                         (uint32_t)c->uid);
+        }
     }
-    /* (remove from thread table prior to send due to observed process and 
-     *  thread execution order where a sequence of bind requests from same
-     *  uid would get deferred since this thread did not remove uid from thread
-     *  table before client was able to make another request, and the listening
-     *  thread able to handle it (and defer due to existing request in process))
-     * (bsock_client_handler() should not perform any activities that block) */
-    pthread_mutex_lock(&bsock_thread_table_mutex);
-    bsock_thread_table_remove(&c);
-    pthread_mutex_unlock(&bsock_thread_table_mutex);
-    bsock_client_handler(&c, &ai, &fd);  /* ignore rc; client request handled */
-    bsock_cleanup_close(&fd);
-    bsock_cleanup_client(&c);
-    /* syslog all connections to bsock daemon
-     * Note: This syslog results in bsock taking 1.3x longer (wall clock)
-     * to service each request on my uniprocessor system, so do syslog after
-     * servicing request for benefit of multiple requests on multiprocessors.
-     * (However, if thread cancelled before here, then logging doesn't happen)*/
-    bsock_syslog(0, LOG_INFO, "%s", info); /* deferred to not delay response */
-    return NULL;  /* end of thread; identical to pthread_exit() */
-}
-
-__attribute_cold__
-__attribute_noinline__
-static void
-bsock_sigaction_sighup (void)
-{
-    /* efficiency: keep databases open (advantageous for nss_mcdb module) */
-    /* perform database open in event thread (thread-specific in nss_mcdb)*/
-    /* (not bothering to close these databases if pthread_cancel() called)*/
-    setprotoent(1);
-    setservent(1);
-
-    /* refresh table of persistent reserved addresses */
-    bsock_resvaddr_config();
-    /* refresh table of authorized username/address/port */
-    bsock_authz_config();
-
-    endprotoent();
-    endservent();
-}
-
-__attribute_nonnull__
-static void
-bsock_sigaction (sigset_t * const restrict sigs, const int signo)
-{
-    switch (signo) {
-      case SIGHUP:
-        bsock_sigaction_sighup();
-        break;
-      case SIGINT: case SIGQUIT: case SIGTERM:
-        (void)pthread_sigmask(SIG_UNBLOCK, sigs, NULL);
-        raise(signo); /*not expected to return, but reset mask if it does*/
-        (void)pthread_sigmask(SIG_BLOCK, sigs, NULL);
-        break;
-      default:
-        bsock_syslog(0, LOG_ERR, "caught unexpected signal: %d", signo);
-        break;
-    }
-}
-
-__attribute_nonnull__
-__attribute_noreturn__
-static void
-bsock_sigwait (void * const arg)
-{
-    sigset_t * const sigs = (sigset_t *)arg;
-    int signo = SIGHUP;
-    for (;;) {
-        bsock_sigaction(sigs, signo);
-        (void) sigwait(sigs, &signo);
-    }
-}
-
-static void
-bsock_thread_signals (void)
-{
-    static sigset_t sigs;/*('static' since must persist after routine returns)*/
-    pthread_t thread;
-    int errnum;
-    (void) sigemptyset(&sigs);
-    (void) sigaddset(&sigs, SIGHUP);
-    (void) sigaddset(&sigs, SIGINT);
-    (void) sigaddset(&sigs, SIGQUIT);
-    (void) sigaddset(&sigs, SIGTERM);
-    /* block signals (signal mask inherited by threads subsequently created) */
-    if (0 != (errnum = pthread_sigmask(SIG_BLOCK, &sigs, NULL))) {
-        bsock_syslog(errnum, LOG_ERR, "pthread_sigmask");
-        return;
-    }
-    if (0 != (errnum = pthread_create(&thread, NULL,
-                                      (void *(*)(void *))&bsock_sigwait,&sigs)))
-        bsock_syslog(errnum, LOG_ERR, "pthread_create");
+    bsock_client_handler(c, ai, fd);     /* ignore rc; client request handled */
+    /* caller must close(c->fd) as appropriate
+     * (defer to caller so that bpollset can manage close(c->fd)) */
+    return 0;
 }
 
 __attribute_cold__
@@ -492,75 +372,339 @@ bsock_client_send_errno (const int fd, int errnum)
     bsock_unix_send_fds(fd, NULL, 0, &iov, 1);  /* no err chk; send & forget */
 }
 
-static int
-bsock_thread_event_loop (const int sfd, pthread_attr_t * const restrict attr)
+static void
+bsock_bpollelt_cb_close (bpollset_t * const restrict bpollset
+                           __attribute_unused__,
+                         bpollelt_t * const restrict bpollelt)
 {
-    /* daemon event loop
-     * accept, get client credentials, insert into table, spawn handler thread
-     *
-     * (As written, code is extensible to use timer thread which expires long
-     *  running threads using pthread_cancel().  Not implemented in bsock since
-     *  bsock only blocks on reading addrinfo from client, and handler thread
-     *  poll()s for limited time before aborting.)  (It should be possible to
-     *  implement as single-thread using poll() for POLLIN on all accept()ed
-     *  connections, and then handling in-line once data ready.
-     *  Alternatively via SIGIO.)
-     */
-    struct bsock_client_st m;
-    struct bsock_client_st *c;
-    pthread_t thread_id;
+    struct bsock_client_st * const c=(struct bsock_client_st *) bpollelt->udata;
+    if (c->uid_table)
+        bsock_uid_table_remove(c->uid);
+    if (c->tprev != NULL) { /* remove from linked list ordered by req time */
+        c->tprev->tnext = c->tnext;
+        c->tnext->tprev = c->tprev;
+    }
+    nointr_close(c->fd);
+}
 
+/* (similar to uint32_to_ascii_base10_loop() in
+ *   https://github.com/gstrauss/mcdb/blob/master/uint32.c ) */
+__attribute_nonnull__
+static int
+uint32_to_str(uint32_t u, char * const buf)
+{
+    char * restrict out = buf;
+    int n = 0;
+    char tmp[10];
+    do { tmp[n++] = '0' + (u % 10); } while ((u /= 10));
+    do { *out++ = tmp[--n]; } while (n);
+    return (int)(out - buf);
+}
+
+__attribute_noinline__
+__attribute_nonnull__
+static void
+bsock_infostr (char * restrict infobuf,
+               const int fd, const uid_t uid, const gid_t gid)
+{
+    /* snprintf() can be expensive so special-case LOG_INFO.
+     * (snprintf() took 1.5 usec with fmtstr below -- as much as a system call!)
+     * snprintf(info, sizeof(info), "fd(%d) uid:%u gid:%u",
+     *          fd, (uint32_t)uid, (uint32_t)gid);
+     * We assume buffer large enough to hold fmtstr plus (3) 10-digit uint32_t,
+     * i.e. our callers pass 64-byte buffer, and fd should not be negative. */
+    infobuf[0] = 'f';
+    infobuf[1] = 'd';
+    infobuf[2] = '(';
+    infobuf += 3;
+    infobuf += uint32_to_str((uint32_t)fd, infobuf);
+    infobuf[0] = ')';
+    infobuf[1] = ' ';
+    infobuf[2] = 'u';
+    infobuf[3] = 'i';
+    infobuf[4] = 'd';
+    infobuf[5] = ':';
+    infobuf += 6;
+    infobuf += uint32_to_str((uint32_t)uid, infobuf);
+    infobuf[0] = ' ';
+    infobuf[1] = 'g';
+    infobuf[2] = 'i';
+    infobuf[3] = 'd';
+    infobuf[4] = ':';
+    infobuf += 5;
+    infobuf += uint32_to_str((uint32_t)gid, infobuf);
+    infobuf[0] = '\0';
+}
+
+__attribute_nonnull__
+static bool
+bsock_bpollset_add (struct bsock_client_st * const restrict m,
+                    struct bsock_client_st * const restrict sentinel,
+                    bpollset_t * const restrict bpollset)
+{
+    /* add client fd to bpollset
+     * allocate connection table entry; permit one request at a time per uid
+     * and limit the number of outstanding requests (if requests block) */
+    if (!bpoll_get_is_full(bpollset) && bsock_uid_table_add(m->uid)) {
+        bpollelt_t * const restrict bpollelt =
+          bpoll_elt_init(bpollset,NULL,m->fd,BPOLL_FD_SOCKET,BPOLL_FL_CLOSE);
+        if (NULL != bpollelt
+            && 0 == bpoll_elt_add(bpollset, bpollelt, BPOLLIN)) {
+            /* attach client connection info to bpollelt user data.
+             * add to doubly-linked list ordered by request time */
+            m->uid_table    = 1;
+            m->tstamp       = sentinel->tstamp;
+            m->tnext        = sentinel;
+            m->tprev        = sentinel->tprev;
+            m->tprev->tnext = sentinel->tprev = (struct bsock_client_st *)
+              memcpy(bpollelt->udata, m, sizeof(struct bsock_client_st));
+            m->fd = -1; /*flag to not close m->fd; still waiting to process it*/
+            return true;
+        }
+        else {
+            if (NULL == bpollelt)
+                bsock_syslog(errno, LOG_ERR, "bpoll_elt_init");
+            else {
+                bsock_syslog(errno, LOG_WARNING, "bpoll_elt_add");
+                bpoll_elt_destroy(bpollset, bpollelt);
+            }
+            bsock_uid_table_remove(m->uid);
+            /*(send EAGAIN instead of ENOMEM or ENOSPC or others)*/
+        }
+    }
+    /* else sendmsg with EAGAIN; permit only one request at a time per uid */
+    return false;
+}
+
+__attribute_nonnull__
+static int
+bsock_accept_loop (const int sfd,
+                   struct bsock_client_st * const restrict sentinel,
+                   bpollset_t * const restrict bpollset)
+{
+    struct bsock_client_st m = { .fd = -1 };
+    struct sockaddr_storage addr;
+    struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
+      .ai_addrlen = sizeof(addr),
+      .ai_addr    = (struct sockaddr *)&addr
+    };
+    int accept_max = 64; /* set limit to avoid starvation of bpollset fds */
+    int rv = EAGAIN;
+    int logbuf_idx = 0; /* logbuf[] MUST be sized to hold accept_max entries! */
+    char logbuf[8192];  /* accept_max * (63 bytes (max) + '\0') per log entry */
+
+    /* accept loop
+     * accept, get client credentials, insert into table, handle ready events */
     do {
+        /* accept new connection, get client credentials,
+         * buffer LOG_INFO entries (64-byte fixed record size for simplicity)
+         * handle client request (if data ready) or else add to bpollset
+         * (speculative recv: see if data ready; skip unnecessary poll) */
+        if (-1 != (m.fd = accept(sfd, NULL, NULL))) {
+            if (0 == bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
+                bsock_infostr(logbuf+logbuf_idx, m.fd, m.uid, m.gid);
+                logbuf_idx += 64;
+                /*(set O_NONBLOCK if non-blocking recvmsg() is unsupported)*/
+                if (!MSG_DONTWAIT)
+                    fcntl(m.fd, F_SETFL, fcntl(m.fd, F_GETFL, 0) | O_NONBLOCK);
+                ai.ai_addrlen = sizeof(addr);         /* reset value each use */
+                if (0 != bsock_client_event(&m, &ai)  /*handle or bpollset add*/
+                    && !bsock_bpollset_add(&m,sentinel,bpollset))
+                    /* XXX: ? bsock_syslog() if bpoll_get_is_full(bpollset) ?
+                     *      (if so, rate limit warnings to avoid spew) */
+                    bsock_client_send_errno(m.fd, EAGAIN);
+            }       /*see bsock_bind_viasock()*/
+            else
+                bsock_syslog(errno, LOG_ERR, "getpeereid");
 
-        /* accept new connection */
-        if (-1 == (m.fd = accept(sfd, NULL, NULL))) {
+            if (-1 != m.fd)  /* close client fd (unless added to bpollset) */
+                nointr_close(m.fd);
+        }
+        else {
             switch (errno) {
+              case EMFILE:/* return EAGAIN to close completed requests, retry */
+             #if EAGAIN != EWOULDBLOCK
+              case EWOULDBLOCK:
+             #endif
+              case EAGAIN:break; /* rv == EAGAIN; */
               case ECONNABORTED:
               case EINTR: continue;
+              case EBADF:
               case EINVAL:/* listen sfd closed by another thread */
-                          pthread_attr_destroy(attr);
-                          return EXIT_SUCCESS;
+                          rv = EXIT_SUCCESS; break;
               default:    /* temporary process/system resource issue */
+                          /*(see also man accept() "Error Handling" on Linux)*/
                           bsock_syslog(errno, LOG_ERR, "accept");
                           (void)poll(NULL, 0, 10); /* pause 10ms and continue */
                           continue;
             }
+            break;
         }
 
-        /* get client credentials */
-        if (0 != bsock_unix_getpeereid(m.fd, &m.uid, &m.gid)) {
-            bsock_syslog(errno, LOG_ERR, "getpeereid");
-            nointr_close(m.fd);
-            continue;
-        }
+    } while (--accept_max);
 
-        /* allocate thread table entry; permit one request at a time per uid */
-        c = NULL;
-        pthread_mutex_lock(&bsock_thread_table_mutex);
-        if (bsock_thread_table_query(&m) == NULL) {
-            while ((c = bsock_thread_table_add(&m)) == NULL) {
-                /* (yield then retry if max threads already in progress) */
-                pthread_mutex_unlock(&bsock_thread_table_mutex);
-                sched_yield();
-                pthread_mutex_lock(&bsock_thread_table_mutex);
+    /* flush buffered LOG_INFO entries
+     * (log info can be extremely useful, but it is not free;
+     *  there can be measurable cost to info/metrics collection) */
+    for (int idx = 0; idx < logbuf_idx; idx+=64)
+        bsock_syslog(0, LOG_INFO, "%s", logbuf+idx);
+
+    return rv;
+}
+
+static int
+bsock_event_loop (const int sfd)
+{
+    bpollelt_t * bpollelt;
+    bpollelt_t ** results;
+    bpollset_t * const restrict bpollset =
+      bpoll_create(NULL, NULL, bsock_bpollelt_cb_close, NULL, NULL);
+    struct bsock_client_st *c;
+    struct sockaddr_storage addr;
+    struct addrinfo ai = {  /* init only fields used to pass buf and bufsize */
+      .ai_addrlen = sizeof(addr),
+      .ai_addr    = (struct sockaddr *)&addr
+    };
+    struct bsock_client_st sentinel;
+    int i, accepting = 0, nfound;
+    timer_t timerid;
+    struct itimerspec it = { {1,0}, {0,0} }; /* init it_interval to 1 sec */
+    sentinel.tprev = sentinel.tnext = &sentinel;
+    sentinel.tstamp = 0;
+
+    /* create/init bpollset and add sfd
+     * typical expected bsock use is low concurrency;
+     * use BPOLL_M_POLL instead of BPOLL_M_NOT_SET
+     * No cleanup of bpollset is done on error since program exits soon after */
+    if (NULL == bpollset
+        || 0 != bpoll_init(bpollset, BPOLL_M_POLL,
+                           BSOCK_CONNECTION_MAX, BSOCK_CONNECTION_MAX,
+                           sizeof(struct bsock_client_st))) {
+        bsock_syslog(errno, LOG_ERR, "bpoll_create, bpoll_init");
+        return EXIT_FAILURE;
+    }
+    fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);/*set nonblocking*/
+    bpollelt = bpoll_elt_init(bpollset,NULL,sfd,BPOLL_FD_SOCKET,BPOLL_FL_CLOSE);
+    if (NULL == bpollelt
+        || 0 != bpoll_elt_add(bpollset, bpollelt, BPOLLIN)) {
+        bsock_syslog(errno, LOG_ERR,
+                     "bpoll_elt_init, bpoll_elt_add");
+        return EXIT_FAILURE;
+    }
+
+    if (!bsock_ctrlbuf_alloc())
+        return EXIT_FAILURE;
+
+    /* create interval timer (disarmed), set bpoll_poll() timer 60 secs
+     * so that bpoll_poll() periodically returns and checks for sighup */
+    if (timer_create(CLOCK_REALTIME, NULL, &timerid) == 0)
+        bpoll_timespec_from_sec_nsec(bpollset, 60, 0);
+    else {
+        bsock_syslog(errno, LOG_ERR, "timer_create");
+        return EXIT_FAILURE;
+    }
+
+    /* daemon event loop; handle ready events before accept()ing new requests */
+    do {
+
+        /* check if interval timer needs to be enabled/disabled
+         * (timer SIGALRM will interrupt bpoll_poll(), when timer is set)
+         * (interval timer is more efficient than calling time() after
+         *  returning from each and every bpoll_poll() */
+        if (sentinel.tnext != &sentinel) {  /* client connections exist */
+            if (it.it_value.tv_sec == 0) {
+                it.it_value.tv_sec  = 1;    /* arm timer; tv_sec|tv_nsec != 0 */
+                timer_settime(timerid, 0, &it, NULL);
             }
         }
-        pthread_mutex_unlock(&bsock_thread_table_mutex);
-        if (NULL == c) {
-            /* sendmsg with EAGAIN; permit only one request at a time per uid */
-            bsock_client_send_errno(m.fd, EAGAIN);  /*see bsock_bind_viasock()*/
-            nointr_close(m.fd);
-            continue;
+        else {                              /* listen sock only */
+            if (it.it_value.tv_sec != 0) {
+                it.it_value.tv_sec  = 0;    /* disarm timer; tv_sec=tv_nsec=0 */
+                timer_settime(timerid, 0, &it, NULL);
+            }
         }
 
-        /* create handler thread */
-        if (0 != pthread_create(&thread_id, attr, bsock_client_thread, c)) {
-            bsock_thread_table_remove(c);
-            nointr_close(m.fd);
-            continue;
+        nfound = bpoll_poll(bpollset, bpoll_timespec(bpollset));
+
+        if (-1 == nfound && errno != EINTR) {  /* should not happen */
+            bsock_syslog(errno, LOG_ERR, "bpoll_poll");
+            /* use nanosleep() to avoid sleep() and SIGALRM interaction */
+            nanosleep(&it.it_interval, NULL);/* reuse 'it' timespec for 1 sec */
+        } /* fall through to do processing */
+
+        /* efficiency: keep databases open (advantageous for nss_mcdb module) */
+        /* perform database open in event thread (thread-specific in nss_mcdb)*/
+        if (signalled_hup) {
+            signalled_hup = false;
+            bsock_sigaction_sighup();
         }
 
-    } while (1);
+        results = bpoll_get_results(bpollset);
+        for (i = 0; i < nfound; ++i) {
+            bpollelt = results[i];
+            c = (struct bsock_client_st *) bpollelt->udata;
+            if (bpollelt->fd == sfd) { accepting = 1; continue; }
+            ai.ai_addrlen = sizeof(addr);             /* reset value each use */
+            if ((bpollelt->events & BPOLLERR)
+                || 0 != bsock_client_event(c, &ai)) {
+                /* EAGAIN; should not happen after returned ready in bpollset */
+                bsock_syslog(EAGAIN, LOG_WARNING,
+                             "(uid:%u) recvmsg(%d) not ready",
+                             (uint32_t)c->uid, c->fd);
+                bsock_client_send_errno(c->fd,EAGAIN);/*see bsock_bind_viasock*/
+            }
+            /* Aside: bsock requests handled as one packet in, one packet out.
+             * Were bpollelt to stay in bpollset, would need to clear revents
+             * i.e. bpoll_elt_clear_revents(bpollelt);
+             *      after handling revents */
+            /* bpollset defers fd close (and cleanup events on close), so update
+             * uid tables and timer linked list above instead of waiting for
+             * bsock_bpollelt_cb_close() callback.  Waiting for cleanup might
+             * delay servicing next client request, or might trigger alarm below
+             * causing socket to be handled a second time, which is incorrect.*/
+            c->uid_table = 0;
+            bsock_uid_table_remove(c->uid);
+            /* remove from linked list ordered by req time */
+            c->tprev->tnext = c->tnext;
+            c->tnext->tprev = c->tprev;
+            c->tprev = c->tnext = NULL;
+            bpoll_elt_remove(bpollset, bpollelt); /*(BPOLL_FL_CLOSE fd)*/
+        }
+
+        /* coarse precision to +/- 1 sec good enough for our use, so make
+         * connection timeout at least 2 secs so at least 1 sec has to pass */
+        sentinel.tstamp =
+          (it.it_value.tv_sec != 0) ? epochsec : (epochsec = time(NULL));
+        c = sentinel.tnext;  /* loop exits immediately if tnext == &sentinal */
+        while (sentinel.tstamp - c->tstamp >= 2) {/* 2 sec timeout (+/- 1 sec)*/
+            bsock_syslog(ETIME, LOG_WARNING, "(uid:%u) recvmsg(%d) timed out",
+                         (uint32_t)c->uid, c->fd);
+            bsock_client_send_errno(c->fd, ETIME);   /*see bsock_bind_addrinfo*/
+            bpoll_elt_remove_by_fd(bpollset,c->fd);  /*(BPOLL_FL_CLOSE fd)*/
+            c = c->tnext;
+        }
+
+        /* loop for more ready events before accepting new, if nfound hit max
+         * (on the other hand, waiting too long to accept new connections might
+         *  result in full kernel TCP SYN queue, and packets getting dropped) */
+    } while (   !accepting
+             || nfound == BSOCK_CONNECTION_MAX /*(? is this test useful ?)*/
+             || (accepting = 0,
+                 bsock_accept_loop(sfd,&sentinel,bpollset) == EAGAIN)   );
+
+    timer_delete(timerid);
+    bpoll_destroy(bpollset);
+    return EXIT_SUCCESS;
+}
+
+static int
+retry_poll_fd (const int fd, const short events, const int timeout)
+{
+    struct pollfd pfd = { .fd = fd, .events = events, .revents = 0 };
+    int n; /*EINTR results in retrying poll with same timeout again and again*/
+    retry_eintr_do_while(n = poll(&pfd, 1, timeout), -1 == n);
+    if (0 == n) errno = ETIME; /* specific for bsock; not generic */
+    return n;
 }
 
 /* one-shot mode; handle single request and exit */
@@ -653,7 +797,7 @@ bsock_client_once (const int argc, char ** const restrict argv)
                      (uint32_t)m.uid);
     }
 
-    rc = bsock_client_handler(&m, &ai, &fd);
+    rc = bsock_client_handler(&m, &ai, fd);
     bsock_syslog(0, LOG_INFO, "%s", info); /*deferred to not delay response*/
     /*(not bothering to close() m.fd or fd since program is exiting)*/
     return rc;
@@ -665,7 +809,6 @@ main (int argc, char *argv[])
 {
     int sfd, opt, daemon = false, supervised = false;
     struct group *gr;
-    pthread_attr_t attr;
 
     /* setuid safety measures must be performed before anything else */
     if (!bsock_daemon_setuid_stdinit())
@@ -714,7 +857,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (!bsock_daemon_init(supervised, true))
+    if (!bsock_daemon_init(supervised, false))  /*(and skip optmem_max check)*/
         return EXIT_FAILURE;
 
     sfd = bsock_daemon_init_socket(BSOCK_SOCKET, geteuid(), gr->gr_gid,
@@ -744,15 +887,19 @@ main (int argc, char *argv[])
     }
   #endif
 
-    if (   0 != pthread_attr_init(&attr)
-        || 0 != pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)
-        || 0 != pthread_attr_setstacksize(&attr, 32768)) {/*(should be plenty)*/
-        bsock_syslog(errno, LOG_ERR, "pthread_attr_*");
-        return EXIT_FAILURE;
+    bsock_uid_table_init();  /* used to permit one concurrent request per uid */
+
+    {
+        struct sigaction act = { .sa_handler = bsock_sa_handler_sighup,
+                                 .sa_flags   = SA_RESTART };
+        sigemptyset(&act.sa_mask);
+        if (0 != sigaction(SIGHUP, &act, NULL))
+            bsock_syslog(errno, LOG_ERR, "sigaction");
+        act.sa_handler = bsock_sa_handler_sigalrm;
+        if (0 != sigaction(SIGALRM, &act, NULL))
+            bsock_syslog(errno, LOG_ERR, "sigaction");
     }
-    bsock_thread_table_init(); /*used to permit one concurrent request per uid*/
 
-    bsock_thread_signals();    /*blocks signals for all but one thread*/
-
-    return bsock_thread_event_loop(sfd, &attr);
+    bsock_sigaction_sighup();  /* trigger initial config setup */
+    return bsock_event_loop(sfd);
 }
