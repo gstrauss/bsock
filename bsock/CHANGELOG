@@ -1,5 +1,13 @@
 bsock change log
 
+bsock v0.09 (2013.12.01)
+- relicense bsock from 3-clause BSD to LGPLv2.1+
+- use plasma project code attributes for portability
+- explicitly mark public interfaces with EXPORT macro
+- bpoll - bookkeeping poll interface
+- make bsock daemon single-threaded and event-based employing bpoll
+  (instead of spawning thread per connection)
+
 bsock v0.08 (2013.03.11)
 - proxyexec: improve cmd string expansion behavior for proxyexec user shell
 

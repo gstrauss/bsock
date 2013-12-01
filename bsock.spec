@@ -1,5 +1,5 @@
 %define name bsock
-%define version 0.08
+%define version 0.09
 
 Name:    %{name}
 Version: %{version}
@@ -41,10 +41,19 @@ service program running under a single account.
 proxyexec handles client/server communication by passing argv and stdin,
 stdout, stderr fds over unix domain socket between processes owned by
 different users.
+
+
+bpoll - bookkeeping poll interface
+
+bpoll provides a thin and portable abstraction interface using historical poll
+semantics to detect ready events on socket, pipe, and other descriptors.
+bpoll aims to provide a bookeeping event polling framework to encapsulate a
+variety of poll implementations provided by different platforms.
 ==
 
 %description libs
 bsock - bind() sockets to restricted ports for lower-privilege daemons
+bpoll - bookkeeping poll interface
 This package contains bsock shared libraries.
 
 
