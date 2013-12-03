@@ -825,7 +825,8 @@ bpoll_cleanup (bpollset_t * const restrict bpollset)
           case BPOLL_M_POLLSET:
             if (bpollset->pollset_events != NULL) {
                 bpollset->fn_mem_free(bpollset->vdata,bpollset->pollset_events);
-                bpollset->pollset_events = bpollset->pollfds = NULL;
+                bpollset->pollset_events = NULL;
+                bpollset->pollfds = NULL;
             }
             if (bpollset->fd != -1) {
                 do {
@@ -2058,15 +2059,15 @@ bpoll_init_evport (bpollset_t * const restrict bpollset)
     /* max allowable num events or association of objects per port is min
      * value of process.max-port-events resource control when port_create()
      * called. (see setrctrl(2) and rctladm(1M) for resource control info)*/
-    if (limit > UINT_MAX/sizeof(struct port_event_t))
+    if (limit > UINT_MAX/sizeof(struct port_event))
         return (errno = EINVAL);
     while ((bpollset->fd = port_create()) < 0) {
         if (errno != EINTR)
             return errno;
     }
     fcntl(bpollset->fd, F_SETFD, FD_CLOEXEC);
-    bpollset->evport_events = (struct port_event_t *)
-      bpollset->fn_mem_alloc(bpollset->vdata,limit*sizeof(struct port_event_t));
+    bpollset->evport_events = (struct port_event *)
+      bpollset->fn_mem_alloc(bpollset->vdata,limit*sizeof(struct port_event));
     if (bpollset->evport_events == NULL)
         return errno;
     return 0;
@@ -2108,15 +2109,15 @@ __attribute_nonnull__
 __attribute_warn_unused_result__
 static int
 bpoll_commit_evport_impl (bpollset_t * const restrict bpollset,
-                          struct port_event_t * const restrict portev,
+                          struct port_event * const restrict portev,
                           const int n);
 static int
 bpoll_commit_evport_impl (bpollset_t * const restrict bpollset,
-                          struct port_event_t * const restrict portev,
+                          struct port_event * const restrict portev,
                           const int n)
 {
     bpollelt_t * restrict bpollelt;
-    int i, rv;
+    int i, rv = 0;
     const int portfd = bpollset->fd;
     for (i = 0; i < n; ++i) {
         /* (portev[i].portev_user contains a (bpollelt_t *) ) */
@@ -2150,6 +2151,7 @@ bpoll_commit_evport_impl (bpollset_t * const restrict bpollset,
                 return rv;  /* unexpected or unrecoverable error */
         }
     }
+    return 0;
 }
 
 
@@ -2177,7 +2179,7 @@ bpoll_kernel_evport (bpollset_t * const restrict bpollset);
 static int
 bpoll_kernel_evport (bpollset_t * const restrict bpollset)
 {
-    struct port_event_t * const restrict portev = bpollset->evport_events;
+    struct port_event * const restrict portev = bpollset->evport_events;
 
     /* reassociate with event port all pending associations,
      * including those of previously reaped events (unless BPOLLDISPATCH) */
@@ -2271,7 +2273,7 @@ bpoll_process_evport (bpollset_t * const restrict bpollset);
 static int
 bpoll_process_evport (bpollset_t * const restrict bpollset)
 {
-    struct port_event_t * const restrict portev = bpollset->evport_events;
+    struct port_event * const restrict portev = bpollset->evport_events;
     bpollelt_t ** const restrict results = bpollset->results;
     const int nfound = bpollset->nfound;
     /*assert(nfound > 0);*/
@@ -2309,7 +2311,7 @@ bpoll_elt_add_immed_evport (bpollset_t * const restrict bpollset,
 {
     int i = 0, idx, rc;
     const int n = *nelts;
-    struct port_event_t * const restrict portev[BPOLL_IMMED_SZ];
+    struct port_event portev[BPOLL_IMMED_SZ];
     while (i != n) {
         for (idx=0; i < n && idx < BPOLL_IMMED_SZ; ++idx, ++i) {
             portev[idx].portev_user = bpollelt[i];
@@ -2376,7 +2378,7 @@ bpoll_elt_modify_evport (bpollset_t * const restrict bpollset,
     unsigned int idx = bpollelt->idx;
     if (idx >= bpollset->idx
         || bpollset->evport_events[idx].portev_user == NULL
-        || ((bpollelt *)bpollset->evport_events[idx].portev_user)->fd
+        || ((bpollelt_t *)bpollset->evport_events[idx].portev_user)->fd
              != bpollelt->fd) {
         if (bpoll_prepidx_evport(bpollset))  /* macro */
             return errno;
@@ -2414,6 +2416,8 @@ bpoll_elt_remove_evport (bpollset_t * const restrict bpollset
 
 #if HAS_DEVPOLL
 
+#include <stropts.h>
+
 
 __attribute_nonnull__
 static int
@@ -2450,11 +2454,11 @@ __attribute_nonnull__
 __attribute_warn_unused_result__
 static int
 bpoll_commit_devpoll_impl (bpollset_t * const restrict bpollset,
-                           struct pollfd * const restrict pollfd,
+                           struct pollfd * const restrict pollfds,
                            const int n);
 static int
 bpoll_commit_devpoll_impl (bpollset_t * const restrict bpollset,
-                           struct pollfd * const restrict pollfd,
+                           struct pollfd * const restrict pollfds,
                            const int n)
 {
     const ssize_t size = n * sizeof(struct pollfd);
@@ -2483,7 +2487,7 @@ bpoll_commit_devpoll_events (bpollset_t * const restrict bpollset)
     /*assert(bpollset->idx != 0);*/
     const int rc = bpoll_commit_devpoll_impl(bpollset, bpollset->pollfds,
                                              (int)bpollset->idx);
-    return (__builtin_expect( (rc == 0), 1)) ? (bpollset->idx = 0) : rc;
+    return (__builtin_expect( (rc == 0), 1)) ? (int)(bpollset->idx = 0) : rc;
 }
 
 
@@ -2727,11 +2731,11 @@ __attribute_nonnull__
 __attribute_warn_unused_result__
 static int
 bpoll_commit_pollset_impl (bpollset_t * const restrict bpollset,
-                           struct port_ctl * const restrict pollset_events,
+                           struct poll_ctl * const restrict pollset_events,
                            const int n);
 static int
 bpoll_commit_pollset_impl (bpollset_t * const restrict bpollset,
-                           struct port_ctl * const restrict pollset_events,
+                           struct poll_ctl * const restrict pollset_events,
                            const int n)
 {
     int rv;
@@ -2747,7 +2751,8 @@ bpoll_commit_pollset_impl (bpollset_t * const restrict bpollset,
         if (pollset_events[rv].cmd == PS_ADD)
             pollset_events[rv].cmd = PS_MOD;            /*modify, resubmit*/
         else if (pollset_events[rv].cmd == PS_DELETE) { /*skip, resubmit rest*/
-            bpoll_elt_abort(bpollset, bpoll_elt_fetch(pollset_events[rv].fd));
+            bpoll_elt_abort(bpollset,
+                            bpoll_elt_fetch(bpollset, pollset_events[rv].fd));
             /* (see further comments in bpoll_elt_abort()) */
             if (n - done == ++rv) /* special-case if skipping last element */
                 return 0;
@@ -2770,7 +2775,7 @@ bpoll_commit_pollset_events (bpollset_t * const restrict bpollset)
     /*assert(bpollset->idx != 0);*/
     const int rc = bpoll_commit_pollset_impl(bpollset, bpollset->pollset_events,
                                              (int)bpollset->idx);
-    return (__builtin_expect( (rc == 0), 1)) ? (bpollset->idx = 0) : rc;
+    return (__builtin_expect( (rc == 0), 1)) ? (int)(bpollset->idx = 0) : rc;
 }
 
 
@@ -2891,7 +2896,7 @@ bpoll_elt_modify_pollset (bpollset_t * const restrict bpollset,
             return errno;
         idx = bpollset->idx++;
         bpollset->pollset_events[idx].cmd = PS_DELETE;
-        bpollset->pollset_events[idx].fd = fd;
+        bpollset->pollset_events[idx].fd = bpollelt->fd;
         bpollelt->events = 0;
     }
     if (BPOLL_EVENTS_FILT(events) != 0) {
@@ -2899,9 +2904,9 @@ bpoll_elt_modify_pollset (bpollset_t * const restrict bpollset,
             return errno;
         idx = bpollset->idx++;
         bpollset->pollset_events[idx].cmd =
-          (BPOLL_EVENTS_FILT(bpollset->events) != 0
+          (BPOLL_EVENTS_FILT(bpollelt->events) != 0
           && !(bpollelt->flpriv & BPOLL_FL_DISPATCHED) ? PS_MOD : PS_ADD);
-        bpollset->pollset_events[idx].fd = fd;
+        bpollset->pollset_events[idx].fd = bpollelt->fd;
         bpollset->pollset_events[idx].events = (short)events;
         bpollelt->events = events;
         bpollelt->flpriv &= ~BPOLL_FL_DISPATCHED;
@@ -2973,7 +2978,7 @@ bpoll_process_devpollset (bpollset_t * const restrict bpollset)
               #endif
                 bpollelt->events = events;/*restore events value set by caller*/
             }
-            if (results != NULL) {
+            if (results != NULL)
                 results[i] = bpollelt;
             else {
                 fn_cb_event(bpollset, bpollelt, -1);
@@ -4083,8 +4088,8 @@ bpoll_process (bpollset_t * const restrict bpollset)
   #elif HAS_POLLSET
     if (bpollset->mech == BPOLL_M_POLLSET)
   #endif
-    else
         return bpoll_process_devpollset(bpollset);
+    else
   #endif /* HAS_DEVPOLL || HAS_POLLSET */
   #if HAS_EPOLL
     if (bpollset->mech == BPOLL_M_EPOLL)

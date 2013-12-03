@@ -32,7 +32,7 @@
 extern "C" {
 #endif
 
-#if defined(_AIX) && !defined(_ALL_SOURCE)
+#if defined(_AIX) && !defined(_AIX61) && !defined(_ALL_SOURCE)
 /* #define _ALL_SOURCE required for definition of struct addrinfo on AIX (!) */
 /* !!Differs!! from Single Unix Specification SUSv6 (from 2004!)
  * http://pubs.opengroup.org/onlinepubs/009695399/basedefs/netdb.h.html */
@@ -47,6 +47,8 @@ struct addrinfo
     struct sockaddr *ai_addr;  /* order swapped with ai_cannonname in standard*/
     struct addrinfo *ai_next;
 };
+#endif
+#if defined(_AIX) && !defined(_ALL_SOURCE)
 #define AI_PASSIVE 0x02        /* specific to AIX */
 #endif
 

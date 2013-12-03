@@ -89,7 +89,7 @@ endif
 ifneq (,$(PROXYEXEC_SOCKET_DIR))
 proxyexec: CFLAGS+=-DPROXYEXEC_SOCKET_DIR='"$(PROXYEXEC_SOCKET_DIR)"'
 endif
-proxyexec: LDFLAGS+=-L $(BSOCK_LIBDIR) -lbsock
+proxyexec: LDFLAGS+=$(BSOCK_LIBDIR)/libbsock.so
 proxyexec: proxyexec.o
 	$(CC) -o $@ $(RPATH) $^ $(LDFLAGS)
 

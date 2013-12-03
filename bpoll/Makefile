@@ -46,7 +46,9 @@ else
   LDFLAGS+=$(ABI_FLAGS)
 endif
 
+ifeq ($(OSNAME),Linux)
 CFLAGS+=-fvisibility=hidden
+endif
 
 bpoll.o: CFLAGS+=-fpic
 

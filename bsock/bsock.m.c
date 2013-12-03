@@ -764,7 +764,9 @@ bsock_client_once (const int argc, char ** const restrict argv)
          *(http://www.chiark.greenend.org.uk/ucgi/~ijackson/cvsweb/authbind)
          * bsock has args and stdin is not a connected socket.
          * bsock is running setuid; use real uid, gid as credentials */
-        if (0 != getpeername(m.fd, ai.ai_addr, &ai.ai_addrlen)) {
+        /*(On AIX, ai.ai_addrlen is size_t, so cast to socklen_t for 64-bit
+         * compilation.  Only valid here since addrlen result is ignored) */
+        if (0 != getpeername(m.fd, ai.ai_addr, (socklen_t *)&ai.ai_addrlen)) {
             if (errno == ENOTCONN) {
                 fd = m.fd;
                 m.uid = getuid();

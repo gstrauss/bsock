@@ -62,7 +62,9 @@ else
   LDFLAGS+=$(ABI_FLAGS)
 endif
 
+ifeq ($(OSNAME),Linux)
 CFLAGS+=-fvisibility=hidden
+endif
 
 bsock.m.o:        CFLAGS+=-DBSOCK_GROUP='"$(BSOCK_GROUP)"'
 bsock.m.o:        CFLAGS+=-DBSOCK_SOCKET_MODE='$(BSOCK_SOCKET_MODE)'
@@ -130,7 +132,7 @@ bpoll_sobjs= ../bpoll/bpoll.o ../plasma/libplasma.a
 ifeq ($(OSNAME),Linux)
 libbsock.so: LDFLAGS+=-Wl,-soname,$(@F)
 endif
-libbsock.so: LDFLAGS+= -ldl
+libbsock.so: LDFLAGS+=$(PTHREAD_FLAGS) -ldl
 libbsock.so: $(bsock_sobjs) $(bpoll_sobjs)
 	$(CC) -o $@ $(LDFLAGS) -shared -fpic $^
 ifeq ($(OSNAME),Linux)

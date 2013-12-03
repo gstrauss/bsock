@@ -51,6 +51,9 @@
 #ifdef __SunOS_5_10  /* Solaris 10 has <port.h> for event ports */
 #define HAVE_PORT_H 1
 #endif
+#ifdef __GNUC__      /* XXX: assuming Solaris 10 or better */
+#define HAVE_PORT_H 1
+#endif
 #endif
 #ifdef __hpux
 #define HAVE_SYS_DEVPOLL_H 1
@@ -155,7 +158,7 @@ struct pollfd {
 # define HAS_POLLSET 1
 /* #include <sys/poll.h> *//*(should have been done above)*/
 # include <sys/pollset.h>
-# include <sys/fcntl.h>
+# include <fcntl.h>
 #else
 # define HAS_POLLSET 0
 #endif
@@ -378,7 +381,7 @@ struct bpollset_t {
     int kereceipts;
   #endif
   #if HAS_EVPORT
-    struct port_event_t *evport_events;
+    struct port_event *evport_events;
   #endif
   #if HAS_EPOLL
     struct epoll_event *epoll_events;
