@@ -215,6 +215,10 @@ bpoll_mem_block_reorder (bpollset_t * const restrict bpollset)
         chunk_head = *(bpoll_mem_block_t **)chunk_end; /* next chunk */
     } while (chunk_head != NULL);
 
+    /* (should not happen if called only when bpollset->mem_block_freed != 0) */
+    if (chunk_head == NULL)
+        return;
+
     bpollset->mem_block_head = p;
 
     /* link free blocks by chasing pointers in linear search through chunks */

@@ -222,8 +222,10 @@ static char *bsock_ctrlbuf;
 static bool
 bsock_ctrlbuf_alloc (void)
 {
+    /* 16MB arbitrary sanity check limit borders on absurd; expecting 10-40KB */
     bsock_ctrlbuf_sz = bsock_daemon_msg_control_max();
-    bsock_ctrlbuf = malloc(bsock_ctrlbuf_sz);
+    if (bsock_ctrlbuf_sz <= 16777216)
+        bsock_ctrlbuf = malloc(bsock_ctrlbuf_sz);
     if (bsock_ctrlbuf != NULL)
         return true;
     else {
@@ -330,7 +332,8 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
           : EXIT_FAILURE;
         if (rc == EXIT_FAILURE && errno != EPIPE && errno != ECONNRESET)
             bsock_syslog(errno, LOG_ERR, "sendmsg");
-        nointr_close(fd);
+        if (-1 != fd)
+            nointr_close(fd);
     }
     else
         rc = flag;  /* authbind: set exit value */
@@ -369,7 +372,7 @@ bsock_client_send_errno (const int fd, int errnum)
 {
     /* one-shot response; send buffer should be empty and should not block */
     struct iovec iov = { .iov_base = &errnum, .iov_len = sizeof(int) };
-    bsock_unix_send_fds(fd, NULL, 0, &iov, 1);  /* no err chk; send & forget */
+    (void)bsock_unix_send_fds(fd,NULL,0,&iov,1); /* no err chk; send & forget */
 }
 
 static void
@@ -583,7 +586,7 @@ bsock_event_loop (const int sfd)
         bsock_syslog(errno, LOG_ERR, "bpoll_create, bpoll_init");
         return EXIT_FAILURE;
     }
-    fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);/*set nonblocking*/
+    (void)fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL, 0) | O_NONBLOCK);
     bpollelt = bpoll_elt_init(bpollset,NULL,sfd,BPOLL_FD_SOCKET,BPOLL_FL_CLOSE);
     if (NULL == bpollelt
         || 0 != bpoll_elt_add(bpollset, bpollelt, BPOLLIN)) {
