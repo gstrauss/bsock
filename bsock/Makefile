@@ -132,7 +132,7 @@ bpoll_sobjs= ../bpoll/bpoll.o ../plasma/libplasma.a
 ifeq ($(OSNAME),Linux)
 libbsock.so: LDFLAGS+=-Wl,-soname,$(@F)
 endif
-libbsock.so: LDFLAGS+=$(PTHREAD_FLAGS) -ldl
+libbsock.so: LDFLAGS+=$(PTHREAD_FLAGS)
 libbsock.so: $(bsock_sobjs) $(bpoll_sobjs)
 	$(CC) -o $@ $(LDFLAGS) -shared -fpic $^
 ifeq ($(OSNAME),Linux)
