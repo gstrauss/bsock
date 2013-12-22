@@ -339,7 +339,7 @@ bpoll_elt_close (bpollset_t * const bpollset, bpollelt_t * const bpollelt)
     if ((bpollelt->flags & BPOLL_FL_CLOSE) && bpollelt->fd != -1) {
         if (bpollset->fn_cb_close != NULL)
             bpollset->fn_cb_close(bpollset, bpollelt);
-        else
+        else {
           #ifdef _WIN32
             if (bpollelt->fdtype == BPOLL_FD_SOCKET) {
                 while (__builtin_expect( (closesocket(bpollelt->fd) == -1), 0)
@@ -351,6 +351,7 @@ bpoll_elt_close (bpollset_t * const bpollset, bpollelt_t * const bpollelt)
                 while (__builtin_expect( (close(bpollelt->fd) == -1), 0)
                        && errno == EINTR) ;
             }
+        }
         bpollelt->fd = -1; /*(in case bpoll_elt_close() called again)*/
     }
 }
@@ -1300,8 +1301,9 @@ bpoll_elt_add_pollfds (bpollset_t * const restrict bpollset,
   #endif /* FD_SETSIZE */
   #ifdef NETWARE
     /* NetWare only has select() on sockets and pipe_select() on pipes*/
-    if (__builtin_expect( (   bpollelt->fdtype != BPOLL_FD_SOCKET
-                           && bpollelt->fdtype != BPOLL_FD_PIPE), 0))
+    rc = bpollelt->fdtype != BPOLL_FD_SOCKET
+      && bpollelt->fdtype != BPOLL_FD_PIPE;
+    if (__builtin_expect( (rc == 1), 0))
         return (errno = EBADF);
     if (bpollset->fdtype != bpollelt->fdtype) {
         if (bpollset->fdtype == BPOLL_FD_NOT_SET)
@@ -1479,7 +1481,7 @@ bpoll_recover_kevent_readd (struct kevent * const restrict kev, const int fd)
     kev->data   = 0;
     do {
         rv = kevent(fd, kev, 1, kev, 0, &ts);
-    } while (__builtin_expect( (rv == -1 && errno == EINTR), 0));
+    } while (__builtin_expect( (rv == -1), 0) && errno == EINTR);
     return rv != -1 ? 0 : -1;
 }
 
@@ -1573,7 +1575,7 @@ bpoll_commit_kevents_impl (bpollset_t * const restrict bpollset,
     /*(caller must ensure keready is at least as large as n)*/
     do {
         rv = kevent(bpollset->fd, kevents, n, keready, n, &ts);
-    } while (__builtin_expect( (rv == -1 && errno == EINTR), 0));
+    } while (__builtin_expect( (rv == -1), 0) && errno == EINTR);
     if (__builtin_expect( (rv != n), 0)) {
         if (rv != -1 && errno == 0) /* should not happen */
             errno = EINVAL;
@@ -2137,13 +2139,13 @@ bpoll_commit_evport_impl (bpollset_t * const restrict bpollset,
                                     (uintptr_t)bpollelt->fd,
                                     BPOLL_EVENTS_FILT(bpollelt->events),
                                     bpollelt);
-            } while (__builtin_expect( (rv == -1 && errno == EINTR), 0));
+            } while (__builtin_expect( (rv == -1), 0) && errno == EINTR);
         }
         else if (!(bpollelt->flpriv & BPOLL_FL_CTL_ADD)) {
             do {/*dissociate if associated and modified for no event interest*/
                 rv = port_dissociate(portfd, PORT_SOURCE_FD,
                                      (uintptr_t)bpollelt->fd);
-            } while (__builtin_expect( (rv == -1 && errno == EINTR), 0));
+            } while (__builtin_expect( (rv == -1), 0) && errno == EINTR);
         }
         if (__builtin_expect( (rv != 0), 0)) {
             if (errno == EBADFD)
@@ -2357,7 +2359,8 @@ bpoll_elt_add_evport (bpollset_t * const restrict bpollset,
         return errno;
     bpollelt->flpriv |= BPOLL_FL_CTL_ADD;
     rc = bpoll_fd_add_thrsafe(bpollset, bpollelt);
-    if (__builtin_expect( (rc != 0 || 0 == BPOLL_EVENTS_FILT(events)), 0)) {
+    if (__builtin_expect( (rc != 0), 0)
+     || __builtin_expect( (0 == BPOLL_EVENTS_FILT(events)), 0)) {
         bpollelt->events = bpollelt->revents = 0;
         return rc;
     }
@@ -2474,7 +2477,8 @@ bpoll_commit_devpoll_impl (bpollset_t * const restrict bpollset,
         if ((rv = pwrite(bpollset->fd, pollfds, size, 0)) == size)
             return 0;
         /* (re-send entire set of changes if interrupted) */
-    } while (__builtin_expect( (rv != -1 || errno == EINTR), 0));
+    } while (__builtin_expect( (rv != -1), 0)
+          || __builtin_expect( (errno == EINTR), 0));
 
     return -1;
 }
@@ -2596,7 +2600,8 @@ bpoll_elt_add_devpoll (bpollset_t * const restrict bpollset,
     if (bpoll_prepidx_devpoll(bpollset))  /* macro */
         return errno;
     rc = bpoll_fd_add_thrsafe(bpollset, bpollelt);
-    if (__builtin_expect( (rc != 0 || 0 == BPOLL_EVENTS_FILT(events)), 0)) {
+    if (__builtin_expect( (rc != 0), 0)
+     || __builtin_expect( (0 == BPOLL_EVENTS_FILT(events)), 0)) {
         bpollelt->events = bpollelt->revents = 0;
         return rc;
     }
@@ -2868,7 +2873,8 @@ bpoll_elt_add_pollset (bpollset_t * const restrict bpollset,
     if (bpoll_prepidx_pollset(bpollset))  /* macro */
         return errno;
     rc = bpoll_fd_add_thrsafe(bpollset, bpollelt);
-    if (__builtin_expect( (rc != 0 || 0 == BPOLL_EVENTS_FILT(events)), 0)) {
+    if (__builtin_expect( (rc != 0), 0)
+     || __builtin_expect( (0 == BPOLL_EVENTS_FILT(events)), 0)) {
         bpollelt->events = bpollelt->revents = 0;
         return rc;
     }
@@ -3104,7 +3110,7 @@ bpoll_commit_epoll_impl (bpollset_t * const restrict bpollset,
         bpollelt->flpriv &= ~BPOLL_FL_CTL_ADD;
         do {
             rv = epoll_ctl(epollfd, op, bpollelt->fd, &epoll_events[i]);
-        } while (__builtin_expect( (rv == -1 && errno == EINTR), 0));
+        } while (__builtin_expect( (rv == -1), 0) && errno == EINTR);
         if (__builtin_expect( (rv != 0), 0)) {
             if (errno == EBADF || errno == ENOENT)
                 /* e.g. caller close()d file descriptors unbeknownst to bpoll */
@@ -3261,8 +3267,9 @@ bpoll_elt_add_epoll (bpollset_t * const restrict bpollset,
     unsigned int idx;
     int rc;
   #if 0 /* epoll now supports sockets,pipes,eventfd,signalfd,inotify,timerfd */
-    if (__builtin_expect( (   bpollelt->fdtype != BPOLL_FD_SOCKET
-                           && bpollelt->fdtype != BPOLL_FD_PIPE), 0))
+    rc = bpollelt->fdtype != BPOLL_FD_SOCKET
+      && bpollelt->fdtype != BPOLL_FD_PIPE;
+    if (__builtin_expect( (rc == 1), 0))
         return (errno = ENOTSUP);
   #endif
     if (bpoll_prepidx_epoll(bpollset)) /* macro */
@@ -3612,13 +3619,14 @@ bpoll_init (bpollset_t * const restrict bpollset,
         struct rlimit rlim;
         do {
             rc = getrlimit(RLIMIT_NOFILE, &rlim);
-        } while (__builtin_expect( (rc == -1 && errno == EINTR), 0));
+        } while (__builtin_expect( (rc == -1), 0) && errno == EINTR);
         if (__builtin_expect( (rc != 0), 0))
             return errno;
         if (__builtin_expect( (limit >= rlim.rlim_max), 0)) {
             if (limit == (unsigned int)-1) {
                 limit = rlim.rlim_max-1;
-                if (__builtin_expect( (rlim.rlim_max == 0 || limit == 0), 0))
+                if (__builtin_expect( (rlim.rlim_max == 0), 0)
+                 || __builtin_expect( (limit == 0), 0))
                     return (errno = EINVAL);
             }
             else if (limit == rlim.rlim_max)
@@ -3634,7 +3642,7 @@ bpoll_init (bpollset_t * const restrict bpollset,
                 rlim.rlim_cur = rlim.rlim_max;
             do {
                 rc = setrlimit(RLIMIT_NOFILE, &rlim);
-            } while (__builtin_expect( (rc == -1 && errno == EINTR), 0));
+            } while (__builtin_expect( (rc == -1), 0) && errno == EINTR);
             if (__builtin_expect( (rc != 0), 0))
                 return errno;
         }
