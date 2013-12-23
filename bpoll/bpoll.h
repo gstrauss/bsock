@@ -25,8 +25,8 @@
 #ifndef INCLUDED_BPOLL_H
 #define INCLUDED_BPOLL_H
 
-#include <plasma/plasma_attr.h>
-#include <plasma/plasma_stdtypes.h>
+#include "plasma/plasma_attr.h"
+#include "plasma/plasma_stdtypes.h"
 
 /**
  * @file bpoll.h
