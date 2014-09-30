@@ -33,6 +33,8 @@ git (via gitolite)
   ln -s gitolite          /var/run/proxyexec/git-receive-pack
   ln -s gitolite          /var/run/proxyexec/git-upload-pack
   ln -s gitolite          /var/run/proxyexec/git-upload-archive
+  # (/etc/rc.d/sysinit clears symlinks out of /var/run/*/* upon reboot
+  #  and so arrangements must be made to recreate symlinks upon reboot)
 
 hg (Mercurial)
 --
@@ -64,9 +66,17 @@ SSH_ORIGINAL_COMMAND to the command line arguments, looks up PROXYEXEC_UID
 specialized shell, passing username as an argument.  (see sample scripts below)
 (see proxyexec/contrib/gitolite/README for ProxyExec.pm gitolite INPUT trigger)
 
-Configure user accounts (other than 'vcsadmin') to have restricted shell:
+Configure end-user accounts (other than 'vcsadmin') to have restricted shell:
   /usr/sbin/proxyexec
 Add /usr/sbin/proxyexec to /etc/shells (optional)
+
+/etc/ssh/sshd_config restrictions (optional)
+  X11Forwarding no
+  AllowAgentForwarding no
+  AllowTCPForwarding no
+  #Subsystem       sftp    /usr/libexec/openssh/sftp-server
+(disable X11Forwarding, AgentForwarding, TCPForwarding, and SFTP subsystem)
+(recommended on servers where all end-user accounts have restricted shells)
 
 Set up a cron job to run once a minute to execute a simple shell script
 which checks if proxyexec daemons are running, or else starts them.

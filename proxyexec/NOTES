@@ -87,3 +87,25 @@ availability of the specific service provided by the daemon.
 proxyexec does not currently provide a mechanism to limit the number of
 outstanding requests (i.e. number of running child processes), but might
 do so in the future if there is sufficient demand for this feature.
+
+
+2014-09-24 bash vulnerability
+-----------------------------
+proxyexec has been patched to silently discard proxied environment variables
+which appear to be exported bash functions.  Passing exported bash functions
+across the proxyexec security boundary is very likely accidental or malicious,
+and is very unlikely to impact typical usage.
+CVE-2014-6271: remote code execution through bash
+CVE-2014-7169: bash: code execution via specially-crafted environment
+               (Incomplete fix for CVE-2014-6271)
+http://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2014-6271
+http://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2014-7169
+https://securityblog.redhat.com/2014/09/24/bash-specially-crafted-environment-variables-code-injection-attack/
+
+N.B.: To mitigate the bash vulnerability in the situation where proxyexec is
+used as a restricted shell, configure /etc/ssh/sshd_config with
+  X11Forwarding no
+or else the bash vulnerability might be exploited via xauth executing 'sh -c'
+before proxyexec is invoked.  Also recommended: set 'AllowTcpForwarding no',
+'AllowAgentForwarding no' and disable SFTP subsystem on systems where all
+end-user accounts are restricted.

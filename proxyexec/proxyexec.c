@@ -205,11 +205,15 @@ proxyexec_argv_env_parse (char *b, char * const e,
     if (argn != argc)
         return (errno = EINVAL, false);
 
-    /* parse remaining strings into environment, if any */
+    /* parse remaining strings into environment, if any
+     * (silently skip vars whose values look like bash functions;
+     *  do not propagate exported bash functions across security boundary) */
     errno = EINVAL;
     char *eq = b;
     while (b != e && (eq = (char *)memchr(b, '=', (size_t)(e - b))) != NULL
-           && proxyexec_env_allowed(b, (size_t)(eq - b)) && 0 == putenv(b))
+           && proxyexec_env_allowed(b, (size_t)(eq - b))
+           && ((eq[1] != '(' || e-eq-1 < 4 || 0 != memcmp(eq+1, "() {", 4))
+               ? 0 == putenv(b) : true))
         b = 1uL + (char *)RAWMEMCHR(eq+1, '\0', e-eq-1);
     return (b == e);
 }
