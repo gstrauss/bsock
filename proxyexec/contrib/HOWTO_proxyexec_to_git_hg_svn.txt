@@ -27,14 +27,18 @@ Create dirs in /var/run/proxyexec/ for proxyexec unix domain sockets
 
 git (via gitolite)
 ---
-  mkdir                   /var/run/proxyexec/gitolite
-  chgrp vcsadmin:vcsadmin /var/run/proxyexec/gitolite
-  chmod 2755              /var/run/proxyexec/gitolite
-  ln -s gitolite          /var/run/proxyexec/git-receive-pack
-  ln -s gitolite          /var/run/proxyexec/git-upload-pack
-  ln -s gitolite          /var/run/proxyexec/git-upload-archive
-  # (/etc/rc.d/sysinit clears symlinks out of /var/run/*/* upon reboot
-  #  and so arrangements must be made to recreate symlinks upon reboot)
+  for i in gitolite git-receive-pack git-upload-pack git-upload-archive; do
+    mkdir                   /var/run/proxyexec/$i
+    chgrp vcsadmin:vcsadmin /var/run/proxyexec/$i
+    chmod 2755              /var/run/proxyexec/$i
+  done
+  ln -s ../gitolite/socket /var/run/proxyexec/git-receive-pack/socket
+  ln -s ../gitolite/socket /var/run/proxyexec/git-upload-pack/socket
+  ln -s ../gitolite/socket /var/run/proxyexec/git-upload-archive/socket
+  # (/etc/rc.d/rc.sysinit removes files, symlinks under /var/run/* upon reboot
+  #  and so arrangements must be made to recreate symlinks upon reboot,
+  #  i.e. have vcsadmin check and create symlinks in script that starts
+  #  proxyexec daemon listening to /var/run/proxyexec/gitolite/socket)
 
 hg (Mercurial)
 --
