@@ -90,8 +90,15 @@ bsock_sobjs=  bsock_unix.o \
 $(bsock_sobjs):  CFLAGS+=-fpic
 bsock_preload.o: CFLAGS+=-fpic
 
+# C99 and POSIX.1-2001 (SUSv3 _XOPEN_SOURCE=600)
+# C99 and POSIX.1-2008 (SUSv4 _XOPEN_SOURCE=700)
+STDC99?=-std=c99
+STDC11?=-std=c11
+POSIX_STD?=-D_XOPEN_SOURCE=700
+CFLAGS+=$(STDC11) $(POSIX_STD)
+
 PTHREAD_FLAGS?=-pthread -D_THREAD_SAFE
-%.o: CFLAGS+=-std=c99 -D_XOPEN_SOURCE=600 $(PTHREAD_FLAGS) -DNDEBUG -I. -I..
+%.o: CFLAGS+=$(PTHREAD_FLAGS) -DNDEBUG -I. -I..
 %.o: %.c
 	$(CC) -o $@ $(CFLAGS) -c $<
 
