@@ -1,5 +1,8 @@
 bsock change log
 
+bsock v0.11 (2015.03.13)
+- port to Mac OSX Yosemite
+
 bsock v0.10 (2014.09.30)
 - proxyexec: do not propagate exported bash functions in env
 
