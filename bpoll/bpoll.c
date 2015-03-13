@@ -1498,7 +1498,7 @@ bpoll_recover_kevent_abort (bpollset_t * const restrict bpollset,
                             const int n)
 {
     bpollelt_t * const restrict bpollelt = keready[0].udata;
-    int i = (keready[0].filter == EVFILT_READ || keready[0].filter == EV_WRITE)
+    int i = (keready[0].filter==EVFILT_READ || keready[0].filter==EVFILT_WRITE)
       ? 1
       : n;
     if (bpollelt == NULL)
@@ -1516,7 +1516,8 @@ bpoll_recover_kevent_abort (bpollset_t * const restrict bpollset,
     }
     else
         /* muddle along; there is valid event on other filter for same fd */
-        bpollelt->events &= ~(keready[0].filter==EV_WRITE ? BPOLLOUT : BPOLLIN);
+        bpollelt->events &=
+          ~(keready[0].filter == EVFILT_WRITE ? BPOLLOUT : BPOLLIN);
 }
 
 
@@ -1684,7 +1685,7 @@ bpoll_process_kqueue (bpollset_t * const restrict bpollset)
             (keready[i].filter != EVFILT_WRITE
              ? (!(keready[i].flags & EV_EOF) ? BPOLLIN  : BPOLLIN|BPOLLRDHUP)
              : (!(keready[i].flags & EV_EOF) ? BPOLLOUT : BPOLLOUT|BPOLLHUP))
-          | ((keready[i].flags & EV_ERROR) ? BPOLLERR : 0)
+          | ((keready[i].flags & EV_ERROR) ? BPOLLERR : 0);
             /*(system errno is in keready[i].data when EV_ERROR is set)*/
         /*(not differentiating which filter returned, if more than one)*/
         if (bpollelt->events & BPOLLDISPATCH)
@@ -1759,7 +1760,7 @@ bpoll_elt_add_immed_kqueue (bpollset_t * const restrict bpollset,
     /* kqueue does not provide a convenient way to discover urgent data
      * (a.k.a. out-of-band priority data) on socket, a la poll() POLLPRI
      * (If you know of a way to detect OOB with kqueue, please tell me!) */
-    if (__builtin_expect((events & (BPOLLPRI|PPROLLRDBAND|BPOLLWRBAND))), 0) {
+    if (__builtin_expect((events & (BPOLLPRI|BPOLLRDBAND|BPOLLWRBAND)), 0)) {
         *nelts = 0;
         return (errno = EINVAL);
     }
@@ -1806,7 +1807,7 @@ bpoll_elt_add_immed_kqueue (bpollset_t * const restrict bpollset,
                     ++idx;
                 }
                 bpollelt[i]->events = events; /*assign after value check above*/
-                bpollelt->flpriv &=
+                bpollelt[i]->flpriv &=
                   ~(BPOLL_FL_DISPATCHED|BPOLL_FL_DISP_KQRD|BPOLL_FL_DISP_KQWR);
             }
         }
@@ -1819,7 +1820,7 @@ bpoll_elt_add_immed_kqueue (bpollset_t * const restrict bpollset,
                  * allow for resubmit if caller attempts to recover */
                 /* (BPOLL_FL_DISPATCHED restored later) */
                 for (idx = *nelts; idx < i; ++idx)
-                    (bpollelt_t *)(kevents[idx].udata)->flpriv |=
+                    ((bpollelt_t *)(kevents[idx].udata))->flpriv |=
                       (kevents[idx].filter != EVFILT_WRITE
                        ? BPOLL_FL_DISP_KQRD
                        : BPOLL_FL_DISP_KQWR);
@@ -1856,7 +1857,7 @@ bpoll_elt_add_kqueue (bpollset_t * const restrict bpollset,
     /* kqueue does not provide a convenient way to discover urgent data
      * (a.k.a. out-of-band priority data) on socket, a la poll() POLLPRI
      * (If you know of a way to detect OOB with kqueue, please tell me!) */
-    if (__builtin_expect((events & (BPOLLPRI|PPROLLRDBAND|BPOLLWRBAND))), 0)
+    if (__builtin_expect((events & (BPOLLPRI|BPOLLRDBAND|BPOLLWRBAND)), 0))
         return (errno = EINVAL);
 
     if (bpoll_prepidx_kqueue(bpollset)) /* macro */
@@ -1899,7 +1900,7 @@ bpoll_elt_modify_kqueue (bpollset_t * const restrict bpollset,
     unsigned int rdidx = bpollelt->idx & 0xFFFF;
     unsigned int wridx = bpollelt->idx >> 16;
     unsigned int idx = USHRT_MAX;
-    const int fd = bpollelt->fd;
+    const unsigned int fd = (unsigned int)bpollelt->fd;
     int flags = ((events & BPOLLET)       ? EV_CLEAR    : 0)
               | ((events & BPOLLDISPATCH) ? EV_DISPATCH : 0)
               | EV_RECEIPT;
@@ -1957,8 +1958,8 @@ bpoll_elt_remove_kqueue (bpollset_t * const restrict bpollset,
     struct kevent * const restrict kevents = bpollset->kevents;
     unsigned int rdidx = bpollelt->idx & 0xFFFF;
     unsigned int wridx = bpollelt->idx >> 16;
-    unsigned int idx = -1;
-    const int fd = bpollelt->fd;
+    unsigned int idx = ~0u;
+    const unsigned int fd = (unsigned int)bpollelt->fd;
     /* (If EV_ERROR is returned by a kevent, skip removal attempt;
      *  it will be removed from kqueue automatically when its fd is closed
      *  (or else is invalid and would just generate another error)) */
@@ -1975,12 +1976,12 @@ bpoll_elt_remove_kqueue (bpollset_t * const restrict bpollset,
             kevents[rdidx].flags = 0; /* not EV_ADD */
         }
         if (!(kevents[rdidx].flags & EV_ADD))
-            KEV_SET(&kevents[rdidx], fd, EV_FILT_READ,
+            KEV_SET(&kevents[rdidx], fd, EVFILT_READ,
                     EV_DELETE|EV_DISABLE|EV_RECEIPT, 0, 0, bpollelt);
     }
     if (wridx != USHRT_MAX) { /* write filter added to kernel */
         if (wridx >= bpollset->idx || fd != kevents[wridx].ident) {
-            if (idx != -1)          /*(bpoll_prepidx_kqueue() checks +2 avail */
+            if (idx != ~0u)         /*(bpoll_prepidx_kqueue() checks +2 avail */
                 wridx = ++bpollset->idx;
             else {
                 if (bpoll_prepidx_kqueue(bpollset))  /* macro */
@@ -1990,7 +1991,7 @@ bpoll_elt_remove_kqueue (bpollset_t * const restrict bpollset,
             kevents[wridx].flags = 0; /* not EV_ADD */
         }
         if (!(kevents[wridx].flags & EV_ADD))
-            KEV_SET(&kevents[wridx], fd, EV_FILT_WRITE,
+            KEV_SET(&kevents[wridx], fd, EVFILT_WRITE,
                     EV_DELETE|EV_DISABLE|EV_RECEIPT, 0, 0, bpollelt);
     }
     bpollelt->idx = (wridx<<16) | rdidx;
@@ -2017,8 +2018,8 @@ bpoll_recover_kevents_dispatch (bpollset_t * const restrict bpollset)
      * (To avoid the possibility of needing two kernel commits, could modify
      *  bpoll_kernel_kqueue() to pass kevent() a slightly reduced queue_sz-1)
      * Caller should not modify events between bpoll_poll(), bpoll_process() */
+    bpollelt_t *bpollelt;
     bpollelt_t ** const restrict results = bpollset->results;
-    struct kevent * const restrict kevents = bpollset->kevents;
     int i, events, rc;
     const int n = bpollset->nfound;
     for (i = 0; i < n; ++i) {
