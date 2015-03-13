@@ -76,7 +76,9 @@ extern int getprotobynumber_r(int proto, struct protoent *protoptr,
 #endif /* #if 0 */
 #endif
 
-#ifdef __hpux /* getprotobyname(), getprotobynumber() thread-safe on HP-UX ? */
+#if defined(__hpux) || (defined(__APPLE__) && defined(__MACH__))
+/* OSX: getprotobyname(), getprotobynumber() use thread-local storage */
+/* HP-UX: getprotobyname(), getprotobynumber() thread-safe on HP-UX? not sure */
 #undef HAVE_GETPROTOBYNAME_R
 #undef HAVE_GETPROTOBYNUMBER_R
 #else
@@ -110,6 +112,12 @@ extern int getprotobynumber_r(int proto, struct protoent *protoptr,
 #ifdef __hpux
 #ifndef ESOCKTNOSUPPORT /* otherwise would require -D_HPUX_SOURCE */
 #define ESOCKTNOSUPPORT 222
+#endif
+#endif
+
+#if defined(__APPLE__) && defined(__MACH__)
+#ifndef ESOCKTNOSUPPORT /* otherwise would require -D_DARWIN_C_SOURCE */
+#define ESOCKTNOSUPPORT 44
 #endif
 #endif
 
@@ -290,7 +298,9 @@ bsock_addrinfo_protocol_to_str (const int proto,
          /* (treating all other errors as EPROTONOSUPPORT) */
   #endif /* _AIX */
 }
-#else /* e.g. __hpux */
+#else /* e.g. __hpux || (__APPLE__ && __MACH__) */
+/* Note: caller must copy result
+ * On OSX, getprotobynumber() uses thread-local storage for thread-safety */
 static char *
 bsock_addrinfo_protocol_to_str (const int proto)
 {

@@ -106,6 +106,28 @@
 #endif
 
 
+#if !(defined(_POSIX_TIMERS) && _POSIX_TIMERS >= 200112L)
+/* Mac OSX does not implement POSIX Advanced Realtime extensions (POSIX.1-2001),
+ * even though this comment is being written in 2015, 14 years later (!)
+ * Since this file is application-level code, provide kludge replacements for
+ * timer_create(), timer_settime(), and timer_delete() using setitimer()
+ * (with lower time resolution), though marked deprecated in POSIX.1-2008.
+ * These kludges are very specific to the use herein; not generic. */
+#include <sys/time.h>
+struct itimerspec {
+  struct timespec it_interval;
+  struct timespec it_value;
+};
+/*(avoid compiler warnings/errors for unused variables; set timerid to 0)*/
+typedef int timer_t;
+#define timer_create(clockid, sevp, timerid) (*(timerid) = 0)
+#define timer_delete(timerid) do { } while (timerid)
+/*(tv_nsec not used by bsock.m.c, so cast to itimerval for ease)*/
+/*(XXX: _Static_assert sizeof(struct itimerspec) == sizeof(struct itimerval) )*/
+#define timer_settime(a,b,it,ot) \
+  setitimer(ITIMER_REAL, ((struct itimerval *)(it)), ((struct itimerval *)(ot)))
+#endif
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)

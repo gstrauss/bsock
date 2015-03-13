@@ -2,7 +2,11 @@
 
 TARGETS:= libbsock.so libbsock_preload.so bsock bsock.t
 
+ifneq (,$(wildcard /bin/uname))
 OSNAME:=$(shell /bin/uname -s)
+else
+OSNAME:=$(shell /usr/bin/uname -s)
+endif
 
 PREFIX?=/usr/local
 BSOCK_DOC_DIR?=$(PREFIX)/share/doc/bsock
@@ -40,6 +44,9 @@ ifeq (64,$(ABI_BITS))
 ifeq ($(OSNAME),Linux)
 ABI_FLAGS=-m64
 endif
+ifeq ($(OSNAME),Darwin)
+ABI_FLAGS=-m64
+endif
 ifeq ($(OSNAME),AIX)
 AR+=-X64
 ABI_FLAGS=-maix64
@@ -62,7 +69,7 @@ else
   LDFLAGS+=$(ABI_FLAGS)
 endif
 
-ifeq ($(OSNAME),Linux)
+ifneq (,$(filter Linux Darwin,$(OSNAME)))
 CFLAGS+=-fvisibility=hidden
 endif
 
@@ -88,6 +95,9 @@ PTHREAD_FLAGS?=-pthread -D_THREAD_SAFE
 %.o: %.c
 	$(CC) -o $@ $(CFLAGS) -c $<
 
+PTHREAD_LDFLAGS?=$(PTHREAD_FLAGS)
+LIBRT?=-lrt
+
 ifeq ($(OSNAME),Linux)
   ifneq (,$(strip $(filter-out /usr,$(PREFIX))))
     RPATH= -Wl,-rpath,$(PREFIX)/lib$(LIB_BITS)
@@ -98,6 +108,16 @@ ifeq ($(OSNAME),Linux)
   LDFLAGS+=-Wl,-O,1 -Wl,--hash-style,gnu -Wl,-z,relro,-z,now
   libbsock_preload.so: LDFLAGS+= -Wl,-z,interpose
   bsock bsock.t: LDFLAGS+=-Wl,-z,noexecstack
+endif
+ifeq ($(OSNAME),Darwin)
+  ifneq (,$(strip $(filter-out /usr,$(PREFIX))))
+    RPATH= -Wl,-rpath,$(PREFIX)/lib$(LIB_BITS)
+  endif
+  ifeq (,$(RPM_OPT_FLAGS))
+    CFLAGS+=-D_FORTIFY_SOURCE=2 -fstack-protector
+  endif
+  PTHREAD_LDFLAGS=
+  LIBRT=
 endif
 ifeq ($(OSNAME),AIX)
   ifneq (,$(strip $(filter-out /usr,$(PREFIX))))
@@ -132,7 +152,7 @@ bpoll_sobjs= ../bpoll/bpoll.o ../plasma/libplasma.a
 ifeq ($(OSNAME),Linux)
 libbsock.so: LDFLAGS+=-Wl,-soname,$(@F)
 endif
-libbsock.so: LDFLAGS+=$(PTHREAD_FLAGS)
+libbsock.so: LDFLAGS+=$(PTHREAD_LDFLAGS)
 libbsock.so: $(bsock_sobjs) $(bpoll_sobjs)
 	$(CC) -o $@ $(LDFLAGS) -shared -fpic $^
 ifeq ($(OSNAME),Linux)
@@ -142,11 +162,11 @@ libbsock_preload.so: LDFLAGS+= libbsock.so -ldl
 libbsock_preload.so: bsock_preload.o | libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) -shared -fpic $^
 
-bsock: LDFLAGS+=$(PTHREAD_FLAGS) -lrt
+bsock: LDFLAGS+=$(PTHREAD_LDFLAGS) $(LIBRT)
 bsock: bsock.m.o bsock_authz.o bsock_bindresvport.o bsock_resvaddr.o libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) $^
 
-bsock.t: LDFLAGS+=$(PTHREAD_FLAGS)
+bsock.t: LDFLAGS+=$(PTHREAD_LDFLAGS)
 bsock.t: bsock.t.o libbsock.so
 	$(CC) -o $@ $(RPATH) $(LDFLAGS) $^
 

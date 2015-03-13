@@ -81,6 +81,12 @@
 #define IPPORT_RESERVEDSTART 600
 #endif
 
+#if defined(__APPLE__) && defined(__MACH__)  /*(or define _DARWIN_C_SOURCE)*/
+#ifndef IPPORT_RESERVED
+#define IPPORT_RESERVED __DARWIN_IPPORT_RESERVED
+#endif
+#endif
+
 #ifndef BSOCK_BINDRESVPORT_SKIP
 #define BSOCK_BINDRESVPORT_SKIP \
   623,631,636,664,749,750,783,873,992,993,994,995

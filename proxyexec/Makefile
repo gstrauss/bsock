@@ -1,6 +1,10 @@
 # proxyexec
 
+ifneq (,$(wildcard /bin/uname))
 OSNAME:=$(shell /bin/uname -s)
+else
+OSNAME:=$(shell /usr/bin/uname -s)
+endif
 
 PREFIX?=/usr/local
 BSOCK_LIBDIR?=../bsock
@@ -26,6 +30,9 @@ ifeq (64,$(ABI_BITS))
 ifeq ($(OSNAME),Linux)
 ABI_FLAGS=-m64
 endif
+ifeq ($(OSNAME),Darwin)
+ABI_FLAGS=-m64
+endif
 ifeq ($(OSNAME),AIX)
 AR+=-X64
 ABI_FLAGS=-maix64
@@ -49,7 +56,8 @@ else
 endif
 
 PTHREAD_FLAGS?=-pthread -D_THREAD_SAFE
-LDFLAGS+=$(PTHREAD_FLAGS)
+PTHREAD_LDFLAGS?=$(PTHREAD_FLAGS)
+LDFLAGS+=$(PTHREAD_LDFLAGS)
 %.o: CFLAGS+=-std=c99 -D_XOPEN_SOURCE=600 $(PTHREAD_FLAGS) -DNDEBUG
 %.o: CFLAGS+=-I $(BSOCK_INCLUDE)
 %.o: %.c
@@ -63,6 +71,15 @@ ifeq ($(OSNAME),Linux)
     CFLAGS+=-D_FORTIFY_SOURCE=2 -fstack-protector
   endif
   LDFLAGS+=-Wl,-O,1 -Wl,--hash-style,gnu -Wl,-z,relro,-z,now -Wl,-z,noexecstack
+endif
+ifeq ($(OSNAME),Darwin)
+  ifneq (,$(strip $(filter-out /usr,$(PREFIX))))
+    RPATH= -Wl,-rpath,$(PREFIX)/lib$(LIB_BITS)
+  endif
+  ifeq (,$(RPM_OPT_FLAGS))
+    CFLAGS+=-D_FORTIFY_SOURCE=2 -fstack-protector
+  endif
+  PTHREAD_LDFLAGS=
 endif
 ifeq ($(OSNAME),AIX)
   ifneq (,$(strip $(filter-out /usr,$(PREFIX))))

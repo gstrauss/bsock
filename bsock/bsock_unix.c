@@ -41,6 +41,15 @@
 #define MSG_DONTWAIT 0
 #endif
 
+#if defined(__APPLE__) && defined(__MACH__)  /*(or define _DARWIN_C_SOURCE)*/
+#ifndef CMSG_SPACE
+#define	CMSG_SPACE(l)		(__DARWIN_ALIGN32(sizeof(struct cmsghdr)) + __DARWIN_ALIGN32(l))
+#endif
+#ifndef CMSG_LEN
+#define	CMSG_LEN(l)		(__DARWIN_ALIGN32(sizeof(struct cmsghdr)) + (l))
+#endif
+#endif
+
 /* nointr_close() - make effort to avoid leaking open file descriptors */
 static int
 nointr_close (const int fd)
@@ -310,6 +319,10 @@ getpeereid(const int s,uid_t * const restrict euid,gid_t * const restrict egid)
 #endif
 
 #ifdef _AIX
+int getpeereid (int, uid_t * __restrict__, gid_t * __restrict__);
+#endif
+
+#if defined(__APPLE__) && defined(__MACH__)  /*(or define _DARWIN_C_SOURCE)*/
 int getpeereid (int, uid_t * __restrict__, gid_t * __restrict__);
 #endif
 
