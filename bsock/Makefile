@@ -59,6 +59,44 @@ ABI_FLAGS=-m64
 endif
 endif
 
+# (plasma_atomic requires 64-bit POWER CPU for 8-byte atomics in 32-bit build)
+# (gcc -mcpu=power5 results in _ARCH_PWR5 being defined)
+ifeq ($(OSNAME),AIX)
+ifneq (64,$(ABI_BITS))
+ABI_FLAGS?=-maix32 -mcpu=power5
+endif
+endif
+# XXX: Linux (not AIX) on POWER needs gcc -m32 -mpowerpc64 for 8-byte atomics
+# in 32-bit builds, or gcc 4.8.1 with libatomic (or gcc 4.7 with end-user
+# downloading and compiling libatomic) and linking with -latomic
+
+ifeq (32,$(ABI_BITS))
+ifeq ($(OSNAME),Linux)
+ABI_FLAGS?=-m32
+endif
+ifeq ($(OSNAME),Darwin)
+ABI_FLAGS?=-m32
+endif
+ifeq ($(OSNAME),AIX)
+AR+=-X32
+ABI_FLAGS?=-maix32
+endif
+ifeq ($(OSNAME),HP-UX)
+ABI_FLAGS?=-milp32
+endif
+ifeq ($(OSNAME),SunOS)
+ABI_FLAGS?=-m32
+endif
+endif
+
+# cygwin needs -std=gnu99 or -D_GNU_SOURCE for mkstemp() and strerror_r()
+# cygwin gcc does not support -fpic or -pthread
+ifneq (,$(filter CYGWIN%,$(OSNAME)))
+FPIC=
+STDC99=-std=gnu99
+PTHREAD_FLAGS=-D_THREAD_SAFE
+endif
+
 ifneq (,$(RPM_OPT_FLAGS))
   CFLAGS+=$(RPM_OPT_FLAGS)
   LDFLAGS+=$(RPM_OPT_FLAGS)

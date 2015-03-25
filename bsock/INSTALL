@@ -53,8 +53,12 @@ Building an RPM
   ##(begin with bsock-$version.tar.gz) or create tarball from source
   $ rsync -avu --exclude=.git --delete /path/to/bsock/ bsock-$version
   $ tar cvzf bsock-$version.tar.gz bsock-$version
+  ##(on older systems with older compilers that do not support C11, need to add)
+  $ export STDC11=-std=c99 POSIX_STD=-D_XOPEN_SOURCE=600
+  ##(build the RPMs)
   $ rpmbuild -tb bsock-$version.tar.gz 
   ##(multilib platforms might want both 32-bit and 64-bit bsock-libs RPM)
+  ##(might be needed with --target=i686) $ export CC="/usr/bin/gcc -m32"
   #$rpmbuild -tb bsock-$version.tar.gz --target=i686
   #$rpmbuild -tb bsock-$version.tar.gz --target=x86_64
   ##(RPM for binary install now located in rpm/RPMS/<arch>/bsock-$version-*.rpm)
