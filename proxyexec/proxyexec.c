@@ -108,6 +108,9 @@ extern void *rawmemchr (__const void *__s, int __c)
 #endif
 int dup3(int oldfd, int newfd, int flags);
 #endif
+#if defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 700 && !defined(__USE_MISC)
+extern pid_t vfork (void); /*(vfork() removed from POSIX.1-2008 (SUSv7))*/
+#endif
 
 /* module contains both client and server code
  * (code could be split into separate .c files, but keep together for brevity)*/
