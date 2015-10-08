@@ -48,6 +48,11 @@
 #define BSOCK_RESVADDR_CONFIG BSOCK_CONFIG".resvaddr"
 #endif
 
+#if defined(__CYGWIN__) && defined(__STRICT_ANSI__)
+/* (prototype for fileno() from cygwin /usr/include/stdio.h) */
+int	_EXFUN(fileno, (FILE *));
+#endif
+
 /* GPS: should this be noinline elsewhere, too? or document how used in this
  * file as on less-used code paths; maybe mark this cold, too */
 /* nointr_close() - make effort to avoid leaking open file descriptors */
@@ -69,7 +74,7 @@ struct bsock_resvaddr_alloc {
     struct bsock_resvaddr *elt;
     struct addrinfo *ai;
     char *buf;
-    size_t buf_sz;
+    socklen_t buf_sz;
     struct bsock_resvaddr_alloc *prev;
 };
 
@@ -249,7 +254,7 @@ bsock_resvaddr_config (void)
     unsigned int lineno = 0;
     unsigned int addr_count = 0;
     unsigned int table_sz = 32;
-    size_t addr_sz = 0;
+    socklen_t addr_sz = 0;
     char line[256];   /* username + AF_UNIX, AF_INET, AF_INET6 bsock str */
     bool rc = true;
     bool addr_added = false;

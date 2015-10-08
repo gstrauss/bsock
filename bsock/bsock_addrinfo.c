@@ -76,7 +76,9 @@ extern int getprotobynumber_r(int proto, struct protoent *protoptr,
 #endif /* #if 0 */
 #endif
 
-#if defined(__hpux) || (defined(__APPLE__) && defined(__MACH__))
+#if defined(__hpux) \
+ ||(defined(__APPLE__) && defined(__MACH__)) \
+ || defined(__CYGWIN__)
 /* OSX: getprotobyname(), getprotobynumber() use thread-local storage */
 /* HP-UX: getprotobyname(), getprotobynumber() thread-safe on HP-UX? not sure */
 #undef HAVE_GETPROTOBYNAME_R
@@ -230,7 +232,7 @@ bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
     struct protoent_data pedata;
   #endif
 
-    if (!isdigit(protocol[0])) {
+    if (!isdigit(((const unsigned char *)protocol)[0])) {
       #ifdef HAVE_GETPROTOBYNAME_R
       #ifndef _AIX
         struct protoent pe;
@@ -359,7 +361,7 @@ bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
     else if (hints.ai_family == AF_UNIX) {
         const size_t len = strlen(aistr->addr);
         if (len < sizeof(((struct sockaddr_un *)0)->sun_path)
-            && sizeof(struct sockaddr_un) <= ai->ai_addrlen) {
+            && (socklen_t)sizeof(struct sockaddr_un) <= ai->ai_addrlen) {
             ai->ai_flags    = 0;
             ai->ai_family   = hints.ai_family;
             ai->ai_socktype = hints.ai_socktype;

@@ -106,7 +106,8 @@
 #endif
 
 
-#if !(defined(_POSIX_TIMERS) && _POSIX_TIMERS >= 200112L)
+#if !(defined(_POSIX_TIMERS) && _POSIX_TIMERS >= 200112L) \
+ && !defined(__CYGWIN__)
 /* Mac OSX does not implement POSIX Advanced Realtime extensions (POSIX.1-2001),
  * even though this comment is being written in 2015, 14 years later (!)
  * Since this file is application-level code, provide kludge replacements for

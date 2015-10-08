@@ -3384,6 +3384,12 @@ bpoll_elt_rearm_immed_impl (bpollset_t * const restrict bpollset,
         /* BPOLL_M_POLL does not support immed add while another thread polls */
         rc = (errno = EINVAL);
 
+  #if !HAS_KQUEUE && !HAS_EVPORT && !HAS_POLLSET && !HAS_DEVPOLL && !HAS_EPOLL
+    /* (quell compiler warnings for unused params and unused routines) */
+    (void)bpollset; (void)bpollelt; (void)events; (void)flpriv;
+    (void)&bpoll_fd_add_thrsafe; (void)&bpoll_elt_abort;
+  #endif
+
     /* some elements might have been added even if return value != 0 */
     return __builtin_expect( (n == *nelts), 1)
       ? rc

@@ -112,6 +112,12 @@ int dup3(int oldfd, int newfd, int flags);
 extern pid_t vfork (void); /*(vfork() removed from POSIX.1-2008 (SUSv7))*/
 #endif
 
+#if defined(__CYGWIN__) && defined(__STRICT_ANSI__)
+/* (prototypes for putenv() and unsetenv() from cygwin /usr/include/stdlib.h) */
+int	_EXFUN(putenv,(char *__string));
+int	_EXFUN(unsetenv,(const char *__string));
+#endif
+
 /* module contains both client and server code
  * (code could be split into separate .c files, but keep together for brevity)*/
 
