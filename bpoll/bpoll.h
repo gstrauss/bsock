@@ -355,6 +355,7 @@ struct bpoll_mem_block {
 struct bpoll_mem_block {
     bpollelt_t b;
     char data[0];
+};
 #endif
 typedef struct bpoll_mem_block bpoll_mem_block_t;
 
