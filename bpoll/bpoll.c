@@ -4162,8 +4162,9 @@ bpoll_poll_single (const int fd, const int events, const int fdtype,
 
     if (!(fdtype & BPOLL_FD_SIGMASK) || !HAS_PSELECT) {
         struct pollfd pfd = { fd, (short)events, 0 };
-        nfound = poll(&pfd, 1,
-                      sec != (time_t)-1 ? (sec*1000 + (nsec+999)/1000) : -1);
+        nfound = poll(&pfd, 1, (sec != (time_t)-1)
+                                 ? (sec*1000 + (nsec+999999)/1000000)
+                                 : -1);
         return nfound > 0 ? (int)pfd.revents : nfound;
     } /*(fall through if fdtype & BPOLL_FD_SIGMASK requested and HAS_PSELECT)*/
 
