@@ -159,6 +159,8 @@ bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa)
     in_port_t pstart;
     in_port_t *portptr;
     socklen_t addrlen;
+  #if !__has_attribute(nonnull) \
+   && !__GNUC_PREREQ(3,3)
     struct sockaddr_in6 saddr; /*(sized for AF_INET or AF_INET6 sockaddr)*/
     if (NULL == sa) {
         socklen_t optlen = sizeof(sa->sa_family);
@@ -167,6 +169,7 @@ bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa)
         if (0 != getsockopt(sockfd,SOL_SOCKET,SO_TYPE,&sa->sa_family,&optlen))
             return -1;
     }
+  #endif
 
     if (AF_INET == sa->sa_family) {
         portptr = &((struct sockaddr_in *)sa)->sin_port;

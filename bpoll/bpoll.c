@@ -3432,23 +3432,28 @@ bpoll_flush_pending (bpollset_t * const restrict bpollset)
         switch (bpollset->mech) {
          #if HAS_KQUEUE
           case BPOLL_M_KQUEUE:
-            if (bpoll_commit_kevents(bpollset) == 0) break; return errno;
+            if (0 == bpoll_commit_kevents(bpollset)) break;
+            return errno;
          #endif
          #if HAS_EVPORT
           case BPOLL_M_EVPORT:
-            if (bpoll_commit_evport_events(bpollset) == 0) break; return errno;
+            if (0 == bpoll_commit_evport_events(bpollset)) break;
+            return errno;
          #endif
          #if HAS_POLLSET
           case BPOLL_M_POLLSET:
-            if (bpoll_commit_pollset_events(bpollset) == 0) break; return errno;
+            if (0 == bpoll_commit_pollset_events(bpollset)) break;
+            return errno;
          #endif
          #if HAS_DEVPOLL
           case BPOLL_M_DEVPOLL:
-            if (bpoll_commit_devpoll_events(bpollset) == 0) break; return errno;
+            if (0 == bpoll_commit_devpoll_events(bpollset)) break;
+            return errno;
          #endif
          #if HAS_EPOLL
           case BPOLL_M_EPOLL:
-            if (bpoll_commit_epoll_events(bpollset) == 0) break; return errno;
+            if (0 == bpoll_commit_epoll_events(bpollset)) break;
+            return errno;
          #endif
           case BPOLL_M_POLL:
             break;
