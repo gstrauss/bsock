@@ -33,6 +33,14 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#ifdef __linux__
+#ifndef SO_PEERCRED
+#if __has_include(<asm-generic/socket.h>) /* or define _DEFAULT_SOURCE */
+#include <asm-generic/socket.h> /* SO_PEERCRED */
+#endif
+#endif
+#endif
+
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
 #endif
