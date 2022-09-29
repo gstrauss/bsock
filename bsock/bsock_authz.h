@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 bsock_authz_validate (struct addrinfo * const restrict ai,
                       const uid_t uid, const gid_t gid);

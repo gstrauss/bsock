@@ -39,7 +39,7 @@
 #include <bsock_addrinfo.h>
 #include <bsock_bind.h>
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 main (int argc, char *argv[])
 {

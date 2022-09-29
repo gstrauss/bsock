@@ -75,7 +75,7 @@ retry_poll_fd (const int fd, const short events, const int timeout)
     return n;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_bind_send_addr_and_recv (const int fd,
                                const struct addrinfo * const restrict ai,
@@ -119,7 +119,7 @@ bsock_bind_send_addr_and_recv (const int fd,
     return errnum;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bool
 bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
 {
@@ -167,7 +167,7 @@ bsock_bind_viafork (const int fd, const struct addrinfo * const restrict ai)
     return (0 == errnum);
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bool
 bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
 {
@@ -193,7 +193,7 @@ bsock_bind_viasock (const int fd, const struct addrinfo * const restrict ai)
     return (0 == errnum);
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai)
 {

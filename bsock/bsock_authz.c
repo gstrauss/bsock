@@ -67,7 +67,7 @@ struct bsock_authz_hash_st {
 
 static struct bsock_authz_hash_st * restrict bsock_authz_hash;
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bool
 bsock_authz_valid (const struct addrinfo * const restrict ai,
                    const uid_t uid, const gid_t gid)
@@ -89,7 +89,7 @@ bsock_authz_valid (const struct addrinfo * const restrict ai,
     return ((errno = EACCES), false);
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 bsock_authz_validate (struct addrinfo * const restrict ai,
                       const uid_t uid, const gid_t gid)

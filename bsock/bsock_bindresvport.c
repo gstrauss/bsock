@@ -149,7 +149,7 @@ bsock_bindresvport_random_port (void)
     return(IPPORT_RESERVEDSTART + (r % (IPPORT_RESERVED-IPPORT_RESERVEDSTART)));
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 bsock_bindresvport_sa (const int sockfd, struct sockaddr *sa)
 {

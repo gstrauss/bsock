@@ -452,12 +452,12 @@ bpoll_mechanisms (void);
 /* optional interface for consumer to flush pending events, e.g. fd removal,
  * prior to bpoll_poll() or bpoll_kernel() (which calls this if no error)*/
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern int  __attribute_regparm__((1))
 bpoll_flush_pending (bpollset_t * const restrict bpollset);
 
 /* (returns 0 on success, else the value of errno) */
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern int  __attribute_regparm__((1))
 bpoll_enable_thrsafe_add(bpollset_t * const restrict bpollset);
 
@@ -473,7 +473,7 @@ bpoll_create (void * const vdata,
               bpoll_fn_mem_free_t  const fn_mem_free);
 
 /* (returns 0 on success, else the value of errno) */
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 EXPORT extern int  __attribute_regparm__((1))
 bpoll_init (bpollset_t * const restrict bpollset,
@@ -485,7 +485,7 @@ bpoll_destroy (bpollset_t * const restrict bpollset);
 
 /* (caller should not modify bpollelt, but macros using this need non-const) */
 __attribute_pure__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 EXPORT extern bpollelt_t *  __attribute_regparm__((2))
 bpoll_elt_get (bpollset_t * const restrict bpollset, const int fd);
@@ -512,13 +512,13 @@ bpoll_elt_get (bpollset_t * const restrict bpollset, const int fd);
 #if HAS_PSELECT || HAS_PPOLL || HAS_EPOLL_PWAIT
 /* atomic signal mask manipulation; default is NULL: no sigmask manipulation) */
 /* (used only with pselect() and Linux-specific ppoll() and epoll_pwait()) */
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern sigset_t *  __attribute_regparm__((1))
 bpoll_sigmask_get (bpollset_t * const restrict bpollset, const int vivify);
 
 __attribute_cold__
 __attribute_noinline__
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT extern int
 bpoll_sigmask_set (bpollset_t * const restrict bpollset,
                    sigset_t * const restrict sigs);
@@ -528,7 +528,7 @@ bpoll_sigmask_set (bpollset_t * const restrict bpollset,
 #endif
 
 
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT extern bpollelt_t *  __attribute_regparm__((2))
 bpoll_elt_init (bpollset_t * const restrict bpollset, 
                 bpollelt_t * restrict bpollelt,
@@ -536,21 +536,21 @@ bpoll_elt_init (bpollset_t * const restrict bpollset,
                 const bpoll_fdtype_e fdtype,
                 const bpoll_flags_e flags);
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern int  __attribute_regparm__((3))
 bpoll_elt_rearm_immed (bpollset_t * const restrict bpollset,
                        bpollelt_t ** const restrict bpollelt,
                        int * const restrict nelts,
                        const int events);
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern int  __attribute_regparm__((3))
 bpoll_elt_add_immed (bpollset_t * const restrict bpollset,
                      bpollelt_t ** const restrict bpollelt,
                      int * const restrict nelts,
                      const int events);
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern int  __attribute_regparm__((3))
 bpoll_elt_add (bpollset_t * const restrict bpollset,
                bpollelt_t * const restrict bpollelt,
@@ -561,7 +561,7 @@ bpoll_elt_add (bpollset_t * const restrict bpollset,
  * caller may read bpollelt->events for use in & or | current set of flags
  * using macro bpoll_elt_get_events() and bpoll_elt_get_revents()
  */
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT extern int  __attribute_regparm__((3))
 bpoll_elt_modify (bpollset_t * const restrict bpollset,
                   bpollelt_t * const restrict bpollelt,
@@ -570,7 +570,7 @@ bpoll_elt_modify (bpollset_t * const restrict bpollset,
 #define bpoll_elt_modify_by_fd( bpollset, fd, events ) \
         bpoll_elt_modify((bpollset), bpoll_elt_get((bpollset),(fd)), (events))
 
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT extern int  __attribute_regparm__((2))
 bpoll_elt_remove (bpollset_t * const restrict bpollset,
                   bpollelt_t * const restrict bpollelt);
@@ -578,7 +578,7 @@ bpoll_elt_remove (bpollset_t * const restrict bpollset,
 #define bpoll_elt_remove_by_fd( bpollset, fd ) \
         bpoll_elt_remove((bpollset), bpoll_elt_get((bpollset),(fd)))
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT int  __attribute_regparm__((2))
 bpoll_elt_destroy (bpollset_t * const restrict bpollset,
                    bpollelt_t * const restrict bpollelt);
@@ -603,7 +603,7 @@ bpoll_elt_destroy (bpollset_t * const restrict bpollset,
 #define bpoll_set_timespec(bpollset,ts) bpoll_timespec_set((bpollset), (ts))
 
 __attribute_noinline__
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT struct timespec *  __attribute_regparm__((2))
 bpoll_timespec_set (bpollset_t * const bpollset,
                     const struct timespec * const timespec);
@@ -617,7 +617,7 @@ bpoll_timespec_set (bpollset_t * const bpollset,
  * received.  Upon receipt of other errors, caller should call bpoll_destroy().
  */
 __attribute_noinline__
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT extern int  __attribute_regparm__((2))
 bpoll_kernel (bpollset_t * const restrict bpollset,
               const struct timespec * const timespec);
@@ -627,7 +627,7 @@ bpoll_kernel (bpollset_t * const restrict bpollset,
  * Return value is same as bpoll_kernel()
  */
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT extern int  __attribute_regparm__((1))
 bpoll_process (bpollset_t * const restrict bpollset);
 
@@ -681,7 +681,7 @@ bpoll_process (bpollset_t * const restrict bpollset);
  * only on EVFILT_READ and EVFILT_WRITE kqueue filters so if filter is not
  * one, then we expect the other.  Violate this assumption at your own risk.
  */
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 EXPORT extern int  __attribute_regparm__((2))
 bpoll_poll (bpollset_t * const restrict bpollset,
             const struct timespec * const timespec);

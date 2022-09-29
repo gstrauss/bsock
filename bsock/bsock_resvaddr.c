@@ -95,7 +95,7 @@ bsock_resvaddr_count (void)
   #define __builtin_expect(x,y) (x)
   #endif
 #endif
-__attribute_nonnull__
+__attribute_nonnull__()
 static uint32_t
 bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 {
@@ -108,7 +108,7 @@ bsock_resvaddr_hash (const struct addrinfo * const restrict ai)
 }
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
                        int * const restrict tfd)
@@ -157,7 +157,7 @@ bsock_resvaddr_rebind (const struct addrinfo * restrict ai,
     return *tfd;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 bsock_resvaddr_fd (const struct addrinfo * const restrict ai)
 {
@@ -186,7 +186,7 @@ struct bsock_resvaddr_cleanup {
 
 __attribute_cold__
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bsock_resvaddr_cleanup (void * const arg)
 {

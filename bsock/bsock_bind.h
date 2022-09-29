@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT int
 bsock_bind_addrinfo (const int fd, const struct addrinfo * const restrict ai);
 

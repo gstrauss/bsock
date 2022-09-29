@@ -168,7 +168,7 @@ struct proxyexec_context {
 };
 
 __attribute_pure__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 proxyexec_env_cmp (const void *x, const void *y)
 {
@@ -180,7 +180,7 @@ proxyexec_env_cmp (const void *x, const void *y)
 }
 
 __attribute_pure__
-__attribute_nonnull__
+__attribute_nonnull__()
 static inline bool
 proxyexec_env_allowed (const char * const restrict s, const size_t sz)
 {
@@ -190,7 +190,7 @@ proxyexec_env_allowed (const char * const restrict s, const size_t sz)
                    sizeof(struct proxyexec_env_st), proxyexec_env_cmp) != NULL;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bool
 proxyexec_argv_env_parse (char *b, char * const e,
                           char ** const restrict argv, const uint32_t argc)
@@ -245,7 +245,7 @@ proxyexec_ctrlbuf_alloc (void)
     }
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static ssize_t
 proxyexec_stdfds_recv_dup2 (int fd, struct iovec * const restrict iov,
                             const size_t iovlen)
@@ -272,7 +272,7 @@ proxyexec_stdfds_recv_dup2 (int fd, struct iovec * const restrict iov,
     return r;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 proxyexec_fork_exec (char ** const restrict argv)
 {
@@ -304,7 +304,7 @@ proxyexec_fork_exec (char ** const restrict argv)
 }
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 proxyexec_child_session (struct proxyexec_context * const restrict cxt)
 {
@@ -422,7 +422,7 @@ proxyexec_child_session (struct proxyexec_context * const restrict cxt)
  * client
  */
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static ssize_t
 proxyexec_stdfds_send (const int fd,
                        struct iovec * const restrict iov, const size_t iovlen)
@@ -431,7 +431,7 @@ proxyexec_stdfds_send (const int fd,
     return bsock_unix_send_fds(fd, sfds, sizeof(sfds)/sizeof(int), iov, iovlen);
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static size_t
 proxyexec_env_serialize (char * const restrict buf, const size_t sz)
 {
@@ -454,7 +454,7 @@ proxyexec_env_serialize (char * const restrict buf, const size_t sz)
     return total;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bool
 proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
                          char * const restrict envbuf, size_t envbufsz)
@@ -516,7 +516,7 @@ proxyexec_argv_env_send (const int fd, wordexp_t * const restrict cmd,
     return rc;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 proxyexec_client (const int argc, char ** const restrict argv)
 {
@@ -640,7 +640,7 @@ proxyexec_client (const int argc, char ** const restrict argv)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 main (int argc, char *argv[])
 {

@@ -132,7 +132,7 @@ union align {
 __attribute_cold__
 __attribute_malloc__
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static bpoll_mem_block_t *  __attribute_regparm__((1))
 bpoll_mem_chunk_alloc (bpollset_t * const restrict bpollset);
 static bpoll_mem_block_t *  __attribute_regparm__((1))
@@ -190,7 +190,7 @@ bpoll_mem_chunk_alloc (bpollset_t * const restrict bpollset)
 
 __attribute_cold__
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((1))
 bpoll_mem_block_reorder (bpollset_t * const restrict bpollset);
 static void  __attribute_regparm__((1))
@@ -240,7 +240,7 @@ bpoll_mem_block_reorder (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((1))
 bpoll_maint_mem_block (bpollset_t * const restrict bpollset);
 static void  __attribute_regparm__((1))
@@ -254,7 +254,7 @@ bpoll_maint_mem_block (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bpollelt_t *  __attribute_regparm__((1))
 bpoll_elt_alloc (bpollset_t * const restrict bpollset);
 static bpollelt_t *  __attribute_regparm__((1))
@@ -291,7 +291,7 @@ bpoll_elt_alloc (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((2))
 bpoll_elt_free (bpollset_t * const restrict bpollset,
                 bpollelt_t * const restrict bpollelt);
@@ -330,7 +330,7 @@ bpoll_elt_free (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((2))
 bpoll_elt_close (bpollset_t * const bpollset, bpollelt_t * const bpollelt);
 static void  __attribute_regparm__((2))
@@ -371,7 +371,7 @@ bpoll_elt_close (bpollset_t * const bpollset, bpollelt_t * const bpollelt)
 
 /* separate from bpoll_elt_fetch() for better inlining of bpoll_elt_fetch() */
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_pure__
 __attribute_warn_unused_result__
 static bpollelt_t *  __attribute_regparm__((2))
@@ -388,7 +388,7 @@ bpoll_elt_fetch_small (const bpollset_t * const restrict bpollset,const int fd)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_pure__
 __attribute_warn_unused_result__
 static bpollelt_t *  __attribute_regparm__((2))
@@ -406,7 +406,7 @@ bpoll_elt_fetch (const bpollset_t * const restrict bpollset, const int fd)
 
 __attribute_cold__
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((2))
 bpoll_results_resize (bpollset_t * const restrict bpollset,const size_t nfound);
@@ -430,7 +430,7 @@ bpoll_results_resize (bpollset_t * const restrict bpollset,const size_t nfound)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((1))
 bpoll_rmlist_resize (bpollset_t * const restrict bpollset);
@@ -465,7 +465,7 @@ bpoll_rmlist_resize (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((2))
 bpoll_eltlist_resize (bpollset_t * const restrict bpollset, const int fd);
@@ -532,7 +532,7 @@ bpoll_eltlist_resize (bpollset_t * const restrict bpollset, const int fd)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((2))
 bpoll_fd_add (bpollset_t * const restrict bpollset,
@@ -578,7 +578,7 @@ bpoll_fd_add (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((2))
 bpoll_fd_add_thrsafe (bpollset_t * const restrict bpollset,
@@ -598,7 +598,7 @@ bpoll_fd_add_thrsafe (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((3))
 bpoll_fd_add_eltlist (bpollset_t * const restrict bpollset,
@@ -655,7 +655,7 @@ bpoll_fd_add_eltlist (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((2))
 bpoll_fd_remove (bpollset_t * const restrict bpollset, const int fd);
 static void  __attribute_regparm__((2))
@@ -688,7 +688,7 @@ bpoll_fd_remove (bpollset_t * const restrict bpollset, const int fd)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((3))
 bpoll_fd_remove_eltlist (bpollset_t * const restrict bpollset,
                          bpollelt_t * const restrict * const restrict bpollelt,
@@ -735,7 +735,7 @@ bpoll_fd_remove_eltlist (bpollset_t * const restrict bpollset,
 
 __attribute_cold__
 __attribute_noinline__
-__attribute_nonnull_x__((1))
+__attribute_nonnull__((1))
 static void  __attribute_regparm__((2))
 bpoll_elt_abort (bpollset_t * const restrict bpollset,
                  bpollelt_t * const restrict bpollelt);
@@ -776,7 +776,7 @@ bpoll_mem_free_default (void * const restrict vdata  __attribute_unused__,
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void  __attribute_regparm__((1))
 bpoll_cleanup (bpollset_t * const restrict bpollset);
 static void  __attribute_regparm__((1))
@@ -925,7 +925,7 @@ bpoll_cleanup (bpollset_t * const restrict bpollset)
 #define BPOLL_EVENTS_FILT(events)    (events & ~(BPOLLET|BPOLLDISPATCH))
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_init_pollfds (bpollset_t * const restrict bpollset);
 static int
@@ -980,7 +980,7 @@ bpoll_init_pollfds (bpollset_t * const restrict bpollset)
  *  pending lists might conceivably reference bpollelt elements of rmlist)
  * (evport and epoll commit to kernel in separate step prior to polling kernel)
  */
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bpoll_maint_default (bpollset_t * const restrict bpollset);
 static void
@@ -998,7 +998,7 @@ bpoll_maint_default (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_commit_poll_events (bpollset_t * const restrict bpollset);
 static int
@@ -1041,7 +1041,7 @@ bpoll_commit_poll_events (bpollset_t * const restrict bpollset)
 
 
 #if !HAS_POLL || (HAS_PSELECT && !HAS_PPOLL)
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bpoll_kernel_pollfds_select (bpollset_t * const restrict bpollset);
 static void
@@ -1140,7 +1140,7 @@ bpoll_kernel_pollfds_select (bpollset_t * const restrict bpollset)
 
 
 #if HAS_POLL
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bpoll_kernel_pollfds_poll (bpollset_t * const restrict bpollset);
 static void
@@ -1187,7 +1187,7 @@ bpoll_kernel_pollfds_poll (bpollset_t * const restrict bpollset)
 #endif
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_kernel_pollfds (bpollset_t * const restrict bpollset);
 static int
@@ -1216,14 +1216,14 @@ bpoll_kernel_pollfds (bpollset_t * const restrict bpollset)
 
 
 /* declare proto for bpoll_elt_modify_pollfds() for bpoll_process_pollfds() */
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_modify_pollfds (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt,
                           const int events);
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_process_pollfds (bpollset_t * const restrict bpollset);
 static int
@@ -1263,7 +1263,7 @@ bpoll_process_pollfds (bpollset_t * const restrict bpollset)
 
 
 #if 0 /* BPOLL_M_POLL: no support for immediate add while another thread polls*/
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_add_immed_pollfds (bpollset_t * const restrict bpollset,
                              bpollelt_t ** const restrict bpollelt,
@@ -1278,7 +1278,7 @@ bpoll_elt_add_immed_pollfds (bpollset_t * const restrict bpollset,
         bpoll_commit_poll_events(bpollset)
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_add_pollfds (bpollset_t * const restrict bpollset,
                        bpollelt_t * const restrict bpollelt,
@@ -1335,7 +1335,7 @@ bpoll_elt_add_pollfds (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_modify_pollfds (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt,
@@ -1371,7 +1371,7 @@ bpoll_elt_modify_pollfds (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_remove_pollfds (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt);
@@ -1424,7 +1424,7 @@ bpoll_elt_remove_pollfds (bpollset_t * const restrict bpollset,
 #endif
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_init_kqueue (bpollset_t * const restrict bpollset);
 static int
@@ -1460,13 +1460,13 @@ bpoll_init_kqueue (bpollset_t * const restrict bpollset)
 
 /* forward declaration */
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_recover_kevents_dispatch (bpollset_t * const restrict bpollset);
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_recover_kevent_readd (struct kevent * const restrict kev, const int fd);
@@ -1487,7 +1487,7 @@ bpoll_recover_kevent_readd (struct kevent * const restrict kev, const int fd)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bpoll_recover_kevent_abort (bpollset_t * const restrict bpollset,
                             struct kevent * const restrict keready,
@@ -1521,7 +1521,7 @@ bpoll_recover_kevent_abort (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_recover_kevents_receipts (bpollset_t * const restrict bpollset,
                                 struct kevent * const restrict keready,
@@ -1555,7 +1555,7 @@ bpoll_recover_kevents_receipts (bpollset_t * const restrict bpollset,
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_kevents_impl (bpollset_t * const restrict bpollset,
@@ -1587,7 +1587,7 @@ bpoll_commit_kevents_impl (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_kevents (bpollset_t * const restrict bpollset);
@@ -1616,7 +1616,7 @@ bpoll_commit_kevents (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_kernel_kqueue (bpollset_t * const restrict bpollset);
 static int
@@ -1664,7 +1664,7 @@ bpoll_kernel_kqueue (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_process_kqueue (bpollset_t * const restrict bpollset);
 static int
@@ -1733,7 +1733,7 @@ bpoll_process_kqueue (bpollset_t * const restrict bpollset)
   } while (0)
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_add_immed_kqueue (bpollset_t * const restrict bpollset,
                             bpollelt_t ** const restrict bpollelt,
@@ -1839,7 +1839,7 @@ bpoll_elt_add_immed_kqueue (bpollset_t * const restrict bpollset,
        && __builtin_expect( (bpoll_commit_kevents(bpollset) != 0), 0))
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_add_kqueue (bpollset_t * const restrict bpollset,
                       bpollelt_t * const restrict bpollelt,
@@ -1884,7 +1884,7 @@ bpoll_elt_add_kqueue (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_modify_kqueue (bpollset_t * const restrict bpollset,
                          bpollelt_t * const restrict bpollelt,
@@ -1947,7 +1947,7 @@ bpoll_elt_modify_kqueue (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((2))
 bpoll_elt_remove_kqueue (bpollset_t * const restrict bpollset,
                          bpollelt_t * const restrict bpollelt);
@@ -2054,7 +2054,7 @@ bpoll_recover_kevents_dispatch (bpollset_t * const restrict bpollset)
 #if HAS_EVPORT
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_init_evport (bpollset_t * const restrict bpollset);
 static int
@@ -2082,7 +2082,7 @@ bpoll_init_evport (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bpoll_maint_evport (bpollset_t * const restrict bpollset);
 static void
@@ -2112,7 +2112,7 @@ bpoll_maint_evport (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_evport_impl (bpollset_t * const restrict bpollset,
@@ -2162,7 +2162,7 @@ bpoll_commit_evport_impl (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_evport_events (bpollset_t * const restrict bpollset);
@@ -2180,7 +2180,7 @@ bpoll_commit_evport_events (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_kernel_evport (bpollset_t * const restrict bpollset);
 static int
@@ -2274,7 +2274,7 @@ bpoll_kernel_evport (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_process_evport (bpollset_t * const restrict bpollset);
 static int
@@ -2304,7 +2304,7 @@ bpoll_process_evport (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_immed_evport (bpollset_t * const restrict bpollset,
                             bpollelt_t ** const restrict bpollelt,
@@ -2345,7 +2345,7 @@ bpoll_elt_add_immed_evport (bpollset_t * const restrict bpollset,
        && __builtin_expect( (bpoll_commit_evport_events(bpollset) != 0), 0))
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_evport (bpollset_t * const restrict bpollset,
                       bpollelt_t * const restrict bpollelt,
@@ -2373,7 +2373,7 @@ bpoll_elt_add_evport (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_modify_evport (bpollset_t * const restrict bpollset,
                          bpollelt_t * const restrict bpollelt,
@@ -2402,7 +2402,7 @@ bpoll_elt_modify_evport (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_remove_evport (bpollset_t * const restrict bpollset
                            __attribute_unused__,
@@ -2427,7 +2427,7 @@ bpoll_elt_remove_evport (bpollset_t * const restrict bpollset
 #include <stropts.h>
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_init_devpoll (bpollset_t * const restrict bpollset);
 static int
@@ -2458,7 +2458,7 @@ bpoll_init_devpoll (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_devpoll_impl (bpollset_t * const restrict bpollset,
@@ -2486,7 +2486,7 @@ bpoll_commit_devpoll_impl (bpollset_t * const restrict bpollset,
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_devpoll_events (bpollset_t * const restrict bpollset);
@@ -2500,7 +2500,7 @@ bpoll_commit_devpoll_events (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_kernel_devpoll (bpollset_t * const restrict bpollset);
 static int
@@ -2546,7 +2546,7 @@ bpoll_kernel_devpoll (bpollset_t * const restrict bpollset)
 /* [see further below for bpoll_process_devpollset()] */
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_immed_devpoll (bpollset_t * const restrict bpollset,
                              bpollelt_t ** const restrict bpollelt,
@@ -2586,7 +2586,7 @@ bpoll_elt_add_immed_devpoll (bpollset_t * const restrict bpollset,
        && __builtin_expect( (bpoll_commit_devpoll_events(bpollset) != 0), 0))
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_devpoll (bpollset_t * const restrict bpollset,
                        bpollelt_t * const restrict bpollelt,
@@ -2615,7 +2615,7 @@ bpoll_elt_add_devpoll (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_modify_devpoll (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt,
@@ -2678,7 +2678,7 @@ bpoll_elt_modify_devpoll (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_remove_devpoll (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt);
@@ -2708,7 +2708,7 @@ bpoll_elt_remove_devpoll (bpollset_t * const restrict bpollset,
 #if HAS_POLLSET
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_init_pollset (bpollset_t * const restrict bpollset);
 static int
@@ -2737,7 +2737,7 @@ bpoll_init_pollset (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_pollset_impl (bpollset_t * const restrict bpollset,
@@ -2775,7 +2775,7 @@ bpoll_commit_pollset_impl (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_pollset_events (bpollset_t * const restrict bpollset);
@@ -2789,7 +2789,7 @@ bpoll_commit_pollset_events (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_kernel_pollset (bpollset_t * const restrict bpollset);
 static int
@@ -2817,7 +2817,7 @@ bpoll_kernel_pollset (bpollset_t * const restrict bpollset)
 /* [see further below for bpoll_process_devpollset()] */
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_immed_pollset (bpollset_t * const restrict bpollset,
                              bpollelt_t ** const restrict bpollelt,
@@ -2859,7 +2859,7 @@ bpoll_elt_add_immed_pollset (bpollset_t * const restrict bpollset,
        && __builtin_expect( (bpoll_commit_pollset_events(bpollset) != 0), 0))
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_pollset (bpollset_t * const restrict bpollset,
                        bpollelt_t * const restrict bpollelt,
@@ -2889,7 +2889,7 @@ bpoll_elt_add_pollset (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_modify_pollset (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt,
@@ -2926,7 +2926,7 @@ bpoll_elt_modify_pollset (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_remove_pollset (bpollset_t * const restrict bpollset,
                           bpollelt_t * const restrict bpollelt);
@@ -2955,7 +2955,7 @@ bpoll_elt_remove_pollset (bpollset_t * const restrict bpollset,
 
 /* shared by devpoll (Solaris) and pollset (AIX) */
 #if HAS_DEVPOLL || HAS_POLLSET
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_process_devpollset (bpollset_t * const restrict bpollset);
 static int
@@ -3005,7 +3005,7 @@ bpoll_process_devpollset (bpollset_t * const restrict bpollset)
 #if HAS_EPOLL
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_init_epoll (bpollset_t * const restrict bpollset);
 static int
@@ -3058,7 +3058,7 @@ bpoll_init_epoll (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bpoll_maint_epoll (bpollset_t * const restrict bpollset);
 static void
@@ -3085,7 +3085,7 @@ bpoll_maint_epoll (bpollset_t * const restrict bpollset)
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int
 bpoll_commit_epoll_impl (bpollset_t * const restrict bpollset,
@@ -3128,7 +3128,7 @@ bpoll_commit_epoll_impl (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 __attribute_warn_unused_result__
 static int  __attribute_regparm__((1))
 bpoll_commit_epoll_events (bpollset_t * const restrict bpollset);
@@ -3146,7 +3146,7 @@ bpoll_commit_epoll_events (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_kernel_epoll (bpollset_t * const restrict bpollset);
 static int
@@ -3176,7 +3176,7 @@ bpoll_kernel_epoll (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_process_epoll (bpollset_t * const restrict bpollset);
 static int
@@ -3212,7 +3212,7 @@ bpoll_process_epoll (bpollset_t * const restrict bpollset)
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bpoll_elt_add_immed_epoll (bpollset_t * const restrict bpollset,
                            bpollelt_t ** const restrict bpollelt,
@@ -3255,7 +3255,7 @@ bpoll_elt_add_immed_epoll (bpollset_t * const restrict bpollset,
        && __builtin_expect( (bpoll_commit_epoll_events(bpollset) != 0), 0))   \
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_add_epoll (bpollset_t * const restrict bpollset,
                      bpollelt_t * const restrict bpollelt,
@@ -3290,7 +3290,7 @@ bpoll_elt_add_epoll (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_modify_epoll (bpollset_t * const restrict bpollset,
                         bpollelt_t * const restrict bpollelt,
@@ -3315,7 +3315,7 @@ bpoll_elt_modify_epoll (bpollset_t * const restrict bpollset,
 }
 
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((2))
 bpoll_elt_remove_epoll (bpollset_t * const restrict bpollset
                           __attribute_unused__,
@@ -3336,7 +3336,7 @@ bpoll_elt_remove_epoll (bpollset_t * const restrict bpollset
 
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int  __attribute_regparm__((3))
 bpoll_elt_rearm_immed_impl (bpollset_t * const restrict bpollset,
                             bpollelt_t ** const restrict bpollelt,

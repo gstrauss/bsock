@@ -62,24 +62,24 @@ struct bsock_addrinfo_strs {
 
 /* ai->ai_addr must be provided containing usable storage of len ai->ai_addrlen
  * (recommended: #include <sys/socket.h> and use struct sockaddr_storage) */
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT bool
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
                          const struct bsock_addrinfo_strs *
                            const restrict aistr);
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT bool
 bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
                        struct bsock_addrinfo_strs * const aistr,
                        char * const restrict buf, const size_t bufsz);
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT bool
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str);
 
-__attribute_nonnull_x__((2,3))
+__attribute_nonnull__((2,3))
 EXPORT bool
 bsock_addrinfo_recv_ex (const int fd,
                         struct addrinfo * const restrict ai,
@@ -90,7 +90,7 @@ bsock_addrinfo_recv_ex (const int fd,
 #define bsock_addrinfo_recv(fd, ai, rfd) \
         bsock_addrinfo_recv_ex((fd),(ai),(rfd),0,0)
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT bool
 bsock_addrinfo_send (const int fd,
                      const struct addrinfo * const restrict ai, const int sfd);

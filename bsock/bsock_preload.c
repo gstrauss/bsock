@@ -36,7 +36,7 @@ EXPORT int bindresvport  (const int, struct sockaddr_in * restrict);
 EXPORT int bindresvport6 (const int, struct sockaddr_in6 * restrict);
 
 static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t);
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bind_rtld_findnext (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
@@ -50,7 +50,7 @@ static int (*bind_rtld_next)(int, const struct sockaddr *, socklen_t) =
   bind_rtld_findnext;
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_preload_bind (const int sockfd, const struct sockaddr *addr,
                     const socklen_t addrlen)

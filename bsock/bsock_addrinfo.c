@@ -130,7 +130,7 @@ extern int getprotobynumber_r(int proto, struct protoent *protoptr,
  * Similarly, simple string parsing routines like strtok() are used, even though
  * less string traversals could be achieved through additional coding */
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_addrinfo_family_from_str (const char * const restrict family)
 {
@@ -171,7 +171,7 @@ bsock_addrinfo_family_to_str (const int family)
     }
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_addrinfo_socktype_from_str (const char * const restrict socktype)
 {
@@ -223,7 +223,7 @@ bsock_addrinfo_socktype_to_str (const int socktype)
     }
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
 {
@@ -275,7 +275,7 @@ bsock_addrinfo_protocol_from_str (const char * const restrict protocol)
 }
 
 #ifdef HAVE_GETPROTOBYNUMBER_R
-__attribute_nonnull__
+__attribute_nonnull__()
 static char *
 bsock_addrinfo_protocol_to_str (const int proto,
                                 char * const buf, const size_t bufsz)
@@ -313,7 +313,7 @@ bsock_addrinfo_protocol_to_str (const int proto)
         bsock_addrinfo_protocol_to_str(proto)
 #endif
 
-__attribute_nonnull__
+__attribute_nonnull__()
 bool
 bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
                          const struct bsock_addrinfo_strs *
@@ -383,7 +383,7 @@ bsock_addrinfo_from_strs(struct addrinfo * const restrict ai,
     }
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 bool
 bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
                        struct bsock_addrinfo_strs * const aistr,
@@ -426,7 +426,7 @@ bsock_addrinfo_to_strs(const struct addrinfo * const restrict ai,
     return false;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 bool
 bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
                          char * const restrict str)
@@ -440,7 +440,7 @@ bsock_addrinfo_split_str(struct bsock_addrinfo_strs * const aistr,
            ) || (errno = EINVAL, false);
 }
 
-__attribute_nonnull_x__((2,3))
+__attribute_nonnull__((2,3))
 bool
 bsock_addrinfo_recv_ex (const int fd,
                         struct addrinfo * const restrict ai,
@@ -512,7 +512,7 @@ bsock_addrinfo_recv_ex (const int fd,
 }
 
 #if 0 /* see #define bsock_addrinfo_recv(fd, ai, rfd) in bsock_addrinfo.h */
-__attribute_nonnull__
+__attribute_nonnull__()
 bool
 bsock_addrinfo_recv (const int fd,
                      struct addrinfo * const restrict ai,
@@ -522,7 +522,7 @@ bsock_addrinfo_recv (const int fd,
 }
 #endif
 
-__attribute_nonnull__
+__attribute_nonnull__()
 bool
 bsock_addrinfo_send (const int fd,
                      const struct addrinfo * const restrict ai, const int sfd)

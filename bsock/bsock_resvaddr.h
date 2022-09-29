@@ -39,7 +39,7 @@ extern "C" {
 /* use ai->ai_flags for bsock flags since otherwise unused by bsock */
 #define BSOCK_FLAGS_REBIND AI_PASSIVE  /* close() and re-bind() resv addr */
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 bsock_resvaddr_fd (const struct addrinfo * const restrict ai);
 

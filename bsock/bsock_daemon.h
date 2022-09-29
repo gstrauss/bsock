@@ -35,7 +35,7 @@ bsock_daemon_setuid_stdinit (void);
 EXPORT bool
 bsock_daemon_init (const int supervised, const bool check);
 
-__attribute_nonnull__
+__attribute_nonnull__()
 EXPORT int
 bsock_daemon_init_socket (const char * const restrict sockpath, /*(persistent)*/
                           const uid_t uid, const gid_t gid,

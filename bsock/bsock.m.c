@@ -268,7 +268,7 @@ struct bsock_client_st {
   time_t tstamp;
 };
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_client_handler (struct bsock_client_st * const restrict c,
                       struct addrinfo * const restrict ai,
@@ -364,7 +364,7 @@ bsock_client_handler (struct bsock_client_st * const restrict c,
     return rc;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_client_event (struct bsock_client_st * const restrict c,
                     struct addrinfo * const restrict ai)
@@ -415,7 +415,7 @@ bsock_bpollelt_cb_close (bpollset_t * const restrict bpollset
 
 /* (similar to uint32_to_ascii_base10_loop() in
  *   https://github.com/gstrauss/mcdb/blob/master/uint32.c ) */
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 uint32_to_str(uint32_t u, char * const buf)
 {
@@ -428,7 +428,7 @@ uint32_to_str(uint32_t u, char * const buf)
 }
 
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static void
 bsock_infostr (char * restrict infobuf,
                const int fd, const uid_t uid, const gid_t gid)
@@ -462,7 +462,7 @@ bsock_infostr (char * restrict infobuf,
     infobuf[0] = '\0';
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static bool
 bsock_bpollset_add (struct bsock_client_st * const restrict m,
                     struct bsock_client_st * const restrict sentinel,
@@ -502,7 +502,7 @@ bsock_bpollset_add (struct bsock_client_st * const restrict m,
     return false;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_accept_loop (const int sfd,
                    struct bsock_client_st * const restrict sentinel,
@@ -736,7 +736,7 @@ retry_poll_fd (const int fd, const short events, const int timeout)
 /* one-shot mode; handle single request and exit */
 __attribute_cold__
 __attribute_noinline__
-__attribute_nonnull__
+__attribute_nonnull__()
 static int
 bsock_client_once (const int argc, char ** const restrict argv)
 {
@@ -831,7 +831,7 @@ bsock_client_once (const int argc, char ** const restrict argv)
     return rc;
 }
 
-__attribute_nonnull__
+__attribute_nonnull__()
 int
 main (int argc, char *argv[])
 {
